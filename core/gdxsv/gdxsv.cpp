@@ -21,6 +21,19 @@ extern void dc_resume();
 
 extern bool dc_is_load_done();
 
+inline std::string to_hex(const std::deque<u8> &bytes, int n) {
+    std::string ret(n * 2, ' ');
+    for (int i = 0; i < n; i++) {
+        sprintf(&ret[0] + i * 2, "%02x", bytes[i]);
+    }
+    return ret;
+}
+
+inline bool bytes_like(const std::deque<u8> &bytes, const std::string &hex) {
+    if (bytes.size() < hex.size()) return false;
+    return to_hex(bytes, hex.size()) == hex;
+}
+
 Gdxsv::~Gdxsv() {
     tcp_client.Close();
     net_terminate = true;
@@ -907,11 +920,20 @@ std::string Gdxsv::LatestVersion() {
 }
 
 void Gdxsv::StartReplay() {
+    maxlag = 16;
     static proto::BattleLogFile btlLog;
+
+    static int connection_status = 0;
+    int new_connection_status = ReadMem8_nommu(0x0c3abb88);
+    if (connection_status != new_connection_status) {
+        NOTICE_LOG(COMMON, "CON_ST: %x -> %x", connection_status, new_connection_status);
+        connection_status = new_connection_status;
+    }
 
     if (replay_state) {
         // TODO: NEED Patch - Skip ALL self MsgPush function
         WriteMem16_nommu(0x8c045f64, 9);
+        WriteMem16_nommu(0x8c045e70, 9);
     }
 
     if (replay_state == 1) {
@@ -1042,24 +1064,28 @@ void Gdxsv::StartReplay() {
         }
         send_buf_mtx.unlock();
         replay_seq = 0;
+        replay_ts = btlLog.battle_data(replay_seq).timestamp();
         return;
     }
 
     if (replay_state == 7) {
+        replay_ts += 16666666; // FIXME
         send_buf_mtx.lock();
-        send_buf.clear();
-        send_buf_mtx.unlock();
-
         recv_buf_mtx.lock();
-        if (recv_buf.size() < 128) {
-            if (replay_seq < btlLog.battle_data_size()) {
+
+        while (replay_seq < btlLog.battle_data_size()) {
+            const auto &data = btlLog.battle_data(replay_seq);
+            if (data.timestamp() < replay_ts) {
                 const auto &body = btlLog.battle_data(replay_seq).body();
                 std::copy(std::begin(body), std::end(body), std::back_inserter(recv_buf));
                 replay_seq++;
             } else {
-                replay_state++;
+                break;
             }
         }
+
+        send_buf.clear();
+        send_buf_mtx.unlock();
         recv_buf_mtx.unlock();
     }
 

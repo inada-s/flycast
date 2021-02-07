@@ -40,6 +40,7 @@ public:
     std::atomic<int> replay_mode;
     std::atomic<int> replay_state;
     int replay_seq;
+    int64_t replay_ts;
 private:
     void GcpPingTest(); // run on network thread
 
