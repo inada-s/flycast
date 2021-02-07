@@ -11,6 +11,8 @@
 #include "hw/sh4/sh4_mem.h"
 #include "reios/reios.h"
 
+class logFile;
+
 class Gdxsv {
 public:
     Gdxsv() = default;
@@ -35,6 +37,9 @@ public:
 
     std::string LatestVersion();
 
+    std::atomic<int> replay_mode;
+    std::atomic<int> replay_state;
+    int replay_seq;
 private:
     void GcpPingTest(); // run on network thread
 
@@ -53,6 +58,8 @@ private:
     void WritePatchDisk2();
 
     void CloseUdpClientWithReason(const char *reason);
+
+    void StartReplay();
 
     std::atomic<bool> enabled;
     std::atomic<int> disk;
@@ -82,6 +89,7 @@ private:
 
     bool update_available = false;
     std::string latest_version;
+
 };
 
 extern Gdxsv gdxsv;

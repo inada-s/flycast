@@ -1200,6 +1200,7 @@ void dc_savestate()
 
 void dc_loadstate()
 {
+	NOTICE_LOG(SAVESTATE, "loadstate");
 	u32 total_size = 0;
 	FILE *f = nullptr;
 
@@ -1279,14 +1280,21 @@ void dc_loadstate()
 		WARN_LOG(SAVESTATE, "Save state error: read %d bytes but used %d", total_size, unserialized_size);
 
     gdxsv.Reset();
+	NOTICE_LOG(SAVESTATE, "a");
 	mmu_set_state();
+	NOTICE_LOG(SAVESTATE, "b");
 	sh4_cpu.ResetCache();
+	NOTICE_LOG(SAVESTATE, "c");
     dsp.dyndirty = true;
     sh4_sched_ffts();
+	NOTICE_LOG(SAVESTATE, "d");
 
     cleanup_serialize(data) ;
 	EventManager::event(Event::LoadState);
-    INFO_LOG(SAVESTATE, "Loaded state from %s size %d", filename.c_str(), total_size) ;
+	NOTICE_LOG(SAVESTATE, "Loaded state from %s size %d", filename.c_str(), total_size) ;
+
+	gdxsv.replay_mode = 1;
+	gdxsv.replay_state = 1;
 }
 
 void dc_load_game(const char *path)
