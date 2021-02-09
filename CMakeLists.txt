@@ -957,6 +957,7 @@ target_sources(${PROJECT_NAME} PRIVATE
         core/gdxsv/gdx_queue.h
         core/gdxsv/gdxsv_patch.h
         core/gdxsv/lbs_message.h
+        core/gdxsv/mcs_message.h
         core/gdxsv/battlelog.pb.cc
         core/gdxsv/battlelog.pb.h
         core/gdxsv/packet.pb.cc
