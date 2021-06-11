@@ -6,12 +6,24 @@
 #include <iomanip>
 
 #include "packet.pb.h"
+#include "battlelog.pb.h"
 #include "gdx_queue.h"
+#include "lbs_message.h"
+#include "mcs_message.h"
+
 #include "version.h"
 #include "rend/gui.h"
 #include "oslib/oslib.h"
 #include "lzma/CpuArch.h"
 #include "deps/crypto/sha1.h"
+
+extern void dc_stop();
+
+extern void dc_loadstate();
+
+extern void dc_resume();
+
+extern bool dc_is_load_done();
 
 Gdxsv::~Gdxsv() {
     tcp_client.Close();
@@ -31,6 +43,7 @@ bool Gdxsv::Enabled() const {
 }
 
 void Gdxsv::Reset() {
+    NOTICE_LOG(COMMON, "RESET__");
     if (settings.dreamcast.ContentPath.empty()) {
         settings.dreamcast.ContentPath.emplace_back("./");
     }
@@ -86,7 +99,6 @@ void Gdxsv::Reset() {
 void Gdxsv::Update() {
     if (!enabled) return;
     WritePatch();
-
     u8 dump_buf[1024];
     if (ReadMem32_nommu(symbols["print_buf_pos"])) {
         int n = ReadMem32_nommu(symbols["print_buf_pos"]);
@@ -99,6 +111,8 @@ void Gdxsv::Update() {
         WriteMem32_nommu(symbols["print_buf"], 0);
         NOTICE_LOG(COMMON, "%s", dump_buf);
     }
+
+    StartReplay();
 }
 
 std::string Gdxsv::GeneratePlatformInfoString() {
@@ -225,7 +239,9 @@ void Gdxsv::SyncNetwork(bool write) {
                 std::string host = server;
                 u16 port = port_no;
 
-                if (tolobby == 1) {
+                if (replay_mode) {
+                    replay_state++;
+                } else if (tolobby == 1) {
                     CloseUdpClientWithReason("cl_to_lobby");
                     bool ok = tcp_client.Connect(host.c_str(), port);
                     if (ok) {
@@ -303,7 +319,8 @@ void Gdxsv::SyncNetwork(bool write) {
             WriteMem32_nommu(gdx_rpc_addr + 20, 0);
         }
 
-        WriteMem32_nommu(symbols["is_online"], tcp_client.IsConnected() || udp_client.IsConnected());
+        WriteMem32_nommu(symbols["is_online"],
+                         tcp_client.IsConnected() || udp_client.IsConnected() || replay_state != 0);
 
         recv_buf_mtx.lock();
         int n = recv_buf.size();
@@ -328,6 +345,7 @@ void Gdxsv::SyncNetwork(bool write) {
         }
     }
 }
+
 
 void Gdxsv::GcpPingTest() {
     // powered by https://github.com/cloudharmony/network
@@ -407,7 +425,7 @@ void Gdxsv::GcpPingTest() {
 }
 
 void Gdxsv::UpdateNetwork() {
-    GcpPingTest();
+    // GcpPingTest();
     static const int kFirstMessageSize = 20;
 
     MessageBuffer message_buf;
@@ -477,6 +495,10 @@ void Gdxsv::UpdateNetwork() {
         }
         updated = false;
         if (!tcp_client.IsConnected() && !udp_client.IsConnected()) {
+            std::this_thread::sleep_for(std::chrono::milliseconds(1000));
+            continue;
+        }
+        if (replay_mode == 1) {
             std::this_thread::sleep_for(std::chrono::milliseconds(1000));
             continue;
         }
@@ -898,6 +920,301 @@ void Gdxsv::DismissUpdateDialog() {
 
 std::string Gdxsv::LatestVersion() {
     return latest_version;
+}
+
+void Gdxsv::StartReplay() {
+    int me = 0;
+    maxlag = 16;
+    static proto::BattleLogFile btlLog;
+    static std::deque<u8> replay_data;
+
+    auto read_sendbuf = [this](McsMessage &msg) -> int {
+        int n = msg.Deserialize(send_buf);
+        if (0 < n) {
+            send_buf.erase(send_buf.begin(), send_buf.begin() + n);
+        }
+        return n;
+    };
+
+    auto read_replay = [this](const std::function<bool(const McsMessage &)> &onread) {
+        McsMessage msg;
+        for (;;) {
+            int n = msg.Deserialize(replay_data);
+            if (0 < n) {
+                if (onread(msg)) {
+                    replay_data.erase(replay_data.begin(), replay_data.begin() + n);
+                } else {
+                    break;
+                }
+            } else {
+                break;
+            }
+        }
+    };
+
+
+    static int connection_status = 0;
+    int new_connection_status = ReadMem8_nommu(0x0c3abb88);
+    if (connection_status != new_connection_status) {
+        NOTICE_LOG(COMMON, "CON_ST: %x -> %x", connection_status, new_connection_status);
+        connection_status = new_connection_status;
+    }
+
+    if (replay_state) {
+        // TODO: NEED Patch - Skip ALL self MsgPush function
+        WriteMem16_nommu(0x8c045f64, 9);
+        WriteMem16_nommu(0x8c045e70, 9);
+    }
+
+    if (replay_state == 1) {
+        replay_state = 2;
+
+        NOTICE_LOG(COMMON, "StartReplay");
+        std::string logfile = "diskdc2-1612648435300.pb";
+        // std::string logfile = "diskdc2-1612801102972.pb";
+
+        FILE *fp = nowide::fopen(logfile.c_str(), "rb");
+        if (fp == nullptr) {
+            NOTICE_LOG(COMMON, "fopen failed");
+        }
+
+        bool ok = btlLog.ParseFromFileDescriptor(fp->_file);
+        if (!ok) {
+            NOTICE_LOG(COMMON, "ParseFromFileDescriptor failed");
+        }
+
+        NOTICE_LOG(COMMON, "game_disk = %s", btlLog.game_disk().c_str());
+        if (fp != nullptr) {
+            fclose(fp);
+        }
+
+        for (int i = 0; i < btlLog.battle_data_size(); ++i) {
+            const auto &data = btlLog.battle_data(i);
+            std::copy(std::begin(data.body()), std::end(data.body()), std::back_inserter(replay_data));
+        }
+
+        return;
+    }
+
+    if (replay_state == 2) {
+        replay_state = 3;
+        return;
+    }
+
+    if (replay_state == 3) {
+        send_buf_mtx.lock();
+        LbsMessage msg;
+        int sz = msg.Deserialize(send_buf);
+        send_buf.erase(send_buf.begin(), send_buf.begin() + sz);
+        send_buf_mtx.unlock();
+
+        if (sz != 0) {
+            recv_buf_mtx.lock();
+            NOTICE_LOG(COMMON, "RECV cmd=%04x", msg.command);
+
+            if (msg.command == LbsMessage::lbsLobbyMatchingEntry) {
+                LbsMessage::SvAnswer(msg).Serialize(recv_buf);
+                LbsMessage::SvNotice(LbsMessage::lbsReadyBattle).Serialize(recv_buf);
+            }
+
+            if (msg.command == LbsMessage::lbsAskMatchingJoin) {
+                int n = btlLog.users_size();
+                LbsMessage::SvAnswer(msg).Write8(4)->Serialize(recv_buf);
+            }
+
+            if (msg.command == LbsMessage::lbsAskPlayerSide) {
+                // camera player id
+                LbsMessage::SvAnswer(msg).Write8(me + 1)->Serialize(recv_buf);
+            }
+
+            if (msg.command == LbsMessage::lbsAskPlayerInfo) {
+                int pos = msg.Read8();
+                NOTICE_LOG(COMMON, "pos=%d", pos);
+                const auto &user = btlLog.users(pos - 1);
+                LbsMessage::SvAnswer(msg).
+                        Write8(pos)->
+                        WriteString(user.user_id())->
+                        WriteString(user.user_name())-> // TODO: need UTF8 -> SJIS
+                        WriteString(user.game_param())->
+                        Write16(0)-> // grade
+                        Write16(user.win_count())->
+                        Write16(user.lose_count())->
+                        Write16(0)->
+                        Write16(user.battle_count() - user.win_count() - user.lose_count())->
+                        Write16(0)->
+                        Write16(1 + (pos - 1) / 2)-> // TODO TEAM
+                        Write16(0)->
+                        Serialize(recv_buf);
+            }
+
+            if (msg.command == LbsMessage::lbsAskRuleData) {
+                LbsMessage::SvAnswer(msg).
+                        WriteBytes(btlLog.rule_bin())->
+                        Serialize(recv_buf);
+            }
+
+            if (msg.command == LbsMessage::lbsAskBattleCode) {
+                LbsMessage::SvAnswer(msg).
+                        WriteString(btlLog.battle_code())->
+                        Serialize(recv_buf);
+            }
+
+            if (msg.command == LbsMessage::lbsAskMcsVersion) {
+                LbsMessage::SvAnswer(msg).
+                        Write8(10)->Serialize(recv_buf);
+            }
+
+            if (msg.command == LbsMessage::lbsAskMcsAddress) {
+                LbsMessage::SvAnswer(msg).
+                        Write16(4)->Write8(127)->Write8(0)->Write8(0)->Write8(1)->
+                        Write16(2)->Write16(3333)->Serialize(recv_buf);
+            }
+
+            if (msg.command == LbsMessage::lbsLogout) {
+                replay_state++;
+            }
+
+            recv_buf_mtx.unlock();
+            return;
+        }
+    }
+
+    if (replay_state == 4) {
+        // wait until connect
+        return;
+    }
+
+    if (replay_state == 5) {
+        // get session_id from client
+        recv_buf_mtx.lock();
+        recv_buf.assign({0x0e, 0x61, 0x00, 0x22, 0x10, 0x31, 0x66, 0x77, 0x88, 0x99, 0xaa, 0xbb, 0xcc, 0xdd});
+        recv_buf_mtx.unlock();
+        replay_state++;
+        return;
+    }
+
+    if (replay_state == 6) {
+        send_buf_mtx.lock();
+        if (20 <= send_buf.size()) {
+            send_buf.clear();
+            replay_state++;
+        }
+        send_buf_mtx.unlock();
+        replay_seq = 0;
+        replay_ts = btlLog.battle_data(replay_seq).timestamp();
+        return;
+    }
+
+    if (replay_state == 7) {
+        send_buf_mtx.lock();
+        recv_buf_mtx.lock();
+
+        McsMessage tx, rx;
+        if (read_sendbuf(tx)) {
+            NOTICE_LOG(COMMON, "STATE %d", (int) replay_state);
+            NOTICE_LOG(COMMON, ">>> %dp %s\t%s", tx.sender, McsMsgKindName[int(tx.kind)], tx.to_hex().c_str());
+            if (tx.kind == McsMsgKind::PingMsg) {
+                replay_state++;
+            }
+        }
+
+        read_replay([this, me](const McsMessage &rx) {
+            if (rx.sender != me &&
+                (rx.kind == McsMsgKind::IntroMsg || rx.kind == McsMsgKind::IntroMsgReturn)) {
+                std::copy(std::begin(rx.body), std::end(rx.body), std::back_inserter(recv_buf));
+                NOTICE_LOG(COMMON, "<<< %dp %s\t%s", rx.sender, McsMsgKindName[int(rx.kind)], rx.to_hex().c_str());
+            }
+            if (rx.kind == McsMsgKind::PongMsg) return false;
+            return true;
+        });
+
+        send_buf_mtx.unlock();
+        recv_buf_mtx.unlock();
+    }
+
+    if (replay_state == 8) {
+        send_buf_mtx.lock();
+        recv_buf_mtx.lock();
+
+        McsMessage tx;
+        if (read_sendbuf(tx)) {
+            NOTICE_LOG(COMMON, "STATE %d", (int) replay_state);
+            NOTICE_LOG(COMMON, "send_buf %dp %s\t%s", tx.sender, McsMsgKindName[int(tx.kind)], tx.to_hex().c_str());
+
+            if (tx.kind == McsMsgKind::StartMsg) {
+                replay_state++;
+            }
+        }
+
+        read_replay([this, me](const McsMessage &rx) {
+            if (rx.sender != me && rx.kind == McsMsgKind::PongMsg) {
+                std::copy(std::begin(rx.body), std::end(rx.body), std::back_inserter(recv_buf));
+                NOTICE_LOG(COMMON, "<<< %dp %s\t%s", rx.sender, McsMsgKindName[int(rx.kind)], rx.to_hex().c_str());
+            }
+            if (rx.kind == McsMsgKind::StartMsg) return false;
+            return true;
+        });
+
+        send_buf_mtx.unlock();
+        recv_buf_mtx.unlock();
+    }
+
+    if (replay_state == 9) {
+        send_buf_mtx.lock();
+        recv_buf_mtx.lock();
+
+        if (connection_status == 5) {
+            replay_state++;
+        }
+
+        read_replay([this, me](const McsMessage &rx) {
+            if (rx.sender != me && rx.kind == McsMsgKind::StartMsg) {
+                std::copy(std::begin(rx.body), std::end(rx.body), std::back_inserter(recv_buf));
+                NOTICE_LOG(COMMON, "<<< %dp %s\t%s", rx.sender, McsMsgKindName[int(rx.kind)], rx.to_hex().c_str());
+            }
+            if (rx.kind == McsMsgKind::KeyMsg) return false;
+            return true;
+        });
+
+        send_buf_mtx.unlock();
+        recv_buf_mtx.unlock();
+    }
+
+    if (replay_state == 10) {
+        send_buf_mtx.lock();
+        recv_buf_mtx.lock();
+        McsMessage tx;
+        if (read_sendbuf(tx)) {
+            NOTICE_LOG(COMMON, "STATE %d", (int) replay_state);
+            NOTICE_LOG(COMMON, "send_buf %dp %s\t%s", tx.sender, McsMsgKindName[int(tx.kind)], tx.to_hex().c_str());
+
+            if (tx.kind == McsMsgKind::KeyMsg) {
+                read_replay([this, &tx, me](const McsMessage &rx) {
+                    if (rx.kind == McsMsgKind::KeyMsg) {
+                        if (rx.tail_frame() <= tx.tail_frame()) {
+                            std::copy(std::begin(rx.body), std::end(rx.body), std::back_inserter(recv_buf));
+                            NOTICE_LOG(COMMON, "<<< %dp %s\t%s", rx.sender, McsMsgKindName[int(rx.kind)],
+                                       rx.to_hex().c_str());
+                            return true;
+                        } else {
+                            return false;
+                        }
+                    }
+                    if (rx.sender != me && (rx.kind == McsMsgKind::LoadStartMsg || rx.kind == McsMsgKind::LoadEndMsg)) {
+                        std::copy(std::begin(rx.body), std::end(rx.body), std::back_inserter(recv_buf));
+                        return true;
+                    }
+                    if (rx.kind == McsMsgKind::PingMsg) {
+                        replay_state = 7;
+                        return false;
+                    }
+                    return true;
+                });
+            }
+        }
+        send_buf_mtx.unlock();
+        recv_buf_mtx.unlock();
+    }
 }
 
 Gdxsv gdxsv;
