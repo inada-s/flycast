@@ -9,11 +9,17 @@
 #include "hw/sh4/sh4_mmr.h"
 #include "hw/sh4/sh4_core.h"
 #include "hw/sh4/modules/ccn.h"
+#include "hw/sh4/modules/mmu.h"
 #include "hw/sh4/sh4_interrupts.h"
-#include "hw/sh4/sh4_cache.h"
 #include "debug/gdb_server.h"
-#include "debug/debug_agent.h"
+#include "hw/sh4/dyna/decoder.h"
+
 #include "emulator.h"
+#include "debug/debug_agent.h"
+
+#ifdef STRICT_MODE
+#include "hw/sh4/sh4_cache.h"
+#endif
 
 #define iNimp cpu_iNimp
 
@@ -1193,7 +1199,7 @@ sh4op(i0000_nnnn_1011_0011)
 
 //pref @<REG_N>
 template<bool mmu_on>
-INLINE void DYNACALL do_sqw(u32 Dest)
+void DYNACALL do_sqw(u32 Dest)
 {
 	//TODO : Check for enabled store queues ?
 	u32 Address;

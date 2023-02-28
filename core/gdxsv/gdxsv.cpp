@@ -17,6 +17,7 @@
 #include "oslib/oslib.h"
 #include "reios/reios.h"
 #include "version.h"
+#include "cfg/option.h"
 
 bool Gdxsv::InGame() const { return enabled && (netmode == NetMode::McsUdp || netmode == NetMode::McsRollback); }
 
@@ -242,6 +243,7 @@ std::vector<u8> Gdxsv::GenerateP2PMatchReportPacket() {
 LbsMessage Gdxsv::GenerateP2PMatchReportMessage() {
 	auto rbk_report = rollback_net.GetReport();
 	auto msg = LbsMessage::ClNotice(LbsMessage::lbsP2PMatchingReport);
+	/*
 	auto lines = inMemoryListener.GetLines(0, nullptr);
 
 	while (100 < lines.size()) {
@@ -251,6 +253,7 @@ LbsMessage Gdxsv::GenerateP2PMatchReportMessage() {
 	for (const auto &line : lines) {
 		*rbk_report.mutable_logs()->Add() = line;
 	}
+	*/
 
 	std::string data;
 	if (rbk_report.SerializePartialToString(&data)) {
