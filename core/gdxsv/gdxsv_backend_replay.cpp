@@ -188,13 +188,23 @@ void GdxsvBackendReplay::OnVBlank() {
 				ctrl.var2 = skip_frames;
 				settings.aica.muteAudio = true;
 				rend_enable_renderer(false);
+				// settings.gdxsv.skipRenderingHack = true;
+				// settings.gdxsv.skipAicaHack = true;
 				gui_display_notification(">>", duration);
+			} else {
+				ctrl.var2--;
 			}
-			if (ctrl.var2-- == 0) {
+
+			if (ctrl.var2 == 1) {
+				settings.gdxsv.skipRenderingHack = false;
+				settings.gdxsv.skipAicaHack = false;
 				settings.aica.muteAudio = false;
-				rend_enable_renderer(true);
 				auto ms = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::high_resolution_clock::now() - t0).count();
 				NOTICE_LOG(COMMON, "SomeFrameForward skipped %d[fr] in %ld[ms] (%.2f[ms/fr])", skip_frames, ms, (float)ms / skip_frames);
+			}
+
+			if (ctrl.var2 == 0) {
+				rend_enable_renderer(true);
 				ctrl_commands_.pop_front();
 			} else {
 				break;

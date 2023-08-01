@@ -309,6 +309,13 @@ struct settings_t
 		int drivingSimSlave;
 	} naomi;
 
+	struct
+	{
+		int disk;
+		bool skipRenderingHack;
+		bool skipAicaHack;
+	} gdxsv;
+
 	bool disableRenderer;
 };
 

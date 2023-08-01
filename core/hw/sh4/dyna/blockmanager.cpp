@@ -55,6 +55,11 @@ static DynarecCodeEntryPtr DYNACALL bm_GetCode(u32 addr)
 // This returns an executable address
 DynarecCodeEntryPtr DYNACALL bm_GetCodeByVAddr(u32 addr)
 {
+	if (addr == 0x0c0520e2 && settings.gdxsv.disk == 2 && settings.gdxsv.skipRenderingHack) {
+		next_pc += 4;
+		addr = next_pc;
+	}
+
 	if (!mmu_enabled())
 		return bm_GetCode(addr);
 

@@ -759,7 +759,8 @@ void run(u32 samples)
 		if (Arm7Enabled)
 		{
 			arm_Reg[CYCL_CNT].I += ARM_CYCLES_PER_SAMPLE;
-			arm_mainloop(arm_Reg, recompiler::EntryPoints);
+			if (!settings.gdxsv.skipAicaHack)
+				arm_mainloop(arm_Reg, recompiler::EntryPoints);
 		}
 		timeStep();
 	}

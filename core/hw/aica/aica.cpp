@@ -111,7 +111,8 @@ void timeStep()
 	SCIPD->SAMPLE_DONE = 1;
 	MCIPD->SAMPLE_DONE = 1;
 
-	sgc::AICA_Sample();
+	if (!settings.gdxsv.skipAicaHack)
+		sgc::AICA_Sample();
 
 	//Make sure sh4/arm interrupt system is up to date
 	update_arm_interrupts();

@@ -87,6 +87,7 @@ void Gdxsv::Reset() {
 	replay_net_.Reset();
 	netmode_ = NetMode::Offline;
 	http::init();
+	settings.gdxsv.disk = 0;
 
 	// Automatically add ContentPath if it is empty.
 	if (config::ContentPath.get().empty()) {
@@ -115,6 +116,7 @@ void Gdxsv::Reset() {
 	std::string disk_num(ip_meta.disk_num, 1);
 	if (disk_num == "1") disk_ = 1;
 	if (disk_num == "2") disk_ = 2;
+	settings.gdxsv.disk = disk_;
 
 	maxrebattle_ = 5;
 
