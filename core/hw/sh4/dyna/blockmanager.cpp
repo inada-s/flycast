@@ -9,6 +9,8 @@
 #include "blockmanager.h"
 #include "ngen.h"
 
+#include "gdxsv/gdxsv_prof.h"
+
 #include "hw/sh4/sh4_core.h"
 #include "hw/sh4/sh4_interrupts.h"
 #include "hw/sh4/sh4_mem.h"
@@ -55,10 +57,85 @@ static DynarecCodeEntryPtr DYNACALL bm_GetCode(u32 addr)
 // This returns an executable address
 DynarecCodeEntryPtr DYNACALL bm_GetCodeByVAddr(u32 addr)
 {
-	if (addr == 0x0c0520e2 && settings.gdxsv.disk == 2 && settings.gdxsv.skipRenderingHack) {
-		next_pc += 4;
-		addr = next_pc;
+	if (settings.gdxsv.disk == 2) {
+		// Hack: skip something of game rendering function
+		if (addr == 0x0c0520e2 && settings.gdxsv.skipRenderingHack) {
+			next_pc += 4;
+			addr = next_pc;
+		}
+
+		// Hack: skip VBlank
+		if (settings.gdxsv.skipVBlankHack) {
+			if (addr == 0x0c2b4ba0) {
+				next_pc += 12;
+				addr = next_pc;
+			} else if (addr == 0x0c2b4bb0) {
+				next_pc += 12;
+				addr = next_pc;
+			} else if (addr == 0x0c0520f2) {
+				const int COM_R_No0 = settings.gdxsv.disk == 1 ? 0x0c2f6639 : 0x0c391d79;
+				if (ReadMem8_nommu(COM_R_No0) == 4 && ReadMem8_nommu(COM_R_No0 + 5) == 0) {
+					next_pc = 0x0c0520f4;
+					addr = next_pc;
+					void rend_vblank();
+					rend_vblank();
+				}
+			}
+		}
 	}
+
+	/*
+	auto profile = [addr](const char* name, u32 begin_addr, u32 end_addr) {
+		if (addr == begin_addr) gdxsv_prof.Start(name);
+		if (addr == end_addr) gdxsv_prof.Stop(name);
+	};
+
+	// main loop
+	if (0x0c052020 <= addr && addr <= 0x0c0520f6) {
+		profile("main_loop_internal", 0x0c052020, 0x0c0520f2);
+		profile("game_update", 0x0c0520b2, 0x0c0520b6);
+		profile("render_current_frame", 0x0c0520e2, 0x0c0520e6);
+		profile("vblank", 0x0c0520f2, 0x0c0520f6);
+		if (addr == 0x0c0520f2) {
+			// Just before vblank
+			gdxsv_prof.Print();
+		}
+	}
+
+	// vblank
+	if (0x0c1978c0 <= addr && addr <= 0x0c19791c) {
+		profile("vblank A", 0x0c1978c0, 0x0c1978cc);
+		profile("vblank B", 0x0c1978cc, 0x0c1978d2);
+		profile("vblank C", 0x0c1978d2, 0x0c1978d8);
+		profile("vblank D", 0x0c1978e0, 0x0c1978e4);
+		profile("vblank E", 0x0c1978e4, 0x0c1978ec);
+		profile("vblank F", 0x0c1978f4, 0x0c1978f8);
+		profile("vblank G", 0x0c1978f8, 0x0c197900);
+		profile("vblank H", 0x0c197900, 0x0c197908);
+		profile("vblank I", 0x0c197918, 0x0c19791c);
+	}
+
+	// vblank G
+	if (0x0c2b47c0 <= addr && addr <= 0x0c2b498e) {
+		profile("vblank G do-while1", 0x0c2b4828, 0x0c2b4832);
+		profile("vblank G do-while2", 0x0c2b4854, 0x0c2b485e);
+		profile("vblank G do-while3", 0x0c2b4866, 0x0c2b48a6);
+		profile("vblank G do-while4", 0x0c2b48ac, 0x0c2b48cc);
+		profile("vblank G FUN_0c2cd85e", 0x0c2b497e, 0x0c2b4988);
+	}
+
+	// vblank G FUN_0c2cd85e
+	if (0x0c2cd85e <= addr && addr <= 0x0c2cda6a) {
+		profile("vblank G FUN_0c2cd85e FUN_0c2cd1c0", 0x0c2cd89a, 0x0c2cd89e);
+		profile("vblank G FUN_0c2cd85e FUN_0c2ca680", 0x0c2cd896, 0x0c2cd89a);
+		profile("vblank G FUN_0c2cd85e loop1", 0x0c2cd904, 0x0c2cd930);
+		profile("vblank G FUN_0c2cd85e FUN_0c2cd240", 0x0c2cda06, 0x0c2cda1e);
+		profile("vblank G FUN_0c2cd85e loop2", 0x0c2cd964, 0x0c2cd990);
+		profile("vblank G FUN_0c2cd85e FUN_0c2ca680", 0x0c2cd9e0, 0x0c2cd9e4);
+		profile("vblank G FUN_0c2cd85e FUN_0c2cd48e", 0x0c2cd9e4, 0x0c2cd9e8);
+		profile("vblank G FUN_0c2cd85e FUN_0c2cd37e", 0x0c2cd9ee, 0x0c2cd9f2);
+	}
+	*/
 
 	if (!mmu_enabled())
 		return bm_GetCode(addr);

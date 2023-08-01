@@ -60,18 +60,6 @@ class GdxsvBackendReplay {
 	void Stop();
 	bool ChangeRoundAvailable() const;
 
-	// Replay control
-	void CtrlSpeedUp();
-	void CtrlSpeedDown();
-	void CtrlSetSpeed(int speed);
-	void CtrlTogglePause();
-	void CtrlStepFrame();
-	void CtrlSomeFrameBackward();
-	void CtrlSomeFrameForward();
-	void CtrlSetRound(int round);
-	void CtrlNextRound();
-	void CtrlPrevRound();
-
 	// Network Backend Interface
 	void Open();
 	void Close();
@@ -88,7 +76,21 @@ class GdxsvBackendReplay {
 	void RestorePatch();
 	void RenderPauseMenu();
 
+	// Replay control (need mutex lock)
+	void CtrlSpeedUp();
+	void CtrlSpeedDown();
+	void CtrlSetSpeed(int speed);
+	void CtrlTogglePause();
+	void CtrlStepFrame();
+	void CtrlSomeFrameBackward();
+	void CtrlSomeFrameForward();
+	void CtrlSetRound(int round);
+	void CtrlNextRound();
+	void CtrlPrevRound();
+
 	State state_;
+	std::recursive_mutex ctrl_mtx_;
+	std::deque<ReplayCtrlCommand> ctrl_commands_;
 	bool pause_menu_opend_;
 	LbsMessageReader lbs_tx_reader_;
 	proto::BattleLogFile log_file_;
@@ -97,7 +99,6 @@ class GdxsvBackendReplay {
 	int recv_delay_;
 	int start_msg_count_;
 	int key_msg_count_;
-	std::deque<ReplayCtrlCommand> ctrl_commands_;
 	bool ctrl_pause_;
 	int ctrl_play_speed_;
 	int ctrl_step_frame_;

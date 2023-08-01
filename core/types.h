@@ -313,6 +313,7 @@ struct settings_t
 	{
 		int disk;
 		bool skipRenderingHack;
+		bool skipVBlankHack;
 		bool skipAicaHack;
 	} gdxsv;
 

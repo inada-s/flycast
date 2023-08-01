@@ -665,19 +665,13 @@ static void gui_display_commands()
 	{
 		DisabledScope scope(gdxsv_is_online());
 		
-		if (!gdxsv_is_replaying() && ImGui::Button("Replays", ScaledVec2(300, 50) + ImVec2(ImGui::GetStyle().ColumnsMinSpacing + ImGui::GetStyle().FramePadding.x * 2 - 1, 0)) && !scope.isDisabled())
+		if (ImGui::Button("Replays", ScaledVec2(300, 50) + ImVec2(ImGui::GetStyle().ColumnsMinSpacing + ImGui::GetStyle().FramePadding.x * 2 - 1, 0)) && !scope.isDisabled())
 		{
 			gui_state = GuiState::GdxsvReplay;
 		}
 		if (gdxsv_is_online() && ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled))
 		{
 			ImGui::SetTooltip("Please disconnect from the Gdxsv server first.");
-		}
-		
-		if (gdxsv_is_replaying() && ImGui::Button("Stop Replay", ScaledVec2(300, 50) + ImVec2(ImGui::GetStyle().ColumnsMinSpacing + ImGui::GetStyle().FramePadding.x * 2 - 1, 0)))
-		{
-			gui_state = GuiState::Closed;
-			gdxsv_stop_replay();
 		}
 	}
 	

@@ -2087,6 +2087,8 @@ target_sources(${PROJECT_NAME} PRIVATE
 		core/gdxsv/gdxsv_network.cpp
 		core/gdxsv/gdxsv_network.h
 		core/gdxsv/gdxsv_patch.inc
+		core/gdxsv/gdxsv_prof.h
+		core/gdxsv/gdxsv_prof.cpp
 		core/gdxsv/gdxsv_emu_hooks.cpp
 		core/gdxsv/gdxsv_emu_hooks.h
 		core/gdxsv/gdxsv_update.h

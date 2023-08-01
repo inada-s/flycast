@@ -12,7 +12,7 @@
 #include "gdx_rpc.h"
 #include "gdxsv_key_display.h"
 #include "gdxsv_translation.h"
-#include "hw/sh4/dyna/blockmanager.h"
+#include "gdxsv_prof.h"
 #include "imgui/imgui.h"
 #include "libs.h"
 #include "log/InMemoryListener.h"
@@ -229,6 +229,8 @@ bool Gdxsv::HookOpenMenu() {
 }
 
 void Gdxsv::HookVBlank() {
+	// NOTICE_LOG(COMMON, "==== VBLANK ====");
+
 	if (netmode_ != NetMode::Lbs && lbs_net_.IsConnected()) {
 		lbs_net_.OnSockPoll();
 	}
