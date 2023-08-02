@@ -24,6 +24,10 @@ void gdxsv_emu_reset();
 
 void gdxsv_emu_vblank();
 
+void gdxsv_emu_end_frame();
+
+void gdxsv_emu_next_frame();
+
 void gdxsv_emu_mainui_loop();
 
 void gdxsv_emu_rpc();

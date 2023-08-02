@@ -886,6 +886,7 @@ void Emulator::run()
 	renderTimeout = false;
 	try {
 		runInternal();
+		gdxsv_emu_next_frame();
 		if (ggpo::active())
 			ggpo::nextFrame();
 	} catch (...) {
@@ -936,6 +937,7 @@ void Emulator::start()
 						runInternal();
 						// NOTE: modified for gdxsv
 						// to keep running emulator thread if ggpo stopped.
+						gdxsv_emu_next_frame();
 						if (ggpo::active()) ggpo::nextFrame();
 						// if (!ggpo::nextFrame()) break;
 					}
@@ -1012,6 +1014,7 @@ void Emulator::vblank()
 	if (sh4_sched_now64() - startTime <= 10000000)
 		return;
 	renderTimeout = true;
+	gdxsv_emu_end_frame();
 	if (ggpo::active())
 		ggpo::endOfFrame();
 	else if (!config::ThreadedRendering)

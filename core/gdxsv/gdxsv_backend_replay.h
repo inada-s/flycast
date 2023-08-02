@@ -45,13 +45,12 @@ class GdxsvBackendReplay {
 		Command cmd;
 		int arg1;
 		int arg2;
-		int var1;
-		int var2;
 	};
 
 	void Reset();
 	void OnMainUiLoop();
-	void OnVBlank();
+	void OnEndOfFrame();
+	void OnNextFrame();
 	bool OnOpenMenu();
 	void DisplayOSD();
 
@@ -67,7 +66,7 @@ class GdxsvBackendReplay {
 	u32 OnSockRead(u32 addr, u32 size);
 	u32 OnSockPoll();
 
-   private:
+private:
 	bool Start();
 	void PrintDisconnectionSummary();
 	void ProcessLbsMessage();
@@ -89,8 +88,47 @@ class GdxsvBackendReplay {
 	void CtrlPrevRound();
 
 	State state_;
-	std::recursive_mutex ctrl_mtx_;
-	std::deque<ReplayCtrlCommand> ctrl_commands_;
+	class {
+	public:
+		void push_back(const ReplayCtrlCommand& cmd) {
+			std::lock_guard lock(mtx_);
+			cmds_.push_back(cmd);
+		}
+		void pop_front() {
+			std::lock_guard lock(mtx_);
+			cmds_.pop_front();
+		}
+		ReplayCtrlCommand& front() {
+			std::lock_guard lock(mtx_);
+			return cmds_.front();
+		}
+		size_t size() {
+			std::lock_guard lock(mtx_);
+			return cmds_.size();
+		}
+		bool empty() {
+			std::lock_guard lock(mtx_);
+			return cmds_.empty();
+		}
+		bool contains(ReplayCtrlCommand::Command c) {
+			std::lock_guard lock(mtx_);
+			for (const auto& cmd : cmds_) {
+				if (cmd.cmd == c) {
+					return true;
+				}
+			}
+			return false;
+		}
+		void clear() {
+			std::lock_guard lock(mtx_);
+			cmds_.clear();
+		}
+	private:
+		std::recursive_mutex mtx_;
+		std::deque<ReplayCtrlCommand> cmds_;
+	} ctrl_commands_;
+	bool end_of_frame_;
+	bool seeking_;
 	bool pause_menu_opend_;
 	LbsMessageReader lbs_tx_reader_;
 	proto::BattleLogFile log_file_;

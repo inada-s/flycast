@@ -66,6 +66,8 @@ DynarecCodeEntryPtr DYNACALL bm_GetCodeByVAddr(u32 addr)
 
 		// Hack: skip VBlank
 		if (settings.gdxsv.skipVBlankHack) {
+			// TODO:
+			/*
 			if (addr == 0x0c2b4ba0) {
 				next_pc += 12;
 				addr = next_pc;
@@ -81,10 +83,11 @@ DynarecCodeEntryPtr DYNACALL bm_GetCodeByVAddr(u32 addr)
 					rend_vblank();
 				}
 			}
+			*/
 		}
 	}
 
-	/*
+
 	auto profile = [addr](const char* name, u32 begin_addr, u32 end_addr) {
 		if (addr == begin_addr) gdxsv_prof.Start(name);
 		if (addr == end_addr) gdxsv_prof.Stop(name);
@@ -96,12 +99,11 @@ DynarecCodeEntryPtr DYNACALL bm_GetCodeByVAddr(u32 addr)
 		profile("game_update", 0x0c0520b2, 0x0c0520b6);
 		profile("render_current_frame", 0x0c0520e2, 0x0c0520e6);
 		profile("vblank", 0x0c0520f2, 0x0c0520f6);
-		if (addr == 0x0c0520f2) {
-			// Just before vblank
-			gdxsv_prof.Print();
-		}
+		// if (addr == 0x0c0520f2) { // Just before vblank NOTICE_LOG(COMMON, "Just Before vblank");
+		// } if (addr == 0x0c0520f6) { NOTICE_LOG(COMMON, "Just After vblank"); }
 	}
 
+	/*
 	// vblank
 	if (0x0c1978c0 <= addr && addr <= 0x0c19791c) {
 		profile("vblank A", 0x0c1978c0, 0x0c1978cc);

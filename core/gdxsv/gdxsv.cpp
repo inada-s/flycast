@@ -238,10 +238,24 @@ void Gdxsv::HookVBlank() {
 		// Don't edit memory at vsync if ggpo::active
 		WritePatch();
 	}
+}
+
+void Gdxsv::HookEndOfFrame()
+{
+	NOTICE_LOG(COMMON, "HookEndOfFrame");
 	if (netmode_ == NetMode::Replay) {
-		gdxsv.replay_net_.OnVBlank();
+		gdxsv.replay_net_.OnEndOfFrame();
 	}
 }
+
+void Gdxsv::HookNextFrame()
+{
+	NOTICE_LOG(COMMON, "HookNextFrame");
+	if (netmode_ == NetMode::Replay) {
+		gdxsv.replay_net_.OnNextFrame();
+	}
+}
+
 
 void Gdxsv::HookMainUiLoop() {
 	if (!enabled_) return;

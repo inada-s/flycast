@@ -38,6 +38,8 @@ class Gdxsv {
 	bool HookOpenMenu();
 	void HookVBlank();
 	void HookMainUiLoop();
+	void HookEndOfFrame();
+	void HookNextFrame();
 	void HandleRPC();
 	void RestoreOnlinePatch();
 	void StartPingTest();
@@ -51,7 +53,7 @@ class Gdxsv {
 	std::string UserId() const { return user_id_; }
 	MiniUPnP& UPnP() { return upnp_; }
 
-   private:
+private:
 	void AddPortMapping();
 	static std::string GenerateLoginKey();
 	std::vector<u8> GeneratePlatformInfoPacket();

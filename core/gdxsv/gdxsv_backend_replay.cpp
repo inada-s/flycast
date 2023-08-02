@@ -25,10 +25,7 @@ void GdxsvBackendReplay::Reset() {
 	recv_delay_ = 0;
 	start_msg_count_ = 0;
 	pov_ = 0;
-	{
-		std::lock_guard lock(ctrl_mtx_);
-		ctrl_commands_.clear();
-	}
+	ctrl_commands_.clear();
 	gdxsv_save_state.Reset();
 	gdxsv.key_display_.Clear();
 }
@@ -57,11 +54,9 @@ void GdxsvBackendReplay::OnMainUiLoop() {
 		return;
 	}
 
-	std::lock_guard lock(ctrl_mtx_);
-
 	if (state_ == State::Start) {
 		kcode[0] = ~0x0004u;
-		ctrl_commands_.emplace_back(ReplayCtrlCommand{ReplayCtrlCommand::SomeFrameForward, 60});
+		ctrl_commands_.push_back(ReplayCtrlCommand{ReplayCtrlCommand::SomeFrameForward, 60});
 	}
 
 	if (state_ == State::McsInBattle) {
@@ -73,7 +68,7 @@ void GdxsvBackendReplay::OnMainUiLoop() {
 		} else if (gdxsv_ReadMem8(COM_R_No0) == 4 && gdxsv_ReadMem8(COM_R_No0 + 5) != 0) {
 			// not game scene
 			if (ctrl_commands_.empty()) {
-				ctrl_commands_.emplace_back(ReplayCtrlCommand{ReplayCtrlCommand::SeekToBriefing });
+				ctrl_commands_.push_back(ReplayCtrlCommand{ReplayCtrlCommand::SeekToBriefing });
 			}
 		}
 	}
@@ -120,7 +115,15 @@ void GdxsvBackendReplay::OnMainUiLoop() {
 	}
 }
 
-void GdxsvBackendReplay::OnVBlank() {
+void GdxsvBackendReplay::OnEndOfFrame() {
+	end_of_frame_ = true;
+	sh4_cpu.Stop();
+}
+
+void GdxsvBackendReplay::OnNextFrame() {
+	if (!end_of_frame_) return;
+	if (seeking_) return;
+
 	constexpr int save_interval = 180;
 	auto in_briefing = [disk = gdxsv.Disk()]() -> bool {
 		return disk == 1 ? gdxsv_ReadMem8(0x0c336254) == 2 && gdxsv_ReadMem8(0x0c336255) == 5
@@ -131,6 +134,10 @@ void GdxsvBackendReplay::OnVBlank() {
 						 : gdxsv_ReadMem8(0x0c3d16d4) == 2 && gdxsv_ReadMem8(0x0c3d16d5) == 7;
 	};
 
+	auto need_cancel = [&]() -> bool {
+		return ctrl_commands_.contains(ReplayCtrlCommand::SaveFirstFrame) || state_ == State::End;
+	};
+
 	gdxsv.key_display_.enabled(config::GdxReplayKeyDisplay && in_game());
 
 	// Regular save state
@@ -138,16 +145,10 @@ void GdxsvBackendReplay::OnVBlank() {
 		gdxsv_save_state.SaveState(key_msg_count_);
 	}
 
-	std::lock_guard lock(ctrl_mtx_);
 	while (!ctrl_commands_.empty()) {
-		bool need_cancel = std::find_if(ctrl_commands_.begin(), ctrl_commands_.end(), [](const ReplayCtrlCommand& c) {
-			return c.cmd == ReplayCtrlCommand::SaveFirstFrame;
-			}) != ctrl_commands_.end();
-		need_cancel |= state_ == State::End;
-
 		constexpr int duration = 1000;
-		auto &ctrl = ctrl_commands_.front();
 
+		auto& ctrl = ctrl_commands_.front();
 		if (ctrl.cmd == ReplayCtrlCommand::TogglePauseMenu) {
 			pause_menu_opend_ = !pause_menu_opend_;
 			SDL_ShowCursor(pause_menu_opend_ ? SDL_ENABLE : SDL_DISABLE);
@@ -198,59 +199,56 @@ void GdxsvBackendReplay::OnVBlank() {
 		}
 
 		if (ctrl.cmd == ReplayCtrlCommand::SomeFrameForward) {
-			static high_resolution_clock::time_point t0;
+			gui_display_notification(">>", duration);
 			const int skip_frames = 1 <= ctrl.arg1 ? ctrl.arg1 : save_interval;
-			if (ctrl.var1 == 0) {
-				t0 = high_resolution_clock::now();
-				ctrl.var1 = 1;
-				ctrl.var2 = skip_frames;
-				rend_enable_renderer(false);
+			int skipped_frame;
+			auto t0 = high_resolution_clock::now();
+			gdxsv_prof.Reset();
+
+			for (skipped_frame = 0; skipped_frame < skip_frames; skipped_frame++) {
+				settings.aica.muteAudio = true;
 				settings.gdxsv.skipRenderingHack = true;
 				settings.gdxsv.skipVBlankHack = true;
-				// settings.gdxsv.skipAicaHack = true;
-				settings.aica.muteAudio = true;
-				// gdxsv_prof.Reset();
-				gui_display_notification(">>", duration);
-			} else {
-				ctrl.var2--;
-			}
-
-			if (ctrl.var2 == 0 || need_cancel) {
+				rend_enable_renderer(false);
+				seeking_ = true;
+				emu.run();
+				// Regular save state
+				if ((in_briefing() || in_game()) && gdxsv_save_state.LastSavedFrame() + save_interval <= key_msg_count_ && recv_buf_.empty()) {
+					gdxsv_save_state.SaveState(key_msg_count_);
+				}
+				settings.aica.muteAudio = false;
 				settings.gdxsv.skipRenderingHack = false;
 				settings.gdxsv.skipVBlankHack = false;
-				settings.aica.muteAudio = false;
-				const auto ms = duration_cast<milliseconds>(high_resolution_clock::now() - t0).count();
-				NOTICE_LOG(COMMON, "SomeFrameForward skipped %d[fr] in %ld[ms] (%.2f[ms/fr]) cancel=%d", skip_frames, ms, (float)ms / skip_frames, need_cancel);
 				rend_enable_renderer(true);
-				ctrl_commands_.pop_front();
-			} else {
-				break;
+				seeking_ = false;
+				end_of_frame_ = false;
+				if (need_cancel()) break;
 			}
+
+			const auto ms = duration_cast<milliseconds>(high_resolution_clock::now() - t0).count();
+			NOTICE_LOG(COMMON, "SomeFrameForward skipped %d[fr] in %ld[ms] (%.2f[ms/fr]) cancel=%d", skipped_frame, ms, (float)ms / skipped_frame, need_cancel());
+			gdxsv_prof.Print();
+			ctrl_commands_.pop_front();
 		}
 
 		if (ctrl.cmd == ReplayCtrlCommand::SeekToBriefing) {
-			ctrl.var1++;
-
-			if (ctrl.var1 == 1) {
-				if (in_briefing() || in_game() || need_cancel) {
-					ctrl_commands_.pop_front();
-				} else {
-					settings.aica.muteAudio = true;
-					settings.gdxsv.skipRenderingHack = true;
-					settings.gdxsv.skipVBlankHack = true;
-					rend_enable_renderer(false);
-				}
-			} else if (in_briefing() || in_game() || need_cancel) {
+			while (!(in_briefing() || in_game() || need_cancel())) {
+				settings.aica.muteAudio = true;
+				settings.gdxsv.skipRenderingHack = true;
+				settings.gdxsv.skipVBlankHack = true;
+				rend_enable_renderer(false);
+				seeking_ = true;
+				emu.run();
 				settings.aica.muteAudio = false;
 				settings.gdxsv.skipRenderingHack = false;
 				settings.gdxsv.skipVBlankHack = false;
 				rend_enable_renderer(true);
-				gdxsv.key_display_.Clear();
-				ctrl_commands_.pop_front();
-				NOTICE_LOG(COMMON, "SeekToBriefing cancel=%d", need_cancel);
-			} else {
-				break;
+				seeking_ = false;
+				end_of_frame_ = false;
+				if (need_cancel()) break;
 			}
+			ctrl_commands_.pop_front();
+			gdxsv.key_display_.Clear();
 		}
 
 		if (ctrl.cmd == ReplayCtrlCommand::SomeFrameBackward) {
@@ -317,7 +315,7 @@ void GdxsvBackendReplay::OnVBlank() {
 				gdxsv.maxlag_ = 1;	// for StartMsg
 				NOTICE_LOG(COMMON, "ctrl_change_round_:%d key_msg_count_:%d", round, key_msg_count_);
 				NOTICE_LOG(COMMON, "start_msg_randoms_size:%d", log_file_.start_msg_randoms_size());
-				ctrl_commands_.emplace_back(ReplayCtrlCommand{ReplayCtrlCommand::SeekToBriefing});
+				ctrl_commands_.push_back(ReplayCtrlCommand{ReplayCtrlCommand::SeekToBriefing});
 			}
 
 			ctrl_commands_.pop_front();
@@ -330,8 +328,7 @@ bool GdxsvBackendReplay::OnOpenMenu() {
 		return false;
 	}
 
-	std::lock_guard lock(ctrl_mtx_);
-	ctrl_commands_.emplace_back(ReplayCtrlCommand{ReplayCtrlCommand::TogglePauseMenu});
+	ctrl_commands_.push_back(ReplayCtrlCommand{ReplayCtrlCommand::TogglePauseMenu});
 
 	return false;
 }
@@ -386,12 +383,9 @@ bool GdxsvBackendReplay::StartBuffer(const std::vector<u8> &buf, int pov) {
 }
 
 void GdxsvBackendReplay::Stop() {
-	{
-		std::lock_guard lock(ctrl_mtx_);
-		ctrl_commands_.clear();
-	}
 	RestorePatch();
 	config::SkipFrame.reset();
+	ctrl_commands_.clear();
 	settings.gdxsv.skipRenderingHack = false;
 	settings.gdxsv.skipVBlankHack = false;
 	settings.aica.muteAudio = false;
@@ -436,30 +430,30 @@ bool GdxsvBackendReplay::ChangeRoundAvailable() const {
 	return 0 < log_file_.start_msg_indexes_size() && log_file_.start_msg_indexes_size() == log_file_.start_msg_randoms_size();
 }
 
-void GdxsvBackendReplay::CtrlSpeedUp() { ctrl_commands_.emplace_back(ReplayCtrlCommand{ReplayCtrlCommand::ChangeSpeed, 1}); }
+void GdxsvBackendReplay::CtrlSpeedUp() { ctrl_commands_.push_back(ReplayCtrlCommand{ReplayCtrlCommand::ChangeSpeed, 1}); }
 
-void GdxsvBackendReplay::CtrlSpeedDown() { ctrl_commands_.emplace_back(ReplayCtrlCommand{ReplayCtrlCommand::ChangeSpeed, -1}); }
+void GdxsvBackendReplay::CtrlSpeedDown() { ctrl_commands_.push_back(ReplayCtrlCommand{ReplayCtrlCommand::ChangeSpeed, -1}); }
 
 void GdxsvBackendReplay::CtrlSetSpeed(int speed) {
-	ctrl_commands_.emplace_back(ReplayCtrlCommand{
+	ctrl_commands_.push_back(ReplayCtrlCommand{
 		ReplayCtrlCommand::SetSpeed,
 		speed,
 	});
 }
 
-void GdxsvBackendReplay::CtrlTogglePause() { ctrl_commands_.emplace_back(ReplayCtrlCommand{ReplayCtrlCommand::TogglePause}); }
+void GdxsvBackendReplay::CtrlTogglePause() { ctrl_commands_.push_back(ReplayCtrlCommand{ReplayCtrlCommand::TogglePause}); }
 
-void GdxsvBackendReplay::CtrlStepFrame() { ctrl_commands_.emplace_back(ReplayCtrlCommand{ReplayCtrlCommand::StepFrame}); }
+void GdxsvBackendReplay::CtrlStepFrame() { ctrl_commands_.push_back(ReplayCtrlCommand{ReplayCtrlCommand::StepFrame}); }
 
-void GdxsvBackendReplay::CtrlSomeFrameBackward() { ctrl_commands_.emplace_back(ReplayCtrlCommand{ReplayCtrlCommand::SomeFrameBackward}); }
+void GdxsvBackendReplay::CtrlSomeFrameBackward() { ctrl_commands_.push_back(ReplayCtrlCommand{ReplayCtrlCommand::SomeFrameBackward}); }
 
-void GdxsvBackendReplay::CtrlSomeFrameForward() { ctrl_commands_.emplace_back(ReplayCtrlCommand{ReplayCtrlCommand::SomeFrameForward}); }
+void GdxsvBackendReplay::CtrlSomeFrameForward() { ctrl_commands_.push_back(ReplayCtrlCommand{ReplayCtrlCommand::SomeFrameForward}); }
 
-void GdxsvBackendReplay::CtrlSetRound(int round) { ctrl_commands_.emplace_back(ReplayCtrlCommand{ReplayCtrlCommand::SetRound, round}); }
+void GdxsvBackendReplay::CtrlSetRound(int round) { ctrl_commands_.push_back(ReplayCtrlCommand{ReplayCtrlCommand::SetRound, round}); }
 
-void GdxsvBackendReplay::CtrlNextRound() { ctrl_commands_.emplace_back(ReplayCtrlCommand{ReplayCtrlCommand::ChangeRound, 1}); }
+void GdxsvBackendReplay::CtrlNextRound() { ctrl_commands_.push_back(ReplayCtrlCommand{ReplayCtrlCommand::ChangeRound, 1}); }
 
-void GdxsvBackendReplay::CtrlPrevRound() { ctrl_commands_.emplace_back(ReplayCtrlCommand{ReplayCtrlCommand::ChangeRound, -1}); }
+void GdxsvBackendReplay::CtrlPrevRound() { ctrl_commands_.push_back(ReplayCtrlCommand{ReplayCtrlCommand::ChangeRound, -1}); }
 
 void GdxsvBackendReplay::Open() {
 	recv_buf_.assign({0x0e, 0x61, 0x00, 0x22, 0x10, 0x31, 0x66, 0x77, 0x88, 0x99, 0xaa, 0xbb, 0xcc, 0xdd});
@@ -887,12 +881,9 @@ void GdxsvBackendReplay::ProcessMcsMessage(const McsMessage &msg) {
 			}
 		}
 
-		{
-			std::lock_guard lock(ctrl_mtx_);
-			ctrl_commands_.emplace_back(ReplayCtrlCommand{ReplayCtrlCommand::SaveFirstFrame});
-			ctrl_commands_.emplace_back(ReplayCtrlCommand{ReplayCtrlCommand::SetMaxLag, 1});
-			ctrl_commands_.emplace_back(ReplayCtrlCommand{ReplayCtrlCommand::SeekToBriefing});
-		}
+		ctrl_commands_.push_back(ReplayCtrlCommand{ ReplayCtrlCommand::SaveFirstFrame });
+		ctrl_commands_.push_back(ReplayCtrlCommand{ ReplayCtrlCommand::SetMaxLag, 1 });
+		ctrl_commands_.push_back(ReplayCtrlCommand{ ReplayCtrlCommand::SeekToBriefing });
 	} else if (msg_type == McsMessage::MsgType::ForceMsg) {
 		// do nothing
 	} else if (msg_type == McsMessage::MsgType::KeyMsg1) {

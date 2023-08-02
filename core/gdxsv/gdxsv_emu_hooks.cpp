@@ -60,6 +60,18 @@ void gdxsv_emu_vblank() {
 	}
 }
 
+void gdxsv_emu_end_frame() {
+	if (gdxsv.Enabled()) {
+		gdxsv.HookEndOfFrame();
+	}
+}
+
+void gdxsv_emu_next_frame() {
+	if (gdxsv.Enabled()) {
+		gdxsv.HookNextFrame();
+	}
+}
+
 void gdxsv_emu_mainui_loop() {
 	if (gdxsv.Enabled()) {
 		gdxsv.HookMainUiLoop();
