@@ -96,11 +96,15 @@ private:
 		}
 		void pop_front() {
 			std::lock_guard lock(mtx_);
-			cmds_.pop_front();
+			if (!cmds_.empty()) cmds_.pop_front();
 		}
-		ReplayCtrlCommand& front() {
+		bool try_get_front(ReplayCtrlCommand& cmd) {
 			std::lock_guard lock(mtx_);
-			return cmds_.front();
+			if (!cmds_.empty()) {
+				cmd = cmds_.front();
+				return true;
+			}
+			return false;
 		}
 		size_t size() {
 			std::lock_guard lock(mtx_);

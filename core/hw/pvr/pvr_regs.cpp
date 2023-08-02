@@ -109,7 +109,7 @@ static const char *regName(u32 paddr)
 u32 pvr_ReadReg(u32 addr)
 {
 	if ((addr & pvr_RegMask) != SPG_STATUS_addr)
-		DEBUG_LOG(PVR, "read %s.%c == %x", regName(addr),
+		DEBUG_LOG(PVR, "pc=%08x, pr=%08x, read %s.%c == %x", Sh4cntx.pc, Sh4cntx.pr, regName(addr),
 				((addr >> 26) & 7) == 2 ? 'b' : (addr & 0x2000000) ? '1' : '0',
 						PvrReg(addr, u32));
 	return PvrReg(addr,u32);
@@ -118,7 +118,7 @@ u32 pvr_ReadReg(u32 addr)
 void pvr_WriteReg(u32 paddr,u32 data)
 {
 	u32 addr = paddr & pvr_RegMask;
-	DEBUG_LOG(PVR, "write %s.%c = %x", regName(paddr),
+	DEBUG_LOG(PVR, "pc=%08x pr=%08x, write %s.%c = %x", Sh4cntx.pc, Sh4cntx.pr, regName(paddr),
 			((paddr >> 26) & 7) == 2 ? 'b' : (paddr & 0x2000000) ? '1' : '0',
 					data);
 

@@ -1013,6 +1013,7 @@ void Emulator::vblank()
 	// Time out if a frame hasn't been rendered for 50 ms
 	if (sh4_sched_now64() - startTime <= 10000000)
 		return;
+	NOTICE_LOG(COMMON, "renderTimeout");
 	renderTimeout = true;
 	gdxsv_emu_end_frame();
 	if (ggpo::active())

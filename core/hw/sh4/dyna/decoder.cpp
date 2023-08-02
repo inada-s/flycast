@@ -1059,6 +1059,9 @@ _end:
 	
 	blk->guest_cycles = std::round(blk->guest_cycles * 200.f / std::max(1.f, (float)config::Sh4Clock));
 
+	// if (blk->addr == 0x0c2ccdbe) {
+	if (blk->addr == 0x0c2ccdba) { blk->guest_cycles = SH4_TIMESLICE; }
+
 	//make sure we don't use wayy-too-few cycles
 	blk->guest_cycles = std::max(1U, blk->guest_cycles);
 	blk = nullptr;

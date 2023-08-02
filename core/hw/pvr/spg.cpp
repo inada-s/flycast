@@ -150,7 +150,7 @@ static int spg_line_sched(int tag, int cycles, int jitter)
 		// Vblank
 		if (prv_cur_scanline == 0)
 		{
-			NOTICE_LOG(RENDERER, "spg_line_sched: prv_cur_scanline == 0");
+			// NOTICE_LOG(RENDERER, "spg_line_sched: prv_cur_scanline == 0");
 			if (SPG_CONTROL.interlace)
 				SPG_STATUS.fieldnum = ~SPG_STATUS.fieldnum;
 			else

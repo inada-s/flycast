@@ -8,8 +8,11 @@
 #include <map>
 #include "blockmanager.h"
 #include "ngen.h"
+#include "gdxsv/gdxsv_emu_hooks.h"
 
 #include "gdxsv/gdxsv_prof.h"
+#include "hw/pvr/Renderer_if.h"
+#include "hw/pvr/spg.h"
 
 #include "hw/sh4/sh4_core.h"
 #include "hw/sh4/sh4_interrupts.h"
@@ -17,6 +20,7 @@
 #include "hw/sh4/sh4_opcode_list.h"
 #include "hw/sh4/sh4_sched.h"
 #include "hw/sh4/modules/mmu.h"
+#include "network/ggpo.h"
 #include "oslib/virtmem.h"
 
 #if defined(__unix__) && defined(DYNA_OPROF)
@@ -53,6 +57,24 @@ static DynarecCodeEntryPtr DYNACALL bm_GetCode(u32 addr)
 	return rv;
 }
 
+bool enable_hit_counter = false;
+std::unordered_map<u32, int> hit_counter;
+
+void printHitCounter() {
+	std::multimap<int, u32> r_hit_counter;
+	for (auto& e : hit_counter) {
+		r_hit_counter.emplace(e.second, e.first);
+	}
+
+	NOTICE_LOG(COMMON, "HIT_COUNTER");
+	int n = 10;
+	for (auto it = r_hit_counter.rbegin(); it != r_hit_counter.rend(); ++it) {
+		NOTICE_LOG(COMMON, "%08x : %d", it->second, it->first);
+		n--;
+		if (n == 0)break;
+	}
+}
+
 // addr must be a virtual address
 // This returns an executable address
 DynarecCodeEntryPtr DYNACALL bm_GetCodeByVAddr(u32 addr)
@@ -66,6 +88,22 @@ DynarecCodeEntryPtr DYNACALL bm_GetCodeByVAddr(u32 addr)
 
 		// Hack: skip VBlank
 		if (settings.gdxsv.skipVBlankHack) {
+			// vblank_E idle loop skip
+			// if (addr == 0x0c2b4ba0) { next_pc += 12; addr = next_pc; }
+			// else if (addr == 0x0c2b4bb0) { next_pc += 12; addr = next_pc; }
+			// else if (addr == 0x0c2cd4e8) { next_pc = 0x0c2cd4f2; addr = next_pc; }
+			/*
+			if (addr == 0x0c0520f2) {
+				const int COM_R_No0 = settings.gdxsv.disk == 1 ? 0x0c2f6639 : 0x0c391d79;
+				if (ReadMem8_nommu(COM_R_No0) == 4 && ReadMem8_nommu(COM_R_No0 + 5) == 0) {
+					next_pc = 0x0c0520f4;
+					addr = next_pc;
+					rend_vblank();
+					gdxsv_emu_end_frame();
+					ggpo::endOfFrame();
+				}
+			}
+			*/
 			// TODO:
 			/*
 			if (addr == 0x0c2b4ba0) {
@@ -86,7 +124,14 @@ DynarecCodeEntryPtr DYNACALL bm_GetCodeByVAddr(u32 addr)
 			*/
 		}
 	}
+	/*
 
+	if (addr == 0x0c0520b2) {
+		NOTICE_LOG(COMMON, "game_update Begin");
+	}
+	if (addr == 0x0c0520b6) {
+		NOTICE_LOG(COMMON, "game_update End");
+	}
 
 	auto profile = [addr](const char* name, u32 begin_addr, u32 end_addr) {
 		if (addr == begin_addr) gdxsv_prof.Start(name);
@@ -99,11 +144,52 @@ DynarecCodeEntryPtr DYNACALL bm_GetCodeByVAddr(u32 addr)
 		profile("game_update", 0x0c0520b2, 0x0c0520b6);
 		profile("render_current_frame", 0x0c0520e2, 0x0c0520e6);
 		profile("vblank", 0x0c0520f2, 0x0c0520f6);
-		// if (addr == 0x0c0520f2) { // Just before vblank NOTICE_LOG(COMMON, "Just Before vblank");
-		// } if (addr == 0x0c0520f6) { NOTICE_LOG(COMMON, "Just After vblank"); }
 	}
 
-	/*
+	static u64 before;
+	if (addr == 0x0c0520f2) {
+		NOTICE_LOG(COMMON, "vblank Begin");
+		before = sh4_sched_now64();
+	}
+	if (addr == 0x0c0520f6)
+	{
+		NOTICE_LOG(COMMON, "vblank End");
+		NOTICE_LOG(COMMON, "cycle = %d", sh4_sched_now64() - before);
+	}
+
+	if (addr == 0x0c1978e4)
+	{
+		NOTICE_LOG(COMMON, "vblank E Begin");
+		enable_hit_counter = true;
+		hit_counter.clear();
+	}
+	if (addr == 0x0c1978ec)
+	{
+		NOTICE_LOG(COMMON, "vblank E Done");
+		enable_hit_counter = false;
+		printHitCounter();
+		hit_counter.clear();
+	}
+
+	if (addr == 0x0c1978f8)
+	{
+		NOTICE_LOG(COMMON, "vblank G Begin");
+		// enable_hit_counter = true;
+		// hit_counter.clear();
+	}
+	if (addr == 0x0c197900)
+	{
+		NOTICE_LOG(COMMON, "vblank G Done");
+		// enable_hit_counter = false;
+		// printHitCounter();
+		// hit_counter.clear();
+	}
+
+	if (enable_hit_counter)
+	{
+		hit_counter[addr]++;
+	}
+	
 	// vblank
 	if (0x0c1978c0 <= addr && addr <= 0x0c19791c) {
 		profile("vblank A", 0x0c1978c0, 0x0c1978cc);

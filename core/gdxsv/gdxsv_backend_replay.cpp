@@ -145,10 +145,10 @@ void GdxsvBackendReplay::OnNextFrame() {
 		gdxsv_save_state.SaveState(key_msg_count_);
 	}
 
-	while (!ctrl_commands_.empty()) {
+	ReplayCtrlCommand ctrl{};
+	while (ctrl_commands_.try_get_front(ctrl)) {
 		constexpr int duration = 1000;
 
-		auto& ctrl = ctrl_commands_.front();
 		if (ctrl.cmd == ReplayCtrlCommand::TogglePauseMenu) {
 			pause_menu_opend_ = !pause_menu_opend_;
 			SDL_ShowCursor(pause_menu_opend_ ? SDL_ENABLE : SDL_DISABLE);
@@ -205,9 +205,10 @@ void GdxsvBackendReplay::OnNextFrame() {
 			auto t0 = high_resolution_clock::now();
 			gdxsv_prof.Reset();
 
+			const int prev_key_msg_count = key_msg_count_;
 			for (skipped_frame = 0; skipped_frame < skip_frames; skipped_frame++) {
 				settings.aica.muteAudio = true;
-				settings.gdxsv.skipRenderingHack = true;
+				settings.gdxsv.skipRenderingHack = skipped_frame + 1 < skip_frames;
 				settings.gdxsv.skipVBlankHack = true;
 				rend_enable_renderer(false);
 				seeking_ = true;
@@ -226,7 +227,10 @@ void GdxsvBackendReplay::OnNextFrame() {
 			}
 
 			const auto ms = duration_cast<milliseconds>(high_resolution_clock::now() - t0).count();
-			NOTICE_LOG(COMMON, "SomeFrameForward skipped %d[fr] in %ld[ms] (%.2f[ms/fr]) cancel=%d", skipped_frame, ms, (float)ms / skipped_frame, need_cancel());
+			NOTICE_LOG(COMMON, "SomeFrameForward skipped %d[fr] in %ld[ms] (%.2f[ms/fr]) %d->%d(%d keys)", skipped_frame, ms, (float)ms / skipped_frame, prev_key_msg_count, key_msg_count_, key_msg_count_ - prev_key_msg_count);
+			char buf[256];
+			sprintf_s(buf, "%.2f[ms/fr]", (float)ms / skipped_frame);
+			gui_display_notification(buf, duration);
 			gdxsv_prof.Print();
 			ctrl_commands_.pop_front();
 		}
@@ -263,9 +267,6 @@ void GdxsvBackendReplay::OnNextFrame() {
 						KillTex = true;
 					}
 					gui_display_notification("<<", duration);
-					NOTICE_LOG(COMMON, "LoadState ok");
-				} else {
-					NOTICE_LOG(COMMON, "LoadState failure");
 				}
 			}
 			ctrl_commands_.pop_front();

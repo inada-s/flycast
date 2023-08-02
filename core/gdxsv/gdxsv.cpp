@@ -242,7 +242,6 @@ void Gdxsv::HookVBlank() {
 
 void Gdxsv::HookEndOfFrame()
 {
-	NOTICE_LOG(COMMON, "HookEndOfFrame");
 	if (netmode_ == NetMode::Replay) {
 		gdxsv.replay_net_.OnEndOfFrame();
 	}
@@ -250,7 +249,6 @@ void Gdxsv::HookEndOfFrame()
 
 void Gdxsv::HookNextFrame()
 {
-	NOTICE_LOG(COMMON, "HookNextFrame");
 	if (netmode_ == NetMode::Replay) {
 		gdxsv.replay_net_.OnNextFrame();
 	}

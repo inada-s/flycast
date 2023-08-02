@@ -538,6 +538,8 @@ u32 GdxsvBackendRollback::OnSockRead(u32 addr, u32 size) {
 				inputs |= u64(input) << (i * 16);
 			}
 
+			// NOTICE_LOG(COMMON, "[%c][%d][%d] INPUTS:%016llx", ggpo::rollbacking() ? 'R' : ' ', frame, msg.FirstSeq(), inputs);
+
 			while (!input_logs_.empty() && frame <= input_logs_.back().first) {
 				input_logs_.pop_back();
 			}
