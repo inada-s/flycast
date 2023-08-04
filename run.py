@@ -81,7 +81,7 @@ def conf_log(idx: int):
 
 
 def conf_volume(idx: int):
-    return f"--config config:aica.Volume=20"
+    return f"--config config:aica.Volume={60 if idx == 0 else 0}"
 
 
 def conf_gdxsv(idx: int):
@@ -99,8 +99,8 @@ def run(idx, *arg_list) -> subprocess.Popen:
     cmd = " ".join(arg_list)
     print(cmd)
     new_env = os.environ.copy()
-    new_env["GGPO_NETWORK_DELAY"] = "16"
-    new_env["GGPO_OOP_PERCENT"] = "1"
+    new_env["GGPO_NETWORK_DELAY"] = "32"
+    new_env["GGPO_OOP_PERCENT"] = "6"
     # else: new_env["GGPO_NETWORK_DELAY"] = "100"
     return subprocess.Popen(cmd, shell=True, env=new_env)
 

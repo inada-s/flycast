@@ -297,7 +297,7 @@ static bool advance_frame(int)
 	const bool _isNoInput = isNoInput;
 
 	settings.aica.muteAudio = true;
-	settings.gdxsv.skipRenderingHack = config::GdxSkipRenderingHack && frame + 1 < seekToFrame;
+	settings.gdxsv.skipRenderingHack = config::GdxSkipRenderingHack;
 	rend_enable_renderer(false);
 	inRollback = true;
 
@@ -353,10 +353,10 @@ static bool load_game_state(unsigned char *buffer, int len)
 	ggpo::getCurrentFrame(&seekToFrame);
 
 	unsigned char* tmp_buffer = nullptr;
-	if (noInput) {
+	if (isNoInput && 0 < noInputFrames[seekToFrame]) {
 		int len;
 		int checksum;
-		save_game_state(&tmp_buffer, &len, &checksum, seekToFrame + 1);
+		save_game_state(&tmp_buffer, &len, &checksum, lastSavedFrame + 1);
 	}
 
 	rend_start_rollback();
