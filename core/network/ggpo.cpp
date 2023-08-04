@@ -26,7 +26,6 @@
 #include <algorithm>
 
 #include "gdxsv/gdxsv_emu_hooks.h"
-#include "gdxsv/gdxsv_prof.h"
 
 void UpdateInputState();
 
@@ -34,6 +33,7 @@ namespace ggpo
 {
 
 bool inRollback;
+bool isNoInput;
 u16 localExInput;
 std::atomic<int> timeSyncFrames;
 
@@ -165,6 +165,7 @@ struct MemPages
 	memwatch::PageMap elanram;
 };
 static std::unordered_map<int, MemPages> deltaStates;
+static std::unordered_map<int, int> noInputFrames;
 static int lastSavedFrame = -1;
 static int seekToFrame = -1;
 static int totalRollbackFrames;
@@ -293,24 +294,51 @@ static bool advance_frame(int)
 	INFO_LOG(NETWORK, "advance_frame");
 	int frame;
 	getCurrentFrame(&frame);
+	const bool _isNoInput = isNoInput;
 
 	settings.aica.muteAudio = true;
 	settings.gdxsv.skipRenderingHack = config::GdxSkipRenderingHack && frame + 1 < seekToFrame;
 	rend_enable_renderer(false);
 	inRollback = true;
 
+	if (noInputFrames[frame]) {
+		NOTICE_LOG(NETWORK, "[%d] skipping noInput frame", noInputFrames[frame]);
+	}
+	for (int i = 0; i < noInputFrames[frame]; i++) {
+		isNoInput = true;
+		emu.run();
+		isNoInput = false;
+		_endOfFrame = false;
+	}
+	isNoInput = false;
 	emu.run();
 	ggpo_advance_frame(ggpoSession);
+	NOTICE_LOG(NETWORK, "[%d] ggpo_advance_frame in rollback %d -> %d", frame, frame, frame+1);
+
+	_endOfFrame = false;
+	getCurrentFrame(&frame);
+	if (frame == seekToFrame) {
+		for (int i = 0; i < noInputFrames[frame]; i++) {
+			isNoInput = true;
+			emu.run();
+			isNoInput = false;
+			_endOfFrame = false;
+		}
+	}
 
 	settings.aica.muteAudio = false;
 	settings.gdxsv.skipRenderingHack = false;
 	rend_enable_renderer(true);
 	inRollback = false;
 	_endOfFrame = false;
+	isNoInput = _isNoInput;
 
 	totalRollbackFrames++;
 	return true;
 }
+
+static bool save_game_state(unsigned char** buffer, int* len, int* checksum, int frame);
+static void free_buffer(void* buffer);
 
 /*
  * load_game_state - GGPO.net will call this function at the beginning
@@ -323,6 +351,13 @@ static bool load_game_state(unsigned char *buffer, int len)
 {
 	INFO_LOG(NETWORK, "load_game_state");
 	ggpo::getCurrentFrame(&seekToFrame);
+
+	unsigned char* tmp_buffer = nullptr;
+	if (noInput) {
+		int len;
+		int checksum;
+		save_game_state(&tmp_buffer, &len, &checksum, seekToFrame + 1);
+	}
 
 	rend_start_rollback();
 	// FIXME dynarecs
@@ -353,6 +388,8 @@ static bool load_game_state(unsigned char *buffer, int len)
 	rend_allow_rollback();	// ggpo might load another state right after this one
 	memwatch::reset();
 	memwatch::protect();
+
+	free_buffer(tmp_buffer);
 	return true;
 }
 
@@ -678,6 +715,12 @@ void getInput(MapleInputState inputState[4])
 	for (int player = 0; player < 4; player++)
 		inputState[player] = {};
 
+	int frame; getCurrentFrame(&frame);
+	NOTICE_LOG(NETWORK, "[%d] getInput noInput=%d", frame, isNoInput);
+	if (isNoInput) {
+		return;
+	}
+
 	std::vector<u8> inputData(inputSize * MAX_PLAYERS);
 	// should not call any callback
 	GGPOErrorCode error = ggpo_synchronize_input(ggpoSession, (void *)&inputData[0], inputData.size(), &disconnect_flags);
@@ -746,12 +789,20 @@ bool nextFrame()
 	std::lock_guard<std::recursive_mutex> lock(ggpoMutex);
 	if (ggpoSession == nullptr)
 		return false;
-	// will call save_game_state
-	GGPOErrorCode error = ggpo_advance_frame(ggpoSession);
 
-	// may rollback
-	if (error == GGPO_OK)
-		error = ggpo_idle(ggpoSession, 0);
+	if (isNoInput) {
+		int frame; getCurrentFrame(&frame);
+		noInputFrames[frame]++;
+	} else {
+		// will call save_game_state
+		int frame; getCurrentFrame(&frame);
+		NOTICE_LOG(NETWORK, "[%d] ggpo_advance_frame %d -> %d", frame, frame, frame+1);
+		ggpo_advance_frame(ggpoSession);
+	}
+
+	int frame; getCurrentFrame(&frame);
+	NOTICE_LOG(NETWORK, "[%d] ggpo_idle", frame);
+	GGPOErrorCode error = ggpo_idle(ggpoSession, 0);
 	if (error != GGPO_OK)
 	{
 		stopSession();
@@ -825,6 +876,8 @@ bool nextFrame()
 		error = ggpo_add_local_input(ggpoSession, localPlayer, &inputs, inputSize);
 		if (error == GGPO_OK)
 		{
+			int frame; getCurrentFrame(&frame);
+			NOTICE_LOG(NETWORK, "[%d] gggpo_add_local_input", frame);
 			if (0 < loop_count) {
 				if (loop_count * 5 <= 30) inputBlockCount[0]++;
 				else if (loop_count * 5 <= 500) inputBlockCount[1]++;
@@ -832,6 +885,7 @@ bool nextFrame()
 			}
 			if (2 < loop_count)
 				NOTICE_LOG(NETWORK, "ggpo_add_local_input prediction barrier reached looped %dms", loop_count * 5);
+			isNoInput = false;
 			break;
 		}
 		if (error != GGPO_ERRORCODE_PREDICTION_THRESHOLD)
@@ -841,6 +895,12 @@ bool nextFrame()
 			throw FlycastException("GGPO error");
 		}
 		DEBUG_LOG(NETWORK, "ggpo_add_local_input prediction barrier reached");
+		{
+			int frame; getCurrentFrame(&frame);
+			NOTICE_LOG(NETWORK, "[%d] gggpo_add_local_input blocked", frame);
+			isNoInput = true;
+			break;
+		}
 		loop_count++;
 		std::this_thread::sleep_for(std::chrono::milliseconds(5));
 		error = ggpo_idle(ggpoSession, 0);
@@ -1197,6 +1257,7 @@ void gdxsvStartSession(const char* sessionCode, int me,
 		ggpo::remotePlayer = playerHandles[i];
 	}
 
+	config::GGPODelay = 0;
 	ggpo_set_frame_delay(ggpoSession, localPlayer, config::GGPODelay.get());
 
 	DEBUG_LOG(NETWORK, "GGPO session started");

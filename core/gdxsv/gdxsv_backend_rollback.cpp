@@ -451,6 +451,7 @@ u32 GdxsvBackendRollback::OnSockRead(u32 addr, u32 size) {
 	const int COM_R_No0 = disk == 1 ? 0x0c2f6639 : 0x0c391d79;
 	const auto inputState = mapleInputState;
 	const auto memExInputAddr = gdxsv.symbols_.at("rbk_ex_input");
+	const auto memPendingInputAddr = gdxsv.symbols_.at("rbk_pending_input");
 
 	// Disconnect check (ignore rebattle end scene)
 	if (ggpo::active() && !(gdxsv_ReadMem8(COM_R_No0) == 4 && gdxsv_ReadMem8(COM_R_No0 + 5) == 2)) {
@@ -528,20 +529,7 @@ u32 GdxsvBackendRollback::OnSockRead(u32 addr, u32 size) {
 		}
 
 		if (msg.Type() == McsMessage::KeyMsg1) {
-			u64 inputs = 0;
-			for (int i = 0; i < matching_.player_count(); ++i) {
-				auto a = McsMessage::Create(McsMessage::KeyMsg1, i);
-				auto input = convertInput(inputState[i]);
-				a.body[2] = input >> 8 & 0xff;
-				a.body[3] = input & 0xff;
-				std::copy(a.body.begin(), a.body.end(), std::back_inserter(recv_buf_));
-				inputs |= u64(input) << (i * 16);
-			}
-
-			while (!input_logs_.empty() && frame <= input_logs_.back().first) {
-				input_logs_.pop_back();
-			}
-			input_logs_.emplace_back(frame, inputs);
+			gdxsv_WriteMem16(memPendingInputAddr, gdxsv_ReadMem16(memPendingInputAddr) + 1);
 		}
 
 		if (msg.Type() == McsMessage::LoadEndMsg) {
@@ -559,6 +547,26 @@ u32 GdxsvBackendRollback::OnSockRead(u32 addr, u32 size) {
 		}
 
 		verify(recv_buf_.size() <= size);
+	}
+
+	if (gdxsv_ReadMem16(memPendingInputAddr) && !ggpo::noInput()) {
+		verify(gdxsv_ReadMem16(memPendingInputAddr) == 1);
+		gdxsv_WriteMem16(memPendingInputAddr, 0);
+
+		u64 inputs = 0;
+		for (int i = 0; i < matching_.player_count(); ++i) {
+			auto a = McsMessage::Create(McsMessage::KeyMsg1, i);
+			auto input = convertInput(inputState[i]);
+			a.body[2] = input >> 8 & 0xff;
+			a.body[3] = input & 0xff;
+			std::copy(a.body.begin(), a.body.end(), std::back_inserter(recv_buf_));
+			inputs |= u64(input) << (i * 16);
+		}
+
+		while (!input_logs_.empty() && frame <= input_logs_.back().first) {
+			input_logs_.pop_back();
+		}
+		input_logs_.emplace_back(frame, inputs);
 	}
 
 	if (gdxsv_ReadMem16(memExInputAddr) != ExInputNone) {
