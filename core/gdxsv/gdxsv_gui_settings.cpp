@@ -1,4 +1,4 @@
-#include "gdxsv_gui_settings.h"
+ï»¿#include "gdxsv_gui_settings.h"
 
 #include "gdxsv.h"
 #include "gdxsv_network.h"
@@ -50,9 +50,9 @@ void gdxsv_gui_settings_tab()
 	ImGui::Columns(5, "gdxlang", false);
 	ImGui::Text("Language mod:");
 	ImGui::SameLine();
-	ShowHelpMarker(t({ "Patch game language and texture, for DX only" , u8"ƒQ[ƒ€“à‚Ì•¶š—ñ‚âƒeƒNƒXƒ`ƒƒ‚É•ÏX‚ğ‰Á‚¦‚Ü‚·"}));
+	ShowHelpMarker(t({ "Patch game language and texture, for DX only" , u8"ã‚²ãƒ¼ãƒ å†…ã®æ–‡å­—åˆ—ã‚„ãƒ†ã‚¯ã‚¹ãƒãƒ£ã«å¤‰æ›´ã‚’åŠ ãˆã¾ã™"}));
 	ImGui::NextColumn();
-	OptionRadioButton(u8"“ú–{Œê", config::GdxLanguage, 0);
+	OptionRadioButton(u8"æ—¥æœ¬èª", config::GdxLanguage, 0);
 	ImGui::NextColumn();
 	OptionRadioButton("Cantonese", config::GdxLanguage, 1);
 	ImGui::NextColumn();
@@ -103,21 +103,21 @@ void gdxsv_gui_settings_tab()
 		maple_ReconnectDevices();
 	};
 
-	if (ImGui::Button(t({ "Apply Recommended Settings\nfor Low-Spec PC", u8"’áƒXƒyƒbƒNPCŒü‚¯\n‚¨‚·‚·‚ßİ’è“K—p" }), ScaledVec2(200, 50))) {
+	if (ImGui::Button(t({ "Apply Recommended Settings\nfor Low-Spec PC", u8"ä½ã‚¹ãƒšãƒƒã‚¯PCå‘ã‘\nãŠã™ã™ã‚è¨­å®šé©ç”¨" }), ScaledVec2(200, 50))) {
 		apply_base_settings();
 		config::ThreadedRendering = true;
 		config::GdxMinDelay = 3;
 		config::AutoSkipFrame = 1;
 	}
 	ImGui::SameLine();
-	if (ImGui::Button(t({ "Apply Recommended Settings\nfor Mid-Spec PC", u8"’†ƒXƒyƒbƒNPCŒü‚¯\n‚¨‚·‚·‚ßİ’è“K—p" }), ScaledVec2(200, 50))) {
+	if (ImGui::Button(t({ "Apply Recommended Settings\nfor Mid-Spec PC", u8"ä¸­ã‚¹ãƒšãƒƒã‚¯PCå‘ã‘\nãŠã™ã™ã‚è¨­å®šé©ç”¨" }), ScaledVec2(200, 50))) {
 		apply_base_settings();
 		config::ThreadedRendering = false;
 		config::RenderResolution = 960;
 		config::TextureUpscale = 2;
 	}
 	ImGui::SameLine();
-	if (ImGui::Button(t({ "Apply Recommended Settings\nfor High-Spec PC", u8"‚ƒXƒyƒbƒNPCŒü‚¯\n‚¨‚·‚·‚ßİ’è“K—p" }), ScaledVec2(200, 50))) {
+	if (ImGui::Button(t({ "Apply Recommended Settings\nfor High-Spec PC", u8"é«˜ã‚¹ãƒšãƒƒã‚¯PCå‘ã‘\nãŠã™ã™ã‚è¨­å®šé©ç”¨" }), ScaledVec2(200, 50))) {
 		apply_base_settings();
 		config::DupeFrames = false;
 		config::ThreadedRendering = false;
@@ -126,20 +126,20 @@ void gdxsv_gui_settings_tab()
 	}
 
 	ImGui::SameLine();
-	ShowHelpMarker(t({ "Use gdxsv recommended settings", u8"ŠJ”­Ò‚¨‚·‚·‚ß‚Ìİ’è‚ğ“K—p‚µ‚Ü‚·B‚±‚Ìƒy[ƒWˆÈŠO‚Ìİ’è‚à•ÏX‚³‚ê‚Ü‚·B" }));
+	ShowHelpMarker(t({ "Use gdxsv recommended settings", u8"é–‹ç™ºè€…ãŠã™ã™ã‚ã®è¨­å®šã‚’é©ç”¨ã—ã¾ã™ã€‚ã“ã®ãƒšãƒ¼ã‚¸ä»¥å¤–ã®è¨­å®šã‚‚å¤‰æ›´ã•ã‚Œã¾ã™ã€‚" }));
 
-	OptionCheckbox(t({ "Multi-threaded emulation", u8"ƒ}ƒ‹ƒ`ƒXƒŒƒbƒhƒGƒ~ƒ…ƒŒ[ƒVƒ‡ƒ“" }), config::ThreadedRendering,
+	OptionCheckbox(t({ "Multi-threaded emulation", u8"ãƒãƒ«ãƒã‚¹ãƒ¬ãƒƒãƒ‰ã‚¨ãƒŸãƒ¥ãƒ¬ãƒ¼ã‚·ãƒ§ãƒ³" }), config::ThreadedRendering,
 		t({
 R"(Run the emulated CPU and GPU on different threads.
 	Enable = Best for low spec CPU.
 	Disable = Best for high spec CPU.)",
-u8"ƒGƒ~ƒ…ƒŒ[ƒ^[‚ÌŒvZ‚Æ•`‰æ‚ğ•Ê‚ÌƒXƒŒƒbƒh‚Ås‚¢‚Ü‚·B—LŒø‚É‚µ‚½ê‡•‰‰×‚ªŒy‚­‚È‚è‚Ü‚·‚ªAÅ‘å1ƒtƒŒ[ƒ€‚Ì“ü—Í’x‰„‚ª”­¶‚µ‚Ü‚·B\n\
-’áƒXƒyƒbƒNCPU‚ğg—p‚µ‚Ä‚¢‚éê‡A—LŒø‚ğ„§\n\
-‚ƒXƒyƒbƒNCPU‚ğg—p‚µ‚Ä‚¢‚éê‡A–³Œø‚ğ„§"
+u8"ã‚¨ãƒŸãƒ¥ãƒ¬ãƒ¼ã‚¿ãƒ¼ã®è¨ˆç®—ã¨æç”»ã‚’åˆ¥ã®ã‚¹ãƒ¬ãƒƒãƒ‰ã§è¡Œã„ã¾ã™ã€‚æœ‰åŠ¹ã«ã—ãŸå ´åˆè² è·ãŒè»½ããªã‚Šã¾ã™ãŒã€æœ€å¤§1ãƒ•ãƒ¬ãƒ¼ãƒ ã®å…¥åŠ›é…å»¶ãŒç™ºç”Ÿã—ã¾ã™ã€‚\n\
+ä½ã‚¹ãƒšãƒƒã‚¯CPUã‚’ä½¿ç”¨ã—ã¦ã„ã‚‹å ´åˆã€æœ‰åŠ¹ã‚’æ¨å¥¨\n\
+é«˜ã‚¹ãƒšãƒƒã‚¯CPUã‚’ä½¿ç”¨ã—ã¦ã„ã‚‹å ´åˆã€ç„¡åŠ¹ã‚’æ¨å¥¨"
 			}));
 
 	bool widescreen = config::Widescreen.get() && config::WidescreenGameHacks.get();
-	bool pressed = ImGui::Checkbox(t({ "Enable 16:9 Widescreen Hack", u8"16:9 ƒƒCƒhƒ‚ƒjƒ^[‘Î‰" }), &widescreen);
+	bool pressed = ImGui::Checkbox(t({ "Enable 16:9 Widescreen Hack", u8"16:9 ãƒ¯ã‚¤ãƒ‰ãƒ¢ãƒ‹ã‚¿ãƒ¼å¯¾å¿œ" }), &widescreen);
 	if (pressed) {
 		config::Widescreen.set(widescreen);
 		config::SuperWidescreen.set(widescreen);
@@ -151,36 +151,36 @@ R"(Use the following rendering options:
     rend.WideScreen=true
     rend.SuperWideScreen=true
     rend.WidescreenGameHacks=true)",
-u8"‰æ–Ê¶‰E‚Ì•‰‚ğ–³‚­‚µƒƒCƒhƒ‚ƒjƒ^[‚É‘Î‰‚µ‚Ü‚·Bˆê•”‰æ–Ê‚ª³‚µ‚­•\¦‚³‚ê‚È‚­‚È‚é‰Â”\«‚ª‚ ‚è‚Ü‚·B"
+u8"ç”»é¢å·¦å³ã®é»’ç¸ã‚’ç„¡ãã—ãƒ¯ã‚¤ãƒ‰ãƒ¢ãƒ‹ã‚¿ãƒ¼ã«å¯¾å¿œã—ã¾ã™ã€‚ä¸€éƒ¨ç”»é¢ãŒæ­£ã—ãè¡¨ç¤ºã•ã‚Œãªããªã‚‹å¯èƒ½æ€§ãŒã‚ã‚Šã¾ã™ã€‚"
 		}));
 
-	OptionCheckbox(t({ "VSync", u8"‚’¼“¯Šú" }), config::VSync, t({
+	OptionCheckbox(t({ "VSync", u8"å‚ç›´åŒæœŸ" }), config::VSync, t({
 "Limit frame rate by VSync. Minimize video glitch",
-u8"ƒ‚ƒjƒ^[‚ÌXVƒ^ƒCƒ~ƒ“ƒO‚ğ‘Ò‚Á‚Ä•`‰æ‚µ‚Ü‚·B•`‰æ—‚ê‚ª”­¶‚µ‚É‚­‚­‚È‚è‚Ü‚·‚ªA•\¦‚É’x‰„‚ª”­¶‚·‚é‰Â”\«‚ª‚ ‚è‚Ü‚·B\n\
-–³Œø‚É‚µ‚Ä‚à•\¦—‚ê‚ª‹C‚É‚È‚ç‚È‚¢ê‡A–³Œø‚ğ„§"
+u8"ãƒ¢ãƒ‹ã‚¿ãƒ¼ã®æ›´æ–°ã‚¿ã‚¤ãƒŸãƒ³ã‚°ã‚’å¾…ã£ã¦æç”»ã—ã¾ã™ã€‚æç”»ä¹±ã‚ŒãŒç™ºç”Ÿã—ã«ãããªã‚Šã¾ã™ãŒã€è¡¨ç¤ºã«é…å»¶ãŒç™ºç”Ÿã™ã‚‹å¯èƒ½æ€§ãŒã‚ã‚Šã¾ã™ã€‚\n\
+ç„¡åŠ¹ã«ã—ã¦ã‚‚è¡¨ç¤ºä¹±ã‚ŒãŒæ°—ã«ãªã‚‰ãªã„å ´åˆã€ç„¡åŠ¹ã‚’æ¨å¥¨"
 		}));
 	ImGui::Indent();
 	{
 		DisabledScope scope(!config::VSync);
 
-		OptionCheckbox(t({ "Duplicate frames", u8"d•¡ƒtƒŒ[ƒ€•\¦" }), config::DupeFrames, t({
+		OptionCheckbox(t({ "Duplicate frames", u8"é‡è¤‡ãƒ•ãƒ¬ãƒ¼ãƒ è¡¨ç¤º" }), config::DupeFrames, t({
 "Duplicate frames on high refresh rate monitors (120 Hz and higher)",
-u8"“¯‚¶ƒtƒŒ[ƒ€‚ğ2‰ñ•\¦‚µ‚Ü‚·B120Hzƒ‚ƒjƒ^[‚Å60FPS‚É§ŒÀ‚·‚é‚±‚Æ‚ª‚Å‚«‚Ü‚·B"
+u8"åŒã˜ãƒ•ãƒ¬ãƒ¼ãƒ ã‚’2å›è¡¨ç¤ºã—ã¾ã™ã€‚120Hzãƒ¢ãƒ‹ã‚¿ãƒ¼ã§60FPSã«åˆ¶é™ã™ã‚‹ã“ã¨ãŒã§ãã¾ã™ã€‚"
 			}));
 	}
 	ImGui::Unindent();
 
-	header(t({ "Network Settings", u8"ƒlƒbƒgƒ[ƒNİ’è" }));
-	OptionCheckbox(t({ "Enable UPnP", u8"UPnP‚ğg—p" }), config::EnableUPnP, t({
+	header(t({ "Network Settings", u8"ãƒãƒƒãƒˆãƒ¯ãƒ¼ã‚¯è¨­å®š" }));
+	OptionCheckbox(t({ "Enable UPnP", u8"UPnPã‚’ä½¿ç”¨" }), config::EnableUPnP, t({
 "Automatically configure your network router for netplay (IPv4 Only)",
-u8"ƒ‹[ƒ^[‚Ìİ’è‚ğ©“®‚Å•ÏX‚µAƒ|[ƒgŠJ•ú‚ğs‚¢‚Ü‚·B(IPv4‚Ì‚İ‘Î‰)",
+u8"ãƒ«ãƒ¼ã‚¿ãƒ¼ã®è¨­å®šã‚’è‡ªå‹•ã§å¤‰æ›´ã—ã€ãƒãƒ¼ãƒˆé–‹æ”¾ã‚’è¡Œã„ã¾ã™ã€‚(IPv4ã®ã¿å¯¾å¿œ)",
 }));
 
-	ImGui::InputInt(t({ "Gdx UDP Port", u8"UDPƒ|[ƒg" }), &config::GdxLocalPort.get());
+	ImGui::InputInt(t({ "Gdx UDP Port", u8"UDPãƒãƒ¼ãƒˆ" }), &config::GdxLocalPort.get());
 	ImGui::SameLine();
 	ShowHelpMarker(t({
 "UDP port number used for P2P communication. Cannot use the same number as another application using.",
-u8"ƒIƒ“ƒ‰ƒCƒ“‘Îí‚Åg—p‚·‚éUDPƒ|[ƒg”Ô†‚ğİ’è‚µ‚Ü‚·B“¯‚Ég—p‚·‚é‘¼‚ÌƒAƒvƒŠƒP[ƒVƒ‡ƒ“‚Æ“¯‚¶ƒ|[ƒg”Ô†‚Íg—p‚Å‚«‚Ü‚¹‚ñB"
+u8"ã‚ªãƒ³ãƒ©ã‚¤ãƒ³å¯¾æˆ¦ã§ä½¿ç”¨ã™ã‚‹UDPãƒãƒ¼ãƒˆç•ªå·ã‚’è¨­å®šã—ã¾ã™ã€‚åŒæ™‚ã«ä½¿ç”¨ã™ã‚‹ä»–ã®ã‚¢ãƒ—ãƒªã‚±ãƒ¼ã‚·ãƒ§ãƒ³ã¨åŒã˜ãƒãƒ¼ãƒˆç•ªå·ã¯ä½¿ç”¨ã§ãã¾ã›ã‚“ã€‚"
 }));
 
 	if (config::GdxLocalPort == 0) {
@@ -194,7 +194,7 @@ u8"ƒIƒ“ƒ‰ƒCƒ“‘Îí‚Åg—p‚·‚éUDPƒ|[ƒg”Ô†‚ğİ’è‚µ‚Ü‚·B“¯‚Ég—p‚·‚é‘¼‚ÌƒAƒvƒŠƒP
 	}
 
 	const auto buttonWidth = 200;
-	if (ImGui::Button(t({ "UPnP Now", u8"UPnP Às" }), ScaledVec2(buttonWidth, 0)) && !upnp_future.valid()) {
+	if (ImGui::Button(t({ "UPnP Now", u8"UPnP å®Ÿè¡Œ" }), ScaledVec2(buttonWidth, 0)) && !upnp_future.valid()) {
 		upnp_result = "Please wait...";
 		int port = config::GdxLocalPort;
 		upnp_future = std::async(std::launch::async, [port]() -> std::string {
@@ -204,7 +204,7 @@ u8"ƒIƒ“ƒ‰ƒCƒ“‘Îí‚Åg—p‚·‚éUDPƒ|[ƒg”Ô†‚ğİ’è‚µ‚Ü‚·B“¯‚Ég—p‚·‚é‘¼‚ÌƒAƒvƒŠƒP
 			});
 	}
 	ImGui::SameLine();
-	ShowHelpMarker(t({ "Open the port using UPnP", u8"UPnP‚ğg—p‚µ‚ÄUDPƒ|[ƒgŠJ•ú‚ğs‚¢‚Ü‚·B" }));
+	ShowHelpMarker(t({ "Open the port using UPnP", u8"UPnPã‚’ä½¿ç”¨ã—ã¦UDPãƒãƒ¼ãƒˆé–‹æ”¾ã‚’è¡Œã„ã¾ã™ã€‚" }));
 	ImGui::SameLine();
 	ImGui::Text("%s", upnp_result.c_str());
 
@@ -213,14 +213,14 @@ u8"ƒIƒ“ƒ‰ƒCƒ“‘Îí‚Åg—p‚·‚éUDPƒ|[ƒg”Ô†‚ğİ’è‚µ‚Ü‚·B“¯‚Ég—p‚·‚é‘¼‚ÌƒAƒvƒŠƒP
 	if (future_is_ready(v4_future)) {
 		v4_result = v4_future.get();
 	}
-	if (ImGui::Button(t({ "Test The Port (IPv4)", u8"ƒ|[ƒgŠJ•úŠm”F (IPv4)" }), ScaledVec2(buttonWidth, 0)) && !v4_future.valid()) {
+	if (ImGui::Button(t({ "Test The Port (IPv4)", u8"ãƒãƒ¼ãƒˆé–‹æ”¾ç¢ºèª (IPv4)" }), ScaledVec2(buttonWidth, 0)) && !v4_future.valid()) {
 		v4_result = "Please wait...";
 		v4_future = test_udp_port_connectivity(config::GdxLocalPort, false);
 	}
 	ImGui::SameLine();
 	ShowHelpMarker(t({
 "Test receiving data using this UDP port on IPv4",
-u8"İ’è‚³‚ê‚½UDPƒ|[ƒg‚ğg‚Á‚ÄŠO•”‚©‚çƒf[ƒ^‚ğóM‚Å‚«‚é‚©ƒeƒXƒg‚µ‚Ü‚·B\n‚±‚ÌƒeƒXƒg‚É¸”s‚·‚éê‡A‘Îí‚ª¬—§‚µ‚È‚¢‚©’ÊM’x‰„‚ª‘‰Á‚·‚éê‡‚ª‚ ‚è‚Ü‚·B"
+u8"è¨­å®šã•ã‚ŒãŸUDPãƒãƒ¼ãƒˆã‚’ä½¿ã£ã¦å¤–éƒ¨ã‹ã‚‰ãƒ‡ãƒ¼ã‚¿ã‚’å—ä¿¡ã§ãã‚‹ã‹ãƒ†ã‚¹ãƒˆã—ã¾ã™ã€‚\nã“ã®ãƒ†ã‚¹ãƒˆã«å¤±æ•—ã™ã‚‹å ´åˆã€å¯¾æˆ¦ãŒæˆç«‹ã—ãªã„ã‹é€šä¿¡é…å»¶ãŒå¢—åŠ ã™ã‚‹å ´åˆãŒã‚ã‚Šã¾ã™ã€‚"
 }));
 	ImGui::SameLine();
 	ImGui::Text("%s", v4_result.c_str());
@@ -228,39 +228,39 @@ u8"İ’è‚³‚ê‚½UDPƒ|[ƒg‚ğg‚Á‚ÄŠO•”‚©‚çƒf[ƒ^‚ğóM‚Å‚«‚é‚©ƒeƒXƒg‚µ‚Ü‚·B\n‚±‚Ìƒe
 	if (future_is_ready(v6_future)) {
 		v6_result = v6_future.get();
 	}
-	if (ImGui::Button(t({ "Test The Port (IPv6)", u8"ƒ|[ƒgŠJ•úŠm”F (IPv6)" }), ScaledVec2(buttonWidth, 0)) && !v6_future.valid()) {
+	if (ImGui::Button(t({ "Test The Port (IPv6)", u8"ãƒãƒ¼ãƒˆé–‹æ”¾ç¢ºèª (IPv6)" }), ScaledVec2(buttonWidth, 0)) && !v6_future.valid()) {
 		v6_result = "Please wait...";
 		v6_future = test_udp_port_connectivity(config::GdxLocalPort, true);
 	}
 	ImGui::SameLine();
 	ShowHelpMarker(t({
 "Test receiving data using this UDP port on IPv6",
-u8"İ’è‚³‚ê‚½UDPƒ|[ƒg‚ğg‚Á‚ÄŠO•”‚©‚çƒf[ƒ^‚ğóM‚Å‚«‚é‚©ƒeƒXƒg‚µ‚Ü‚·B"
+u8"è¨­å®šã•ã‚ŒãŸUDPãƒãƒ¼ãƒˆã‚’ä½¿ã£ã¦å¤–éƒ¨ã‹ã‚‰ãƒ‡ãƒ¼ã‚¿ã‚’å—ä¿¡ã§ãã‚‹ã‹ãƒ†ã‚¹ãƒˆã—ã¾ã™ã€‚"
 		}));
 	ImGui::SameLine();
 	ImGui::Text("%s", v6_result.c_str());
 
 	OptionArrowButtons(
-		t({"Gdx Minimum Delay", u8"Å¬“ü—Í’x‰„"}), config::GdxMinDelay, 2, 6,
+		t({"Gdx Minimum Delay", u8"æœ€å°å…¥åŠ›é…å»¶"}), config::GdxMinDelay, 2, 6,
 		t({
 "Minimum frame of input delay used for rollback communication.\nSmaller value reduces latency, but uses more CPU and introduces glitches.",
-u8"ƒIƒ“ƒ‰ƒCƒ“‘Îí‚ÌÅ¬“ü—Í’x‰„ƒtƒŒ[ƒ€”‚ğİ’è‚µ‚Ü‚·B¬‚³‚¢’l‚ğİ’è‚·‚é‚Æ“ü—Í’x‰„‚ªŒ¸‚è‚Ü‚·‚ªACPUg—p—¦‚ª‘‚¦•\¦—‚ê‚ª”­¶‚µ‚â‚·‚­‚È‚è‚Ü‚·B"
+u8"ã‚ªãƒ³ãƒ©ã‚¤ãƒ³å¯¾æˆ¦æ™‚ã®æœ€å°å…¥åŠ›é…å»¶ãƒ•ãƒ¬ãƒ¼ãƒ æ•°ã‚’è¨­å®šã—ã¾ã™ã€‚å°ã•ã„å€¤ã‚’è¨­å®šã™ã‚‹ã¨å…¥åŠ›é…å»¶ãŒæ¸›ã‚Šã¾ã™ãŒã€CPUä½¿ç”¨ç‡ãŒå¢—ãˆè¡¨ç¤ºä¹±ã‚ŒãŒç™ºç”Ÿã—ã‚„ã™ããªã‚Šã¾ã™ã€‚"
 }));
 
-	OptionCheckbox(t({ "Save Replay" , u8"ƒŠƒvƒŒƒC•Û‘¶" }), config::GdxSaveReplay, t({ "Save replay file to replays directory", u8"ƒIƒ“ƒ‰ƒCƒ“‘Îí‚ÌƒŠƒvƒŒƒCƒtƒ@ƒCƒ‹‚ğ•Û‘¶‚µ‚Ü‚·B"}));
+	OptionCheckbox(t({ "Save Replay" , u8"ãƒªãƒ—ãƒ¬ã‚¤ä¿å­˜" }), config::GdxSaveReplay, t({ "Save replay file to replays directory", u8"ã‚ªãƒ³ãƒ©ã‚¤ãƒ³å¯¾æˆ¦ã®ãƒªãƒ—ãƒ¬ã‚¤ãƒ•ã‚¡ã‚¤ãƒ«ã‚’ä¿å­˜ã—ã¾ã™ã€‚"}));
 	{
 		DisabledScope scope(!config::GdxSaveReplay);
 		ImGui::SameLine();
-		OptionCheckbox(t({ "Upload Replay", u8"ƒŠƒvƒŒƒCƒAƒbƒvƒ[ƒh" }), config::GdxUploadReplay, t({ "Automatically upload the replay file after save", u8"ƒIƒ“ƒ‰ƒCƒ“‘Îí‚ÌƒŠƒvƒŒƒCƒtƒ@ƒCƒ‹‚ğ©“®ƒAƒbƒvƒ[ƒh‚µ‚Ü‚·B"}));
+		OptionCheckbox(t({ "Upload Replay", u8"ãƒªãƒ—ãƒ¬ã‚¤ã‚¢ãƒƒãƒ—ãƒ­ãƒ¼ãƒ‰" }), config::GdxUploadReplay, t({ "Automatically upload the replay file after save", u8"ã‚ªãƒ³ãƒ©ã‚¤ãƒ³å¯¾æˆ¦ã®ãƒªãƒ—ãƒ¬ã‚¤ãƒ•ã‚¡ã‚¤ãƒ«ã‚’è‡ªå‹•ã‚¢ãƒƒãƒ—ãƒ­ãƒ¼ãƒ‰ã—ã¾ã™ã€‚"}));
 	}
 
-	OptionCheckbox(t({ "Display Network Statistics", u8"’ÊMó‹µ•\¦" }), config::NetworkStats,
+	OptionCheckbox(t({ "Display Network Statistics", u8"é€šä¿¡çŠ¶æ³è¡¨ç¤º" }), config::NetworkStats,
 		t({
 "Display network statistics on screen by default.\nUse Flycast Menu button to show/hide.",
-u8"ƒIƒ“ƒ‰ƒCƒ“‘Îí‚É’ÊM‚Ì“Œvî•ñ‚ğ•\¦‚µ‚Ü‚·B.\nMenu ƒ{ƒ^ƒ“‚ğ‰Ÿ‚µ‚Ä•\¦E”ñ•\¦‚ğØ‚è‘Ö‚¦‚é‚±‚Æ‚ª‚Å‚«‚Ü‚·B",
+u8"ã‚ªãƒ³ãƒ©ã‚¤ãƒ³å¯¾æˆ¦æ™‚ã«é€šä¿¡ã®çµ±è¨ˆæƒ…å ±ã‚’è¡¨ç¤ºã—ã¾ã™ã€‚.\nMenu ãƒœã‚¿ãƒ³ã‚’æŠ¼ã—ã¦è¡¨ç¤ºãƒ»éè¡¨ç¤ºã‚’åˆ‡ã‚Šæ›¿ãˆã‚‹ã“ã¨ãŒã§ãã¾ã™ã€‚",
 }));
 
-	OptionCheckbox("SkipRenderingHack", config::GdxSkipRenderingHack, t({ "Skip graphic updates when rolling back.", u8"ƒ[ƒ‹ƒoƒbƒN’†‚ÉƒQ[ƒ€‚Ì•`‰æˆ—‚ğÈ‚«•‰‰×‚ğŒyŒ¸‚µ‚Ü‚·B—LŒø‚ğ„§"}));
+	OptionCheckbox("SkipRenderingHack", config::GdxSkipRenderingHack, t({ "Skip graphic updates when rolling back.", u8"ãƒ­ãƒ¼ãƒ«ãƒãƒƒã‚¯ä¸­ã«ã‚²ãƒ¼ãƒ ã®æç”»å‡¦ç†ã‚’çœãè² è·ã‚’è»½æ¸›ã—ã¾ã™ã€‚æœ‰åŠ¹ã‚’æ¨å¥¨"}));
 
-	OptionCheckbox("SlowIdleLoopHack", config::GdxSlowIdleLoopHack, t({ "Reduce idle loop when rendering.", u8"ƒQ[ƒ€‚Ì–³‘Ê‚Èˆ—‚ğÈ‚«•‰‰×‚ğŒyŒ¸‚µ‚Ü‚·B—LŒø‚ğ„§"}));
+	OptionCheckbox("SlowIdleLoopHack", config::GdxSlowIdleLoopHack, t({ "Reduce idle loop when rendering.", u8"ã‚²ãƒ¼ãƒ ã®ç„¡é§„ãªå‡¦ç†ã‚’çœãè² è·ã‚’è»½æ¸›ã—ã¾ã™ã€‚æœ‰åŠ¹ã‚’æ¨å¥¨"}));
 }
