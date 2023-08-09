@@ -33,6 +33,8 @@
 #include "sleep.h"
 #include "../gdxsv/gdxsv_emu_hooks.h"
 
+using namespace std::chrono;
+
 static bool mainui_enabled;
 u32 MainFrameCount;
 static bool forceReinit;
@@ -111,17 +113,29 @@ void mainui_loop()
 	int currentDupeFrames = config::DupeFrames;
 
 	set_timer_resolution();
-	std::chrono::time_point<std::chrono::steady_clock> start;
+	high_resolution_clock::time_point start;
 	auto fixedFrequencyWait = [&start]() {
 		if (!config::FixedFrequency || gui_is_open() || settings.input.fastForwardMode)
 			return;
 
 		const auto period = get_period();
-		const auto deltaUs = std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::steady_clock::now() - start).count();
+		auto deltaUs = std::chrono::duration_cast<microseconds>(high_resolution_clock::now() - start).count();
 		int64_t overSlept = 0;
-		if (deltaUs < period)
-			overSlept = sleep_and_busy_wait(period - deltaUs);
-		start = std::chrono::steady_clock::now();
+		int64_t us = period - deltaUs;
+		int update_count = 0;
+		while (0 < us) {
+			if (config::FixedFrequencyUpdateInput && config::ThreadedRendering && 2000 < us) {
+				sleep_us(1000);
+				UpdateInputState();
+				update_count++;
+				deltaUs = std::chrono::duration_cast<microseconds>(high_resolution_clock::now() - start).count();
+				us = period - deltaUs;
+			} else {
+				overSlept = sleep_and_busy_wait(us);
+				break;
+			}
+		}
+		start = high_resolution_clock::now();
 		if (1000 <= overSlept)
 			WARN_LOG(RENDERER, "FixedFrequency: Over slept %d [us]", overSlept);
 	};

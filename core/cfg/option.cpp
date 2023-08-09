@@ -108,6 +108,7 @@ Option<int> PerPixelLayers("rend.PerPixelLayers", 32);
 Option<bool> NativeDepthInterpolation("rend.NativeDepthInterpolation", false);
 Option<bool> EmulateFramebuffer("rend.EmulateFramebuffer", false);
 Option<int> FixedFrequency("rend.FixedFrequency", 0);
+Option<bool> FixedFrequencyUpdateInput("rend.FixedFrequencyUpdateInput", true);
 #ifdef VIDEO_ROUTING
 Option<bool> VideoRouting("rend.VideoRouting", false);
 Option<bool> VideoRoutingScale("rend.VideoRoutingScale", false);

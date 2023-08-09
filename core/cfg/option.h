@@ -466,6 +466,7 @@ extern Option<bool> DupeFrames;
 extern Option<bool> NativeDepthInterpolation;
 extern Option<bool> EmulateFramebuffer;
 extern Option<int> FixedFrequency;
+extern Option<bool> FixedFrequencyUpdateInput;
 #ifdef VIDEO_ROUTING
 extern Option<bool> VideoRouting;
 extern Option<bool> VideoRoutingScale;
