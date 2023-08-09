@@ -105,7 +105,6 @@ void gdxsv_gui_settings_tab()
 	if (ImGui::Button(t({ "Apply Recommended Settings\nfor Low-Spec PC", u8"低スペックPC向け\nおすすめ設定適用" }), ScaledVec2(200, 50))) {
 		apply_base_settings();
 		config::ThreadedRendering = true;
-		config::FixedFrequencyUpdateInput = true;
 		config::GdxMinDelay = 3;
 		config::AutoSkipFrame = 1;
 	}
@@ -136,16 +135,6 @@ R"(Run the emulated CPU and GPU on different threads.
 u8"エミュレーターの計算と描画を別のスレッドで行います。有効にした場合負荷が軽くなりますが、最大1フレームの入力遅延が発生します。\n\
 低スペックCPUを使用している場合、有効を推奨\n\
 高スペックCPUを使用している場合、無効を推奨"}));
-
-	ImGui::Indent();
-	{
-		DisabledScope scope(!config::ThreadedRendering);
-		OptionCheckbox(t({ "Minimize input delay", u8"入力遅延削減" }), config::FixedFrequencyUpdateInput, t({
-R"(Update inputs while waiting next frame to minimizes input delay when using Multi-threaded emulation. (Experimental))",
-u8"マルチスレッドエミュレーション使用時に発生する入力遅延を最小化します。(検証中)"
-}));
-	}
-	ImGui::Unindent();
 
 	bool widescreen = config::Widescreen.get() && config::WidescreenGameHacks.get();
 	bool pressed = ImGui::Checkbox(t({ "Enable 16:9 Widescreen Hack", u8"16:9 ワイドモニター対応" }), &widescreen);
