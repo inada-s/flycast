@@ -8,11 +8,9 @@
 #include "gdxsv_gui_settings.h"
 #include "gdxsv_replay_util.h"
 #include "gdxsv_update.h"
-#include "hw/maple/maple_if.h"
 #include "imgui/imgui.h"
 #include "imgui/imgui_internal.h"
 #include "json.hpp"
-#include "libs.h"
 #include "nowide/fstream.hpp"
 #include "oslib/directory.h"
 #include "oslib/oslib.h"
@@ -54,7 +52,10 @@ void gdxsv_emu_start() {
 	}
 }
 
-void gdxsv_emu_reset() { gdxsv.Reset(); }
+void gdxsv_emu_reset()
+{
+	gdxsv.Reset();
+}
 
 void gdxsv_emu_vblank() {
 	if (gdxsv.Enabled()) {
@@ -139,7 +140,10 @@ void gdxsv_emu_apply_base_settings() { gdxsv_apply_base_settings(); }
 
 const char* gdxsv_emu_settings_text_for_preparing_font() { return gdxsv_gui_settings_text_for_preparing_font(); }
 
-void gdxsv_gui_display_osd() { gdxsv.DisplayOSD(); }
+void gdxsv_gui_display_osd()
+{
+	gdxsv.DisplayOSD();
+}
 
 void gdxsv_crash_append_log(FILE* f) {
 	if (gdxsv.Enabled()) {

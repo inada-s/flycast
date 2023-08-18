@@ -51,6 +51,16 @@ static DynarecCodeEntryPtr DYNACALL bm_GetCode(u32 addr)
 	return rv;
 }
 
+inline float tof(u32 v) {
+	union
+	{
+		u32 num;
+		float fnum;
+	}u;
+	u.num = v;
+	return u.fnum;
+}
+
 // addr must be a virtual address
 // This returns an executable address
 DynarecCodeEntryPtr DYNACALL bm_GetCodeByVAddr(u32 addr)
@@ -62,6 +72,38 @@ DynarecCodeEntryPtr DYNACALL bm_GetCodeByVAddr(u32 addr)
 			addr = next_pc;
 		}
 	}
+
+	if (settings.gdxsv.disk == -2) {
+		if (addr == 0x0c0730fe) {
+			NOTICE_LOG(COMMON, "Time2Cku returned %d", r[0]);
+		}
+		if (addr == 0x0c07310c) {
+			NOTICE_LOG(COMMON, "TargetLengthCk_2 returned %d", r[0]);
+		}
+		if (addr == 0x0c04f4a8) {
+			NOTICE_LOG(COMMON, "TargetLengthCk_2 gLength fr0 %f fr3 %f", fr[0], tof(ReadMem32(r[15])));
+			NOTICE_LOG(COMMON, "%f %f %f %f %f %f %f",
+				tof(ReadMem32(r[4] - 8)), tof(ReadMem32(r[4] - 4)), tof(ReadMem32(r[4])),
+				tof(ReadMem32(r[5] - 8)), tof(ReadMem32(r[5] - 4)), tof(ReadMem32(r[5])),
+				fr[0]);
+		}
+	}
+	if (settings.gdxsv.disk == 2) {
+		if (addr == 0x0c0a1dde) {
+			NOTICE_LOG(COMMON, "Time2Cku returned %d", r[0]);
+		}
+		if (addr == 0x0c0a1dec) {
+			NOTICE_LOG(COMMON, "TargetLengthCk_2 returned %d", r[0]);
+		}
+		if (addr == 0x0c07d86e) {
+			NOTICE_LOG(COMMON, "TargetLengthCk_2 gLength fr0 %f fr3 %f", fr[0], tof(ReadMem32(r[15])));
+			NOTICE_LOG(COMMON, "%f %f %f %f %f %f %f",
+				tof(ReadMem32(r[4] - 8)), tof(ReadMem32(r[4] - 4)), tof(ReadMem32(r[4])),
+				tof(ReadMem32(r[5] - 8)), tof(ReadMem32(r[5] - 4)), tof(ReadMem32(r[5])),
+				fr[0]);
+		}
+	}
+
 
 	if (!mmu_enabled())
 		return bm_GetCode(addr);

@@ -8,6 +8,7 @@
 
 #include "cfg/option.h"
 #include "emulator.h"
+#include "input/gamepad.h"
 #include "gdx_rpc.h"
 #include "gdxsv_key_display.h"
 #include "gdxsv_prof.h"
@@ -93,15 +94,18 @@ void Gdxsv::Reset() {
 		config::ContentPath.get().push_back("./");
 	}
 
-	auto game_id = std::string(ip_meta.product_number, sizeof(ip_meta.product_number));
-	if (game_id != "T13306M   ") {
+	if (settings.content.gameId == "T13306M") {
+		const std::string disk_num(ip_meta.disk_num, 1);
+		if (disk_num == "1") disk_ = 1;
+		if (disk_num == "2") disk_ = 2;
+	} else if (settings.content.gameId == "MOBILE SUIT GUNDAM DELUXE JAPAN") {
+		disk_ = -2;
+	} else {
 		enabled_ = false;
 		return;
 	}
+
 	enabled_ = true;
-	std::string disk_num(ip_meta.disk_num, 1);
-	if (disk_num == "1") disk_ = 1;
-	if (disk_num == "2") disk_ = 2;
 	settings.gdxsv.disk = disk_;
 
 	RestoreOnlinePatch();
@@ -640,21 +644,114 @@ void Gdxsv::RestoreOnlinePatch() {
 void Gdxsv::WritePatch() {
 	if (disk_ == 1) WritePatchDisk1();
 	if (disk_ == 2) WritePatchDisk2();
-	if (symbols_["patch_id"] == 0 || gdxsv_ReadMem32(symbols_["patch_id"]) != symbols_[":patch_id"]) {
-		NOTICE_LOG(COMMON, "patch %d %d", gdxsv_ReadMem32(symbols_["patch_id"]), symbols_[":patch_id"]);
-		sh4_cpu.ResetCache();
+
+	if (disk_ == 1 || disk_ == 2) {
+		if (symbols_["patch_id"] == 0 || gdxsv_ReadMem32(symbols_["patch_id"]) != symbols_[":patch_id"]) {
+			NOTICE_LOG(COMMON, "patch %d %d", gdxsv_ReadMem32(symbols_["patch_id"]), symbols_[":patch_id"]);
+			sh4_cpu.ResetCache();
 
 #include "gdxsv_patch.inc"
 
-		gdxsv_WriteMem32(symbols_["disk"], (int)disk_);
+			gdxsv_WriteMem32(symbols_["disk"], (int)disk_);
+		}
+
+		if (disk_ == 2) {
+			if (symbols_["lang_patch_id"] == 0 || gdxsv_ReadMem32(symbols_["lang_patch_id"]) != symbols_[":lang_patch_id"] ||
+				symbols_[":lang_patch_lang"] != (u8)GdxsvLanguage::Language()) {
+				NOTICE_LOG(COMMON, "lang_patch id=%d prev=%d lang=%d", gdxsv_ReadMem32(symbols_["lang_patch_id"]), symbols_[":lang_patch_id"],
+					GdxsvLanguage::Language());
+#include "gdxsv_translation_patch.inc"
+			}
+		}
 	}
 
+	if (disk_ == 1) {
+		// Skip EmMove1
+		gdxsv_WriteMem16(0x0c0b5ecc, 9);
+		gdxsv_WriteMem16(0x0c0b5f1a, 9);
+	}
 	if (disk_ == 2) {
-		if (symbols_["lang_patch_id"] == 0 || gdxsv_ReadMem32(symbols_["lang_patch_id"]) != symbols_[":lang_patch_id"] ||
-			symbols_[":lang_patch_lang"] != (u8)GdxsvLanguage::Language()) {
-			NOTICE_LOG(COMMON, "lang_patch id=%d prev=%d lang=%d", gdxsv_ReadMem32(symbols_["lang_patch_id"]), symbols_[":lang_patch_id"],
-					   GdxsvLanguage::Language());
-#include "gdxsv_translation_patch.inc"
+		// Skip EmMove1
+		gdxsv_WriteMem16(0x0c068462, 9);
+		gdxsv_WriteMem16(0x0c068424, 9);
+	}
+	if (disk_ == -2) {
+		// Skip EmMove1
+		gdxsv_WriteMem16(0x0c03bb02, 9);
+		gdxsv_WriteMem16(0x0c142dda, 9);
+
+		// Skip EmMove2
+		gdxsv_WriteMem16(0x0c089716, 9);
+		gdxsv_WriteMem16(0x0c148dd6, 9);
+	}
+
+	union uf32
+	{
+		u32 num;
+		float fnum;
+	} x[4], y[4], z[4];
+
+	{
+		u32 PlayerWork = 0x0c3d1cd4;
+		if (disk_ == -2) PlayerWork = 0x0c2a0f80;
+		uf32 a, b;
+		a.num = gdxsv_ReadMem32(PlayerWork + 0x1CC4);
+		b.num = gdxsv_ReadMem32(PlayerWork + 0x1CCC);
+		NOTICE_LOG(COMMON, "1cc4:%f 1ccc:%f", a.fnum, b.fnum);
+	}
+
+	if (~mapleInputState[0].kcode & DC_DPAD2_LEFT) {
+		for (int i = 0; i < 1; i++)
+		{
+			u32 PlayerWork = 0x0c3d1cd4 + i * 0x2000;
+			if (disk_ == -2) PlayerWork = 0x0c2a0f80 + i * 0x2000;
+			x[i].num = gdxsv_ReadMem32(PlayerWork + 0x20);
+			y[i].num = gdxsv_ReadMem32(PlayerWork + 0x24);
+			z[i].num = gdxsv_ReadMem32(PlayerWork + 0x28);
+			NOTICE_LOG(COMMON, "%f %f %f", x[i].fnum, y[i].fnum, z[i].fnum);
+
+
+			/*
+			x[i].num = 0x4487632a;
+			y[i].num = 0x431b0000;
+			z[i].num = 0x4431b13e;
+			gdxsv_WriteMem32(PlayerWork + 0x20, x[i].num);
+			gdxsv_WriteMem32(PlayerWork + 0x24, y[i].num);
+			gdxsv_WriteMem32(PlayerWork + 0x28, z[i].num);
+			*/
+		}
+	}
+
+	if (~mapleInputState[0].kcode & DC_DPAD2_UP) {
+		union
+		{
+			u32 num;
+			float fnum;
+		} x[4], y[4], z[4];
+
+		int target = 1;
+
+		for (int i = 0; i < 4; i++) {
+			u32 PlayerWork = 0x0c3d1cd4 + i * 0x2000;
+			if (disk_ == -2) PlayerWork = 0x0c2a0f80 + i * 0x2000;
+			x[i].num = gdxsv_ReadMem32(PlayerWork + 0x20);
+			y[i].num = gdxsv_ReadMem32(PlayerWork + 0x24);
+			z[i].num = gdxsv_ReadMem32(PlayerWork + 0x28);
+			// y[i].fnum += 100.f;
+			if (i == target) {
+				// x[i].fnum = x[0].fnum + 10.f;
+				// y[i].fnum = y[0].fnum + 60.f;
+				// z[i] = z[0];
+				y[i].fnum = y[0].fnum;
+				x[i].fnum = x[0].fnum + -6.f;
+				z[i].fnum = z[0].fnum + 12.f;
+			}
+			gdxsv_WriteMem32(PlayerWork + 0x20, x[i].num);
+			gdxsv_WriteMem32(PlayerWork + 0x24, y[i].num);
+			gdxsv_WriteMem32(PlayerWork + 0x28, z[i].num);
+			// gdxsv_WriteMem32(PlayerWork + 0x2c, 0);
+			// dgdxsv_WriteMem32(PlayerWork + 0x30, 0);
+			// gdxsv_WriteMem32(PlayerWork + 0x34, 0);
 		}
 	}
 }
