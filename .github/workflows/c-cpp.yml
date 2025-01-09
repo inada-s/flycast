@@ -3,7 +3,7 @@ name: C/C++ CI
 on:
   push:
     branches:
-      - 'gdxsv-master'
+      - 'rebuild-gdxsv-1.6.2'
     tags:
       - 'gdxsv-*'
   pull_request:
