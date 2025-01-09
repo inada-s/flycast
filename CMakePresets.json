@@ -6,7 +6,7 @@
             "generator": "Ninja",
             "binaryDir": "build-clang",
             "cacheVariables": {
-                "CMAKE_BUILD_TYPE": "Debug",
+                "CMAKE_BUILD_TYPE": "RelWithDebInfo",
                 "CMAKE_EXPORT_COMPILE_COMMANDS": "ON"
             }
         },
@@ -15,7 +15,7 @@
             "generator": "Ninja",
             "binaryDir": "build-gcc",
             "cacheVariables": {
-                "CMAKE_BUILD_TYPE": "Debug",
+                "CMAKE_BUILD_TYPE": "RelWithDebInfo",
                 "CMAKE_EXPORT_COMPILE_COMMANDS": "ON"
             }
         }
