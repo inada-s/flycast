@@ -12,7 +12,7 @@ set(SENTRY_UPLOAD_URL "" CACHE STRING "Sentry upload URL")
 set(CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/shell/cmake")
 
 if(MSVC)
-	set_target_properties(${PROJECT_NAME} PROPERTIES MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
+	set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
 endif()
 
 if(APPLE)
