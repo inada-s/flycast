@@ -2109,7 +2109,7 @@ target_sources(${PROJECT_NAME} PRIVATE
 		core/gdxsv/libs.h
 		core/gdxsv/mcs_message.h)
 
-if(MSVC)
+if(WIN32)
 	set(CMAKE_VS_SDK_INCLUDE_DIRECTORIES ${CUSTOM_INCLUDE_DIRECTORIES})
 	target_sources(${PROJECT_NAME} PRIVATE core/gdxsv/textures.rc)
 endif()
