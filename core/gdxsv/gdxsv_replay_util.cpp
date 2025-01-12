@@ -2,11 +2,11 @@
 
 #include <sys/stat.h>
 #include <sys/types.h>
-#ifndef WIN32
+#ifndef _WIN32
 #include <unistd.h>
 #endif
 
-#ifdef WIN32
+#ifdef _WIN32
 #define stat _stat
 #define WIN32_LEAN_AND_MEAN
 // clang-format off
