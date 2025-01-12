@@ -99,7 +99,7 @@ endif()
 find_package(Git)
 if(GIT_FOUND AND EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/.git")
 	execute_process(
-		COMMAND ${GIT_EXECUTABLE} describe --tags --always
+		COMMAND ${GIT_EXECUTABLE} describe --tags --always --match 'gdxsv-*'
 		WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
 		OUTPUT_VARIABLE GIT_VERSION
 		OUTPUT_STRIP_TRAILING_WHITESPACE
