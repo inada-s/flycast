@@ -348,10 +348,10 @@ if(NOT LIBRETRO)
 					-a x86_64
 					-g ${CMAKE_CURRENT_BINARY_DIR}/$<CONFIG>/Flycast.app.dSYM
 					${CMAKE_CURRENT_BINARY_DIR}/$<CONFIG>/Flycast.app/Contents/MacOS/Flycast > ../symbols/Flycast-x64.sym
-				COMMAND ${CMAKE_CURRENT_SOURCE_DIR}/build/breakpad/dump_syms
-					-a arm64
-					-g ${CMAKE_CURRENT_BINARY_DIR}/$<CONFIG>/Flycast.app.dSYM
-					${CMAKE_CURRENT_BINARY_DIR}/$<CONFIG>/Flycast.app/Contents/MacOS/Flycast > ../symbols/Flycast-arm64.sym
+				# COMMAND ${CMAKE_CURRENT_SOURCE_DIR}/build/breakpad/dump_syms
+				# 	-a arm64
+				# 	-g ${CMAKE_CURRENT_BINARY_DIR}/$<CONFIG>/Flycast.app.dSYM
+				# 	${CMAKE_CURRENT_BINARY_DIR}/$<CONFIG>/Flycast.app/Contents/MacOS/Flycast > ../symbols/Flycast-arm64.sym
 			)
 		else()
 			add_custom_command(TARGET ${PROJECT_NAME} POST_BUILD
@@ -363,10 +363,10 @@ if(NOT LIBRETRO)
 					-a x86_64
 					-g ${CMAKE_CURRENT_BINARY_DIR}/Flycast.app.dSYM
 					${CMAKE_CURRENT_BINARY_DIR}/Flycast.app/Contents/MacOS/Flycast > ../symbols/Flycast-x64.sym
-				COMMAND ${CMAKE_CURRENT_SOURCE_DIR}/build/breakpad/dump_syms
-					-a arm64
-					-g ${CMAKE_CURRENT_BINARY_DIR}/Flycast.app.dSYM
-					${CMAKE_CURRENT_BINARY_DIR}/Flycast.app/Contents/MacOS/Flycast > ../symbols/Flycast-arm64.sym
+				# COMMAND ${CMAKE_CURRENT_SOURCE_DIR}/build/breakpad/dump_syms
+				# 	-a arm64
+				# 	-g ${CMAKE_CURRENT_BINARY_DIR}/Flycast.app.dSYM
+				# 	${CMAKE_CURRENT_BINARY_DIR}/Flycast.app/Contents/MacOS/Flycast > ../symbols/Flycast-arm64.sym
 			)
 		endif()
 	endif()
