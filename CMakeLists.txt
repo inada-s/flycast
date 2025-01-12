@@ -100,6 +100,7 @@ if(GIT_FOUND AND EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/.git")
 		MATH(EXPR SEMVER_PATCH "${SEMVER_PATCH}+1")
 		string(REGEX REPLACE "[0-9]+-dev" "${SEMVER_PATCH}-dev" GIT_VERSION "${GIT_VERSION}")
 	endif()
+	set(GIT_VERSION "gdxsv-1.6.2")
 	
 	execute_process(
 		COMMAND ${GIT_EXECUTABLE} rev-parse --short HEAD
