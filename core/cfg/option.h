@@ -461,6 +461,7 @@ extern Option<int> CrosshairSize;
 extern Option<int> SkipFrame;
 extern Option<int> MaxThreads;
 extern Option<int> AutoSkipFrame;		// 0: none, 1: some, 2: more
+extern Option<bool> SimulateFrameDrop;	// Simulate hardware frame drops when emulated CPU/GPU time exceeds real hardware limits
 extern Option<int> RenderResolution;
 extern Option<bool> IntegerScale;
 extern Option<bool> LinearInterpolation;

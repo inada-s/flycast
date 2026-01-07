@@ -7,6 +7,7 @@
 #include "network/ggpo.h"
 #include "hw/pvr/Renderer_if.h"
 #include "stdclass.h"
+#include "cfg/option.h"
 #include <array>
 
 #ifdef TEST_AUTOMATION
@@ -35,7 +36,10 @@ static std::array<double, 4> real_times;
 static std::array<u64, 4> cpu_cycles;
 static u32 cpu_time_idx;
 bool SH4FastEnough;
+bool FrameOverBudget;
 u32 fskip;
+static u64 frame_start_cycle;
+static u32 frame_render_cycles;  // GPU cycles used for rendering this frame
 
 static u32 lightgun_line = 0xffff;
 static u32 lightgun_hpos;
@@ -153,6 +157,27 @@ static int spg_line_sched(int tag, int cycles, int jitter, void *arg)
 				SPG_STATUS.fieldnum = ~SPG_STATUS.fieldnum;
 			else
 				SPG_STATUS.fieldnum = 0;
+
+			// Check if the frame exceeded the hardware cycle budget
+			u64 current_cycle = sh4_sched_now64();
+			u64 frame_cpu_cycles = current_cycle - frame_start_cycle;
+
+			// Simulate frame drop when GPU uses more than 70% of the frame budget
+			// Frame_Cycles ≈ 3.3M, so 70% ≈ 2.34M
+			// This allows light/medium scenes to run smoothly while heavy scenes (>2.34M) drop frames
+			u32 gpu_budget = Frame_Cycles * 70 / 100;
+			FrameOverBudget = frame_render_cycles > gpu_budget;
+
+			if (config::SimulateFrameDrop)
+			{
+				static int log_count = 0;
+				if (++log_count % 60 == 0)  // Log every 60 frames
+					NOTICE_LOG(PVR, "Frame stats: CPU=%llu GPU=%u Budget=%u OverBudget=%d",
+						frame_cpu_cycles, frame_render_cycles, Frame_Cycles, FrameOverBudget);
+			}
+
+			frame_start_cycle = current_cycle;
+			frame_render_cycles = 0;  // Reset for next frame
 
 			rend_vblank();
 
@@ -274,6 +299,9 @@ void spg_Reset(bool hard)
 	CalculateSync();
 
 	SH4FastEnough = false;
+	FrameOverBudget = false;
+	frame_start_cycle = 0;
+	frame_render_cycles = 0;
 	cpu_time_idx = 0;
 	cpu_cycles.fill(0);
 	real_times.fill(0.0);
@@ -296,7 +324,27 @@ void scheduleRenderDone(TA_context *cntx)
 			for (TA_context *c = cntx; c != nullptr; c = c->nextContext)
 				size += c->tad.thd_data - c->tad.thd_root;
 			cycles = std::min(450000 + size * 100, 1500000);
+
+			// For frame drop simulation, calculate realistic GPU load separately
+			// Original formula (size * 100) is too aggressive, use size * 4 for realistic load
+			int gpu_load_cycles = 450000 + size * 4;
+
+			if (config::SimulateFrameDrop)
+			{
+				static int sched_log_count = 0;
+				if (++sched_log_count % 60 == 0)  // Log every 60 calls
+					NOTICE_LOG(PVR, "scheduleRenderDone: size=%d emu_cycles=%d gpu_load=%d",
+						size, cycles, gpu_load_cycles);
+			}
+
+			// Track GPU load for frame budget calculation (not the emulator scheduling cycles)
+			frame_render_cycles += gpu_load_cycles;
 		}
+	}
+	else
+	{
+		// Track GPU cycles for frame budget calculation
+		frame_render_cycles += cycles;
 	}
 	sh4_sched_request(render_end_schid, cycles);
 }

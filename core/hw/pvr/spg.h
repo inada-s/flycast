@@ -2,6 +2,7 @@
 #include "ta_ctx.h"
 
 extern bool SH4FastEnough;
+extern bool FrameOverBudget;  // True if the last frame exceeded hardware cycle budget
 
 bool spg_Init();
 void spg_Term();

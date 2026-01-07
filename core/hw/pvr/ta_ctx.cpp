@@ -50,7 +50,7 @@ static cResetEvent frame_finished;
 bool QueueRender(TA_context* ctx)
 {
 	verify(ctx != 0);
-	
+
 	bool skipFrame = !rend_is_enabled();
 	if (!skipFrame)
 	{

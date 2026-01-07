@@ -19,6 +19,7 @@
 
 #include "mainui.h"
 #include "hw/pvr/Renderer_if.h"
+#include "hw/pvr/spg.h"
 #include "gui.h"
 #include "oslib/oslib.h"
 #include "wsi/context.h"
@@ -110,10 +111,18 @@ void mainui_loop(bool forceStart)
 	set_timer_resolution();
 	std::chrono::time_point<std::chrono::steady_clock> start;
 	auto fixedFrequencyWait = [&start]() {
-		if (!config::FixedFrequency || gui_is_open() || settings.input.fastForwardMode)
+		if (gui_is_open() || settings.input.fastForwardMode)
 			return;
 
-		const auto period = get_period();
+		// Skip timing control if neither fixed frequency nor frame drop simulation is active
+		if (!(config::FixedFrequency || (config::SimulateFrameDrop && FrameOverBudget)))
+			return;
+
+		auto period = get_period();
+		// Simulate hardware frame drop by doubling the frame time when emulated frame exceeded hardware limits
+		if (config::SimulateFrameDrop && FrameOverBudget)
+			period *= 2;
+
 		const auto deltaUs = std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::steady_clock::now() - start).count();
 		int64_t overSlept = 0;
 		if (deltaUs < period)
