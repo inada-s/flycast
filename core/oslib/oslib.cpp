@@ -481,6 +481,7 @@ void os_UpdateInputState()
 	FC_PROFILE_SCOPE;
 
 	GamepadDevice::RampAnalog();
+
 #if defined(USE_SDL)
 	input_sdl_handle();
 #elif defined(USE_EVDEV)

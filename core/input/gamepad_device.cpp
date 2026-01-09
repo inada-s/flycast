@@ -49,6 +49,9 @@ u16 rt2[4];
 u8 kb_shift[MAPLE_PORTS];	// shift keys pressed (bitmask)
 u8 kb_key[MAPLE_PORTS][6];	// normal keys pressed
 
+// Mutex to protect input state from concurrent access
+std::recursive_mutex gamepadInputMutex;
+
 std::vector<std::shared_ptr<GamepadDevice>> GamepadDevice::_gamepads;
 std::mutex GamepadDevice::_gamepads_mutex;
 
@@ -211,6 +214,7 @@ bool GamepadDevice::handleButtonInputDef(const InputMapping::InputDef& inputDef,
 bool GamepadDevice::gamepad_btn_input(u32 code, bool pressed)
 {
 	const InputMapping::InputDef inputDef = InputMapping::InputDef::from_button(code);
+	std::lock_guard lock(gamepadInputMutex);
 
 	// When detecting input for button mapping
 	if (_input_detected != nullptr && getTimeMs() >= _detection_start_time)
@@ -328,6 +332,7 @@ bool GamepadDevice::gamepad_axis_input(u32 code, int value)
 
 	const bool positive = input_mapper->isTrigger(code) || value >= 0;
 	const InputMapping::InputDef inputDef = InputMapping::InputDef::from_axis(code, positive);
+	std::lock_guard lock(gamepadInputMutex);
 
 	auto handle_axis = [&](u32 port, DreamcastKey key, int v, u32 code)
 	{

@@ -469,6 +469,7 @@ extern Option<int64_t> PixelBufferSize;
 extern Option<int> AnisotropicFiltering;
 extern Option<int> TextureFiltering; // 0: default, 1: force nearest, 2: force linear
 extern Option<bool> ThreadedRendering;
+extern Option<bool> FrequentInputPolling; // Poll input every 4ms during frame wait (reduces input lag in threaded rendering)
 extern Option<bool> DupeFrames;
 extern Option<bool> NativeDepthInterpolation;
 extern Option<bool> EmulateFramebuffer;

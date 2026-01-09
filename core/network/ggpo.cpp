@@ -43,39 +43,52 @@ static void getLocalInput(MapleInputState inputState[4])
 {
 	if (!config::ThreadedRendering)
 		os_UpdateInputState();
-	std::lock_guard<std::mutex> lock(relPosMutex);
-	for (int player = 0; player < 4; player++)
-	{
-		MapleInputState& state = inputState[player];
-		state.kcode = kcode[player];
-		state.halfAxes[PJTI_L] = lt[player];
-		state.halfAxes[PJTI_R] = rt[player];
-		state.halfAxes[PJTI_L2] = lt2[player];
-		state.halfAxes[PJTI_R2] = rt2[player];
-		state.fullAxes[PJAI_X1] = joyx[player];
-		state.fullAxes[PJAI_Y1] = joyy[player];
-		state.fullAxes[PJAI_X2] = joyrx[player];
-		state.fullAxes[PJAI_Y2] = joyry[player];
-		state.fullAxes[PJAI_X3] = joy3x[player];
-		state.fullAxes[PJAI_Y3] = joy3y[player];
-		state.mouseButtons = mo_buttons[player];
-		state.absPos.x = mo_x_abs[player];
-		state.absPos.y = mo_y_abs[player];
-		state.keyboard.shift = kb_shift[player];
-		memcpy(state.keyboard.key, kb_key[player], sizeof(kb_key[player]));
-		int relX = std::round(mo_x_delta[player]);
-		int relY = std::round(mo_y_delta[player]);
-		int wheel = std::round(mo_wheel_delta[player]);
-		state.relPos.x += relX;
-		state.relPos.y += relY;
-		state.relPos.wheel += wheel;
-		mo_x_delta[player] -= relX;
-		mo_y_delta[player] -= relY;
-		mo_wheel_delta[player] -= wheel;
 
-		if (gdxsv_enabled()) {
-			if (state.halfAxes[PJTI_L2] >= 64) state.kcode &= ~(DC_BTN_A | DC_BTN_X);
-			if (state.halfAxes[PJTI_R2] >= 64) state.kcode &= ~(DC_BTN_A | DC_BTN_Y);
+	// Lock input state for reading
+	{
+		std::lock_guard lock(gamepadInputMutex);
+		for (int player = 0; player < 4; player++)
+		{
+			MapleInputState& state = inputState[player];
+			state.kcode = kcode[player];
+			state.halfAxes[PJTI_L] = lt[player];
+			state.halfAxes[PJTI_R] = rt[player];
+			state.halfAxes[PJTI_L2] = lt2[player];
+			state.halfAxes[PJTI_R2] = rt2[player];
+			state.fullAxes[PJAI_X1] = joyx[player];
+			state.fullAxes[PJAI_Y1] = joyy[player];
+			state.fullAxes[PJAI_X2] = joyrx[player];
+			state.fullAxes[PJAI_Y2] = joyry[player];
+			state.fullAxes[PJAI_X3] = joy3x[player];
+			state.fullAxes[PJAI_Y3] = joy3y[player];
+			state.mouseButtons = mo_buttons[player];
+			state.absPos.x = mo_x_abs[player];
+			state.absPos.y = mo_y_abs[player];
+			state.keyboard.shift = kb_shift[player];
+			memcpy(state.keyboard.key, kb_key[player], sizeof(kb_key[player]));
+
+			if (gdxsv_enabled()) {
+				if (state.halfAxes[PJTI_L2] >= 64) state.kcode &= ~(DC_BTN_A | DC_BTN_X);
+				if (state.halfAxes[PJTI_R2] >= 64) state.kcode &= ~(DC_BTN_A | DC_BTN_Y);
+			}
+		}
+	}
+
+	// Lock mouse relative position separately
+	{
+		std::lock_guard<std::mutex> lock(relPosMutex);
+		for (int player = 0; player < 4; player++)
+		{
+			MapleInputState& state = inputState[player];
+			int relX = std::round(mo_x_delta[player]);
+			int relY = std::round(mo_y_delta[player]);
+			int wheel = std::round(mo_wheel_delta[player]);
+			state.relPos.x += relX;
+			state.relPos.y += relY;
+			state.relPos.wheel += wheel;
+			mo_x_delta[player] -= relX;
+			mo_y_delta[player] -= relY;
+			mo_wheel_delta[player] -= wheel;
 		}
 	}
 }
@@ -785,53 +798,59 @@ bool nextFrame()
 		if (!config::ThreadedRendering && !useRandInput)
 			os_UpdateInputState();
 		Inputs inputs;
-		inputs.kcode = ~kcode[0];
-		if (rt[0] >= 0x4000)
-			inputs.kcode |= BTN_TRIGGER_RIGHT;
-		else
-			inputs.kcode &= ~BTN_TRIGGER_RIGHT;
-		if (lt[0] >= 0x4000)
-			inputs.kcode |= BTN_TRIGGER_LEFT;
-		else
-			inputs.kcode &= ~BTN_TRIGGER_LEFT;
-		inputs.mouseButtons = 0;
-		inputs.kbModifiers = 0;
-		if (analogAxes > 0)
 		{
-			inputs.u.analog.x = joyx[0] >> 8;
-			if (analogAxes >= 2)
-				inputs.u.analog.y = joyy[0] >> 8;
-		}
-		else if (absPointerPos)
-		{
-			inputs.u.absPos.x = mo_x_abs[0];
-			inputs.u.absPos.y = mo_y_abs[0];
-		}
-		else if (keyboardGame)
-		{
-			inputs.kbModifiers = kb_shift[0];
-			memcpy(inputs.u.keys, kb_key[0], sizeof(kb_key[0]));
-		}
-		else if (mouseGame)
-		{
-			std::lock_guard<std::mutex> lock(relPosMutex);
-			inputs.mouseButtons = ~mo_buttons[0];
-			inputs.u.relPos.x = std::round(mo_x_delta[0]);
-			inputs.u.relPos.y = std::round(mo_y_delta[0]);
-			inputs.u.relPos.wheel = std::round(mo_wheel_delta[0]);
-			mo_x_delta[0] -= inputs.u.relPos.x;
-			mo_y_delta[0] -= inputs.u.relPos.y;
-			mo_wheel_delta[0] -= inputs.u.relPos.wheel;
+			std::lock_guard lock(gamepadInputMutex);
+
+			inputs.kcode = ~kcode[0];
+			if (rt[0] >= 0x4000)
+				inputs.kcode |= BTN_TRIGGER_RIGHT;
+			else
+				inputs.kcode &= ~BTN_TRIGGER_RIGHT;
+			if (lt[0] >= 0x4000)
+				inputs.kcode |= BTN_TRIGGER_LEFT;
+			else
+				inputs.kcode &= ~BTN_TRIGGER_LEFT;
+			inputs.mouseButtons = 0;
+			inputs.kbModifiers = 0;
+			if (analogAxes > 0)
+			{
+				inputs.u.analog.x = joyx[0] >> 8;
+				if (analogAxes >= 2)
+					inputs.u.analog.y = joyy[0] >> 8;
+			}
+			else if (absPointerPos)
+			{
+				inputs.u.absPos.x = mo_x_abs[0];
+				inputs.u.absPos.y = mo_y_abs[0];
+			}
+			else if (keyboardGame)
+			{
+				inputs.kbModifiers = kb_shift[0];
+				memcpy(inputs.u.keys, kb_key[0], sizeof(kb_key[0]));
+			}
+			else if (mouseGame)
+			{
+				std::lock_guard<std::mutex> lock(relPosMutex);
+				inputs.mouseButtons = ~mo_buttons[0];
+				inputs.u.relPos.x = std::round(mo_x_delta[0]);
+				inputs.u.relPos.y = std::round(mo_y_delta[0]);
+				inputs.u.relPos.wheel = std::round(mo_wheel_delta[0]);
+				mo_x_delta[0] -= inputs.u.relPos.x;
+				mo_y_delta[0] -= inputs.u.relPos.y;
+				mo_wheel_delta[0] -= inputs.u.relPos.wheel;
+			}
+
+			if (gdxsv_enabled()) {
+				if (lt2[0] >= 64) inputs.kcode |= DC_BTN_A | DC_BTN_X;
+				if (rt2[0] >= 64) inputs.kcode |= DC_BTN_A | DC_BTN_Y;
+			}
 		}
 
 		if (useExInput)
 		{
 			inputs.exInput = localExInput;
 		}
-		if (gdxsv_enabled()) {
-			if (lt2[0] >= 64) inputs.kcode |= DC_BTN_A | DC_BTN_X;
-			if (rt2[0] >= 64) inputs.kcode |= DC_BTN_A | DC_BTN_Y;
-		}
+
 		error = ggpo_add_local_input(ggpoSession, localPlayer, &inputs, inputSize);
 		if (error == GGPO_OK)
 		{

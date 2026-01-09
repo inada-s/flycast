@@ -309,3 +309,6 @@ extern u16 rt[4], lt[4], rt2[4], lt2[4];
 extern s16 joyx[4], joyy[4];
 extern s16 joyrx[4], joyry[4];
 extern s16 joy3x[4], joy3y[4];
+
+// Mutex to protect input state from concurrent access
+extern std::recursive_mutex gamepadInputMutex;

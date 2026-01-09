@@ -261,6 +261,16 @@ u8"分拆GPU運算去另一線程，可以降低負荷但係有可能有 1 frame
 高階 CPU 建議停用"
 		}));
 
+	ImGui::Indent();
+	{
+		DisabledScope scope(!config::ThreadedRendering.get());
+		OptionCheckbox(t({ "Reduce input lag (Experimental)", u8"入力遅延の軽減(試験中)" }), config::FrequentInputPolling, t({
+R"(Poll input during frame wait to reduce input lag in threaded rendering.
+Only effective when Multi-threaded emulation is enabled.)",
+u8"フレーム待機中も入力をポーリングしマルチスレッド時の入力遅延を軽減します。\nマルチスレッドエミュレーション有効時のみ効果があります。"}));
+	}
+	ImGui::Unindent();
+
 	bool widescreen = config::Widescreen.get() && config::WidescreenGameHacks.get();
 	pressed = ImGui::Checkbox(t({ "Enable 16:9 Widescreen Hack", u8"16:9 ワイドモニター対応", u8"使用 16:9 闊螢幕補丁" }), &widescreen);
 	if (pressed) {

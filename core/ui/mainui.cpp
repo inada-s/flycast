@@ -109,15 +109,44 @@ void mainui_loop(bool forceStart)
 
 	set_timer_resolution();
 	std::chrono::time_point<std::chrono::steady_clock> start;
-	auto fixedFrequencyWait = [&start]() {
+
+	auto getDeltaUs = [&start]() -> long long {
+		return std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::steady_clock::now() - start).count();
+	};
+	auto fixedFrequencyWait = [&start, &getDeltaUs]() {
 		if (!config::FixedFrequency || gui_is_open() || settings.input.fastForwardMode)
 			return;
 
 		const auto period = get_period();
-		const auto deltaUs = std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::steady_clock::now() - start).count();
+		auto deltaUs = getDeltaUs();
 		int64_t overSlept = 0;
 		if (deltaUs < period)
-			overSlept = sleep_and_busy_wait(period - deltaUs);
+		{
+			if (config::ThreadedRendering && config::FrequentInputPolling)
+			{
+				constexpr int64_t pollIntervalUs = 2000;
+
+				if (deltaUs >= pollIntervalUs) {
+					os_UpdateInputState();
+					deltaUs = getDeltaUs();
+				}
+
+				while (period - deltaUs > pollIntervalUs + 1000)
+				{
+					sleep_us(pollIntervalUs);
+					os_UpdateInputState();
+					deltaUs = getDeltaUs();
+				}
+
+				if (deltaUs < period)
+					overSlept = sleep_and_busy_wait(period - deltaUs);
+			}
+			else
+			{
+				overSlept = sleep_and_busy_wait(period - deltaUs);
+			}
+		}
+
 		start = std::chrono::steady_clock::now();
 		if (1000 <= overSlept)
 			WARN_LOG(RENDERER, "FixedFrequency: Over slept %d [us]", overSlept);
