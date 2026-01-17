@@ -48,7 +48,7 @@ jobs:
           brew install libao ldid ninja pulseaudio
           # brew uninstall --ignore-dependencies zstd
           [ -f $VULKAN_SDK/../MaintenanceTool.app/Contents/MacOS/MaintenanceTool ] && sudo $VULKAN_SDK/../MaintenanceTool.app/Contents/MacOS/MaintenanceTool --confirm-command purge
-          VULKAN_VER=1.3.261.1 && aria2c https://sdk.lunarg.com/sdk/download/$VULKAN_VER/mac/vulkansdk-macos-$VULKAN_VER.dmg
+          VULKAN_VER=1.3.290.0 && aria2c https://sdk.lunarg.com/sdk/download/$VULKAN_VER/mac/vulkansdk-macos-$VULKAN_VER.dmg
           hdiutil attach ./vulkansdk-macos-$VULKAN_VER.dmg -mountpoint /Volumes/VulkanSDK
           sudo /Volumes/VulkanSDK/InstallVulkan.app/Contents/MacOS/InstallVulkan --root $HOME/VulkanSDK --accept-licenses --default-answer --confirm-command install
           hdiutil detach /Volumes/VulkanSDK
