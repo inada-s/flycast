@@ -36,6 +36,7 @@ void GdxsvBackendReplay::Reset() {
 	ctrl_step_frame_ = false;
 	ctrl_pause_ = false;
 	save_converted_log_ = false;
+	debug_mode_ = false;
 
 	gdxsv_save_state.Reset();
 	gdxsv.key_display_.Clear();
@@ -48,21 +49,24 @@ void GdxsvBackendReplay::OnMainUiLoop() {
 		return;
 	}
 
+	// LBS phase: auto button press to proceed (needed even in debug mode)
 	if (state_ <= State::LbsStartBattleFlow) {
 		static int counter = 0;
-		if (++counter % 10 < 5)
-			kcode[0] = ~DC_BTN_A;
-		else
-			kcode[0] = ~0u;
+		if (!debug_mode_) {
+			if (++counter % 10 < 5)
+				kcode[0] = ~DC_BTN_A;
+			else
+				kcode[0] = ~0u;
+		}
 		if (ctrl_commands_.empty() && !lbs_first_skip_) {
-			ctrl_commands_.emplace_back(ReplayCtrlCommand::SeekForward, target_frame_ > 0 ? 1000 : 180);
+			AddCtrlCommand(ReplayCtrlCommand::SeekForward, target_frame_ > 0 ? 1000 : 180);
 			lbs_first_skip_ = true;
 		}
 	}
 
 	if (state_ == State::McsWaitJoin) {
 		if (ctrl_commands_.empty()) {
-			ctrl_commands_.emplace_back(ReplayCtrlCommand::SeekToBriefing);
+			AddCtrlCommand(ReplayCtrlCommand::SeekToBriefing);
 		}
 	}
 
@@ -71,13 +75,18 @@ void GdxsvBackendReplay::OnMainUiLoop() {
 		const int COM_R_No0 = disk == 1 ? 0x0c2f6639 : 0x0c391d79;
 		if (gdxsv_ReadMem8(COM_R_No0) == 4 && (gdxsv_ReadMem8(COM_R_No0 + 5) == 3 || gdxsv_ReadMem8(COM_R_No0 + 5) == 4)) {
 			// re-battle end
-			Stop();
+			if (!debug_mode_) Stop();
 		} else if (gdxsv_ReadMem8(COM_R_No0) == 4 && gdxsv_ReadMem8(COM_R_No0 + 5) != 0) {
 			// not game scene
 			if (ctrl_commands_.empty()) {
-				ctrl_commands_.emplace_back(ReplayCtrlCommand::SeekToBriefing);
+				AddCtrlCommand(ReplayCtrlCommand::SeekToBriefing);
 			}
 		}
+	}
+
+	if (debug_mode_) {
+		gui_delayed_keys_up();
+		return;
 	}
 
 	if (State::LbsStartBattleFlow <= state_ && !pause_menu_opend_) {
@@ -178,7 +187,9 @@ void GdxsvBackendReplay::OnNextFrame() {
 	};
 
 	gdxsv.key_display_.enabled(config::GdxReplayKeyDisplay && in_game());
-	regular_save_state();
+	if (!debug_mode_) {
+		regular_save_state();
+	}
 
 	if (0 < ctrl_play_speed_ && !ctrl_pause_ && !need_cancel()) {
 		for (int skipped_frame = 0; skipped_frame < ctrl_play_speed_; skipped_frame++) {
@@ -350,9 +361,9 @@ void GdxsvBackendReplay::OnNextFrame() {
 			gdxsv.key_display_.Clear();
 			
 			if (target_round_ > 1) {
-				ctrl_commands_.emplace_back(ReplayCtrlCommand::SetRound, target_round_);
+				AddCtrlCommand(ReplayCtrlCommand::SetRound, target_round_);
 			} else if (target_frame_ != 0) {
-				ctrl_commands_.emplace_back(ReplayCtrlCommand::JumpToKeyMsg, target_frame_);
+				AddCtrlCommand(ReplayCtrlCommand::JumpToKeyMsg, target_frame_);
 			}
 		}
 
@@ -411,9 +422,9 @@ void GdxsvBackendReplay::OnNextFrame() {
 				recv_buf_.clear();
 				gdxsv.key_display_.Clear();
 				target_round_ = 0;
-				ctrl_commands_.emplace_back(ReplayCtrlCommand::SaveFirstFrame);
-				ctrl_commands_.emplace_back(ReplayCtrlCommand::SendStartMsg);
-				ctrl_commands_.emplace_back(ReplayCtrlCommand::SeekToBriefing);
+				AddCtrlCommand(ReplayCtrlCommand::SaveFirstFrame);
+				AddCtrlCommand(ReplayCtrlCommand::SendStartMsg);
+				AddCtrlCommand(ReplayCtrlCommand::SeekToBriefing);
 
 				EventManager::event(Event::GGPOGameEnd);
 			}
@@ -428,7 +439,7 @@ bool GdxsvBackendReplay::OnOpenMenu() {
 		return false;
 	}
 
-	ctrl_commands_.emplace_back(ReplayCtrlCommand::TogglePauseMenu);
+	AddCtrlCommand(ReplayCtrlCommand::TogglePauseMenu);
 
 	return false;
 }
@@ -458,9 +469,10 @@ bool GdxsvBackendReplay::StartFile(const char* path, int pov) {
 	}
 
 	pov_ = pov;
-	
+
 	target_round_ = cfgLoadInt("gdxsv", "replay_target_round", 0);
 	target_frame_ = cfgLoadInt("gdxsv", "replay_target_frame", 0);
+	debug_mode_ = cfgLoadInt("gdxsv", "replay_debug_mode", 0) != 0;
 
 	return Start();
 }
@@ -478,6 +490,10 @@ bool GdxsvBackendReplay::StartBuffer(const std::vector<u8>& buf, int pov) {
 
 	pov_ = pov;
 
+	target_round_ = cfgLoadInt("gdxsv", "replay_target_round", 0);
+	target_frame_ = cfgLoadInt("gdxsv", "replay_target_frame", 0);
+	debug_mode_ = cfgLoadInt("gdxsv", "replay_debug_mode", 0) != 0;
+
 	return Start();
 }
 
@@ -486,7 +502,7 @@ void GdxsvBackendReplay::Stop() {
 	settings.gdxsv.skipRenderingHack = false;
 	settings.aica.muteAudio = false;
 	rend_enable_renderer(true);
-	gdxsv_save_state.EndUsing();
+	EndSaveState();
 	gdxsv.key_display_.enabled(false);
 	state_ = State::End;
 
@@ -746,9 +762,8 @@ bool GdxsvBackendReplay::Start() {
 	gdxsv.key_display_.SetDisplayPlayer(pov_);
 	gdxsv.key_display_.enabled(false);
 	key_msg_count_ = 0;
-	gdxsv_save_state.StartUsing();
-	rend_allow_rollback();
-	NOTICE_LOG(COMMON, "Replay Start");
+	StartSaveState();
+	NOTICE_LOG(COMMON, "Replay Start (debug_mode=%d)", debug_mode_);
 	return true;
 }
 
@@ -883,7 +898,7 @@ void GdxsvBackendReplay::ProcessLbsMessage() {
 		}
 
 		if (msg.command == LbsMessage::lbsAskMcsAddress) {
-			LbsMessage::SvAnswer(msg).Write16(4)->Write8(127)->Write8(0)->Write8(0)->Write8(1)->Write16(2)->Write16(3333)->Serialize(
+			LbsMessage::SvAnswer(msg).Write16(4)->Write8(127)->Write8(0)->Write8(0)->Write8(1)->Write16(2)->Write16(0123)->Serialize(
 				recv_buf_);
 		}
 
@@ -946,9 +961,9 @@ void GdxsvBackendReplay::ProcessMcsMessage(const McsMessage& msg) {
 			log_file_.add_start_msg_randoms(random_data);
 		}
 
-		ctrl_commands_.emplace_back(ReplayCtrlCommand::SaveFirstFrame);
-		ctrl_commands_.emplace_back(ReplayCtrlCommand::SendStartMsg);
-		ctrl_commands_.emplace_back(ReplayCtrlCommand::SeekToBriefing);
+		AddCtrlCommand(ReplayCtrlCommand::SaveFirstFrame);
+		AddCtrlCommand(ReplayCtrlCommand::SendStartMsg);
+		AddCtrlCommand(ReplayCtrlCommand::SeekToBriefing);
 	} else if (msg_type == McsMessage::MsgType::ForceMsg) {
 		// do nothing
 	} else if (msg_type == McsMessage::MsgType::KeyMsg1) {
@@ -1093,3 +1108,32 @@ void GdxsvBackendReplay::RenderPauseMenu() {
 
 	ImGui::End();
 }
+
+bool GdxsvBackendReplay::IsCommandAllowedInDebugMode(int cmd) const {
+	// In debug mode, only allow essential commands for replay progression
+	switch (cmd) {
+		case ReplayCtrlCommand::SendStartMsg:
+			return true;
+		default:
+			return false;
+	}
+}
+
+void GdxsvBackendReplay::AddCtrlCommand(int cmd, int arg1, int arg2) {
+	if (debug_mode_ && !IsCommandAllowedInDebugMode(cmd)) {
+		return;
+	}
+	ctrl_commands_.emplace_back(static_cast<ReplayCtrlCommand::Command>(cmd), arg1, arg2);
+}
+
+void GdxsvBackendReplay::StartSaveState() {
+	if (debug_mode_) return;
+	gdxsv_save_state.StartUsing();
+	rend_allow_rollback();
+}
+
+void GdxsvBackendReplay::EndSaveState() {
+	if (debug_mode_) return;
+	gdxsv_save_state.EndUsing();
+}
+

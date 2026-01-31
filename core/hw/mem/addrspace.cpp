@@ -6,6 +6,7 @@
 #include "hw/sh4/sh4_mem.h"
 #include "oslib/oslib.h"
 #include "oslib/virtmem.h"
+#include "debug/watchpoint.h"
 #include <cassert>
 
 namespace addrspace
@@ -106,6 +107,9 @@ T DYNACALL readt(u32 addr)
 {
 	constexpr u32 sz = sizeof(T);
 
+	// Check read watchpoints
+	watchpoint::checkRead(addr, sz);
+
 	u32 page = addr >> 24;	//1 op, shift/extract
 	uintptr_t iirf = (uintptr_t)memInfo_ptr[page]; //2 ops, insert + read [vmem table will be on reg ]
 	void *ptr = (void *)(iirf & ~HANDLER_MAX);     //2 ops, and // 1 op insert
@@ -149,6 +153,9 @@ template<typename T>
 void DYNACALL writet(u32 addr, T data)
 {
 	constexpr u32 sz = sizeof(T);
+
+	// Check write watchpoints
+	watchpoint::checkWrite(addr, sz);
 
 	u32 page = addr>>24;
 	uintptr_t iirf = (uintptr_t)memInfo_ptr[page];

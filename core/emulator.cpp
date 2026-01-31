@@ -707,6 +707,9 @@ void Emulator::runInternal()
 	{
 		getSh4Executor()->Step();
 		singleStep = false;
+		// After single step, stop the emulator to return control to debugger
+		state = Loaded;
+		return;
 	}
 	else if (stepRangeTo != 0)
 	{
@@ -814,14 +817,11 @@ void Emulator::stop()
 	if (config::ThreadedRendering)
 	{
 		rend_cancel_emu_wait();
-		try {
-			checkStatus(true);
-		} catch (const FlycastException& e) {
-			WARN_LOG(COMMON, "%s", e.what());
-			throw e;
+		checkStatus(true);
+		if (!debuggerStopped) {
+			nvmem::saveFiles();
+			EventManager::event(Event::Pause);
 		}
-		nvmem::saveFiles();
-		EventManager::event(Event::Pause);
 	}
 	else
 	{
@@ -880,8 +880,13 @@ void loadGameSpecificSettings()
 void Emulator::step()
 {
 	// FIXME single thread is better
+	// Reset state to Loaded if in Error state (e.g., after debugger trap)
+	if (state == Error)
+		state = Loaded;
 	singleStep = true;
 	start();
+	// Set debuggerStopped so stop() doesn't call saveFiles/Pause
+	debuggerStopped = true;
 	stop();
 }
 
@@ -890,6 +895,8 @@ void Emulator::stepRange(u32 from, u32 to)
 	stepRangeFrom = from;
 	stepRangeTo = to;
 	start();
+	// Set debuggerStopped so stop() doesn't call saveFiles/Pause
+	debuggerStopped = true;
 	stop();
 }
 
@@ -987,6 +994,8 @@ void Emulator::start()
 		WARN_LOG(COMMON, "Unexpected emu state %d", state);
 		return;
 	}
+	// Reset debugger flag before starting so it can be set fresh when a breakpoint is hit
+	debuggerStopped = false;
 	state = Running;
 	SetMemoryHandlers();
 	if (config::GGPOEnable && config::ThreadedRendering)
@@ -1016,6 +1025,10 @@ void Emulator::start()
 						if (ggpo::active()) ggpo::nextFrame();
 					}
 					TermAudio();
+				} catch (const debugger::Stop&) {
+					// Debugger stopped the emulator - exit cleanly without re-throwing
+					getSh4Executor()->Stop();
+					TermAudio();
 				} catch (...) {
 					setNetworkState(false);
 					getSh4Executor()->Stop();
@@ -1030,7 +1043,8 @@ void Emulator::start()
 		InitAudio();
 	}
 
-	EventManager::event(Event::Resume);
+	if (!singleStep)
+		EventManager::event(Event::Resume);
 }
 
 bool Emulator::checkStatus(bool wait)
@@ -1039,11 +1053,10 @@ bool Emulator::checkStatus(bool wait)
 		std::unique_lock<std::mutex> lock(mutex);
 		if (threadResult.valid())
 		{
-            auto localResult = threadResult;
+			auto localResult = threadResult;
 			lock.unlock();
-			if (wait) {
+			if (wait)
 				localResult.wait();
-			}
 			else {
 				auto result = localResult.wait_for(std::chrono::seconds(0));
 				if (result == std::future_status::timeout)
@@ -1051,6 +1064,9 @@ bool Emulator::checkStatus(bool wait)
 			}
 			localResult.get();
 		}
+		return false;
+	} catch (const debugger::Stop&) {
+		// Debugger stopped the emulator - this is expected behavior, not an error
 		return false;
 	} catch (...) {
 		EventManager::event(Event::Pause);

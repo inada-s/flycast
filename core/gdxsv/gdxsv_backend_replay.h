@@ -48,6 +48,11 @@ class GdxsvBackendReplay {
 	void RestorePatch();
 	void RenderPauseMenu();
 
+	bool IsCommandAllowedInDebugMode(int cmd) const;
+	void AddCtrlCommand(int cmd, int arg1 = 0, int arg2 = 0);
+	void StartSaveState();
+	void EndSaveState();
+
 	struct ReplayCtrlCommand {
 		enum Command {
 			None,
@@ -144,4 +149,5 @@ class GdxsvBackendReplay {
 	bool ctrl_step_frame_ = false;
 	bool ctrl_pause_ = false;
 	bool save_converted_log_ = false;
+	bool debug_mode_ = false;  // Debug mode: no save-state, no ctrl_commands, no frame-end stop
 };

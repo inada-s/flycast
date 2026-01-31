@@ -213,6 +213,10 @@ private:
 	std::mutex mutex;
 	Sh4Executor *interpreter = nullptr;
 	Sh4Executor *recompiler = nullptr;
+
+public:
+	// Flag set by debugger when it stops the emulator via trap
+	std::atomic<bool> debuggerStopped{false};
 };
 extern Emulator emu;
 

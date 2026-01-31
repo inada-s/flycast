@@ -21,8 +21,10 @@
 #include "emulator.h"
 #include "hw/sh4/sh4_if.h"
 #include "hw/sh4/sh4_mem.h"
+#include "hw/sh4/sh4_cache.h"
 #include "hw/sh4/dyna/shil.h"
 #include "cfg/option.h"
+#include "watchpoint.h"
 #include <array>
 #include <signal.h>
 #include <map>
@@ -95,6 +97,19 @@ public:
 	{
 		if (pc != 1)
 			Sh4cntx.pc = pc;
+		// If current PC is on a software breakpoint, step over it first
+		auto it = breakpoints[Breakpoint::BP_TYPE_SOFTWARE_BREAK].find(Sh4cntx.pc);
+		if (it != breakpoints[Breakpoint::BP_TYPE_SOFTWARE_BREAK].end()) {
+			// Temporarily remove breakpoint, step one instruction, then restore
+			u32 bpAddr = Sh4cntx.pc;
+			u16 savedOp = it->second.savedOp;
+			WriteMem16_nommu(bpAddr, savedOp);
+			icache.Invalidate();
+			// Execute one instruction directly
+			emu.getSh4Executor()->Step();
+			WriteMem16_nommu(bpAddr, 0xC308);	// Restore trapa #8 at original location
+			icache.Invalidate();
+		}
 		emu.start();
 	}
 
@@ -219,30 +234,51 @@ public:
 	}
 	bool insertMatchpoint(Breakpoint::Type type, u32 addr, u32 len)
 	{
-		if (type == Breakpoint::BP_TYPE_SOFTWARE_BREAK && len != 2) {
-			WARN_LOG(COMMON, "insertMatchpoint: length != 2: %d", len);
-			return false;
-		}
-		// TODO other matchpoint types
-		if (breakpoints[type].find(addr) != breakpoints[type].end())
+		if (type == Breakpoint::BP_TYPE_SOFTWARE_BREAK) {
+			if (len != 2)
+				return false;
+			if (breakpoints[type].find(addr) != breakpoints[type].end())
+				return true;
+			breakpoints[type][addr] = Breakpoint(type, addr);
+			breakpoints[type][addr].savedOp = ReadMem16_nommu(addr);
+			WriteMem16_nommu(addr, 0xC308);	// trapa #0x20
+			icache.Invalidate();
 			return true;
-		breakpoints[type][addr] = Breakpoint(type, addr);
-		breakpoints[type][addr].savedOp = ReadMem16_nommu(addr);
-		WriteMem16_nommu(addr, 0xC308);	// trapa #0x20
-		return true;
+		}
+		else if (type == Breakpoint::BP_TYPE_WRITE_WATCHPOINT) {
+			return watchpoint::add(watchpoint::WATCH_WRITE, addr, len);
+		}
+		else if (type == Breakpoint::BP_TYPE_READ_WATCHPOINT) {
+			return watchpoint::add(watchpoint::WATCH_READ, addr, len);
+		}
+		else if (type == Breakpoint::BP_TYPE_ACCESS_WATCHPOINT) {
+			return watchpoint::add(watchpoint::WATCH_ACCESS, addr, len);
+		}
+		return false;
 	}
 	bool removeMatchpoint(Breakpoint::Type type, u32 addr, u32 len)
 	{
-		if (type == Breakpoint::BP_TYPE_SOFTWARE_BREAK && len != 2) {
-			WARN_LOG(COMMON, "removeMatchpoint: length != 2: %d", len);
-			return false;
+		if (type == Breakpoint::BP_TYPE_SOFTWARE_BREAK) {
+			if (len != 2)
+				return false;
+			auto it = breakpoints[type].find(addr);
+			if (it == breakpoints[type].end())
+				return false;
+			WriteMem16_nommu(addr, it->second.savedOp);
+			icache.Invalidate();
+			breakpoints[type].erase(it);
+			return true;
 		}
-		auto it = breakpoints[type].find(addr);
-		if (it == breakpoints[type].end())
-			return false;
-		WriteMem16_nommu(addr, it->second.savedOp);
-		breakpoints[type].erase(it);
-		return true;
+		else if (type == Breakpoint::BP_TYPE_WRITE_WATCHPOINT) {
+			return watchpoint::remove(watchpoint::WATCH_WRITE, addr, len);
+		}
+		else if (type == Breakpoint::BP_TYPE_READ_WATCHPOINT) {
+			return watchpoint::remove(watchpoint::WATCH_READ, addr, len);
+		}
+		else if (type == Breakpoint::BP_TYPE_ACCESS_WATCHPOINT) {
+			return watchpoint::remove(watchpoint::WATCH_ACCESS, addr, len);
+		}
+		return false;
 	}
 
 	u32 interrupt()
@@ -291,6 +327,7 @@ public:
 	void resetAgent()
 	{
 		stack.clear();
+		watchpoint::reset();
 	}
 
 	int findException(u32 event)

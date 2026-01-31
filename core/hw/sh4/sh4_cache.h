@@ -24,6 +24,7 @@
 #include "hw/sh4/sh4_if.h"
 #include "serialize.h"
 #include "sh4_cycles.h"
+#include "debug/watchpoint.h"
 
 static bool cachedArea(u32 area)
 {
@@ -246,6 +247,9 @@ public:
 	template<class T>
 	T ReadMem(u32 address)
 	{
+		// Check read watchpoints
+		watchpoint::checkRead(address, sizeof(T));
+
 		u32 physAddr;
 		bool cacheOn = false;
 		bool copyBack;
@@ -277,6 +281,9 @@ public:
 	template<class T>
 	void WriteMem(u32 address, T data)
 	{
+		// Check write watchpoints
+		watchpoint::checkWrite(address, sizeof(T));
+
 		u32 physAddr = 0;
 		bool cacheOn = false;
 		bool copyBack = false;

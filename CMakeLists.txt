@@ -1284,7 +1284,8 @@ endif()
 if(ENABLE_GDB_SERVER)
 
 	target_sources(${PROJECT_NAME} PRIVATE
-		core/debug/gdb_server.cpp)
+		core/debug/gdb_server.cpp
+		core/debug/watchpoint.cpp)
 
 	target_compile_definitions(${PROJECT_NAME} PRIVATE GDB_SERVER)
 endif()

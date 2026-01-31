@@ -62,6 +62,10 @@ void Sh4Interpreter::Run()
 			}
 		} while (ctx->CpuRunning);
 	} catch (const debugger::Stop&) {
+		// Re-throw so the exception propagates to the async thread's catch block
+		ctx->CpuRunning = false;
+		Instance = nullptr;
+		throw;
 	}
 
 	ctx->CpuRunning = false;

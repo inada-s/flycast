@@ -17,11 +17,14 @@
     along with Flycast.  If not, see <https://www.gnu.org/licenses/>.
  */
 #pragma once
+#include <exception>
 
 namespace debugger {
 
 // exception thrown in response to trap
-struct Stop { };
+struct Stop : public std::exception {
+	const char* what() const noexcept override { return "debugger stop"; }
+};
 
 	static const int DEFAULT_PORT = 3263;
 
