@@ -120,14 +120,6 @@ bool gdxsv_emu_menu_open() {
 	return true;
 }
 
-bool gdxsv_widescreen_hack_enabled() { return gdxsv.Enabled() && config::WidescreenGameHacks; }
-
-static void gui_header(const char* title) {
-	ImGui::PushStyleVar(ImGuiStyleVar_ButtonTextAlign, ScaledVec2(0.f, 0.5f));	// Left
-	ImGui::ButtonEx(title, ScaledVec2(-1, 0), ImGuiItemFlags_Disabled);
-	ImGui::PopStyleVar();
-}
-
 void gdxsv_emu_gui_display() {
 	if (gui_state == GuiState::Main) {
 		gdxsv_update_popup();

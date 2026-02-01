@@ -38,8 +38,6 @@ void gdxsv_emu_loadstate(int slot);
 
 bool gdxsv_emu_menu_open();
 
-bool gdxsv_widescreen_hack_enabled();
-
 void gdxsv_emu_gui_display();
 
 void gdxsv_emu_gui_display_replay();

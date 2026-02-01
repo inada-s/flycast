@@ -122,13 +122,6 @@ public:
 			dcViewport.x = w;
 			dcViewport.y = h;
 
-			// GDXSV: Push the extra region offscreen for widescreen hack
-			float startx = 0;
-			if (gdxsv_widescreen_hack_enabled() && config::ScreenStretching == 175)
-				startx = -1 * dcViewport.x * (1 - 1.f / 1.75f) / 2.f;
-			normalMatrix = glm::translate(glm::vec3(startx, 0, 0));
-			scissorMatrix = normalMatrix;
-
 			float scissoring_scale_x, scissoring_scale_y;
 			GetScissorScaling(scissoring_scale_x, scissoring_scale_y);
 
@@ -145,18 +138,12 @@ public:
 			float x_coef = 2.0f / dcViewport.x;
 			float y_coef = 2.0f / dcViewport.y * flipY;
 
-			// GDXSV: Stretch the screen to make it wider than Framebuffer's size
-			if (gdxsv_widescreen_hack_enabled())
-				x_coef *= (config::ScreenStretching / 100.f);
-
 			glm::mat4 trans = glm::translate(glm::vec3(-1 + 2 * sidebarWidth, -flipY, 0));
 
 			normalMatrix = trans
-				* glm::scale(glm::vec3(x_coef, y_coef, 1.f))
-				* normalMatrix;
+				* glm::scale(glm::vec3(x_coef, y_coef, 1.f));
 			scissorMatrix = trans
-				* glm::scale(glm::vec3(x_coef * scissoring_scale_x, y_coef * scissoring_scale_y, 1.f))
-				* scissorMatrix;
+				* glm::scale(glm::vec3(x_coef * scissoring_scale_x, y_coef * scissoring_scale_y, 1.f));
 		}
 		normalMatrix = glm::scale(glm::vec3(1, 1, 1 / config::ExtraDepthScale))
 				* normalMatrix;
@@ -257,9 +244,6 @@ inline static float getOutputFramebufferAspectRatio()
 			aspectRatio = 4.f / 3.f;
 		}
 	}
-	
-	if (gdxsv_widescreen_hack_enabled())
-		return aspectRatio;
 	
 	return aspectRatio * config::ScreenStretching / 100.f;
 }

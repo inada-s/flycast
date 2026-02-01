@@ -725,19 +725,13 @@ void Gdxsv::WritePatchDisk1() {
 	// Disable soft reset
 	gdxsv_WriteMem8(0x0c2f6657, InGame() ? 1 : 0);
 
-	// Dirty widescreen cheat
-	if (config::WidescreenGameHacks.get()) {
-		u32 ratio = 0x3faaaaab;	 // default 4/3
-		int stretching = 100;
-		if (gdxsv_ReadMem8(0x0c336254) == 2 && (gdxsv_ReadMem8(0x0c336255) == 5 || gdxsv_ReadMem8(0x0c336255) == 7)) {
-			ratio = 0x40155555;
-			stretching = 175;
-		}
-		config::ScreenStretching.override(stretching);
-		gdxsv_WriteMem32(0x0c189198, ratio);
-		gdxsv_WriteMem32(0x0c1891a8, ratio);
-		gdxsv_WriteMem32(0x0c1891b8, ratio);
-		gdxsv_WriteMem32(0x0c1891c8, ratio);
+	// Better widescreen
+	if (config::Widescreen.get()) {
+		gdxsv_WriteMem16(0x8c13dc12, 0x0009);
+		gdxsv_WriteMem16(0x8c067c3e, 0xE000);  // mov #0, r0
+		gdxsv_WriteMem16(0x8c067c40, 0x000B);  // rts
+		gdxsv_WriteMem16(0x8c067c42, 0x0009);  // nop (delay slot)
+		gdxsv_WriteMem32(0x8c20707c, 0x42c80000);
 	}
 
 	// Online patch
@@ -811,19 +805,13 @@ void Gdxsv::WritePatchDisk2() {
 	// Disable soft reset
 	gdxsv_WriteMem8(0x0c391d97, InGame() ? 1 : 0);
 
-	// Dirty widescreen cheat
-	if (config::WidescreenGameHacks.get()) {
-		u32 ratio = 0x3faaaaab;	 // default 4/3
-		int stretching = 100;
-		if (gdxsv_ReadMem8(0x0c3d16d4) == 2 && (gdxsv_ReadMem8(0x0c3d16d5) == 5 || gdxsv_ReadMem8(0x0c3d16d5) == 7)) {
-			ratio = 0x40155555;
-			stretching = 175;
-		}
-		config::ScreenStretching.override(stretching);
-		gdxsv_WriteMem32(0x0c1e7948, ratio);
-		gdxsv_WriteMem32(0x0c1e7958, ratio);
-		gdxsv_WriteMem32(0x0c1e7968, ratio);
-		gdxsv_WriteMem32(0x0c1e7978, ratio);
+	// Better widescreen
+	if (config::Widescreen.get()) {
+		gdxsv_WriteMem16(0x8c19d3f2, 0x0009);
+		gdxsv_WriteMem16(0x8c0550a2, 0xE000);  // mov #0, r0
+		gdxsv_WriteMem16(0x8c0550a4, 0x000B);  // rts
+		gdxsv_WriteMem16(0x8c0550a6, 0x0009);  // nop (delay slot)
+		gdxsv_WriteMem32(0x8c2a264c, 0x42c80000);
 	}
 
 	// Online patch
