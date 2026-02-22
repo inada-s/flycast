@@ -1,0 +1,240 @@
+msgid ""
+msgstr ""
+"Project-Id-Version: flycast-gdxsv\n"
+"Report-Msgid-Bugs-To: \n"
+"POT-Creation-Date: 2026-02-23 00:00+0900\n"
+"PO-Revision-Date: 2026-02-23 00:00+0900\n"
+"Last-Translator: \n"
+"Language: zh_HK\n"
+"MIME-Version: 1.0\n"
+"Content-Type: text/plain; charset=UTF-8\n"
+"Content-Transfer-Encoding: 8bit\n"
+"Plural-Forms: nplurals=1; plural=0;\n"
+"Language-Team: Chinese Traditional, Hong Kong\n"
+
+msgid "Patch game language and texture, for DX only"
+msgstr "中文化補丁，修改遊戲圖檔和文字"
+
+msgid "Settings to be changed:"
+msgstr "將會被更改的設定:"
+
+msgid "Dreamcast Device A"
+msgstr "裝置A"
+
+msgid "Dreamcast Device A Slot 1"
+msgstr "裝置A 插槽1"
+
+msgid "SH4 Clock"
+msgstr "SH4 時鐘"
+
+msgid "Transparent Sorting"
+msgstr "透明排序"
+
+msgid "Delay Frame Swapping"
+msgstr "延遲幀交換"
+
+msgid "Graphics API"
+msgstr "圖形API"
+
+msgid "Frame Skipping"
+msgstr "跳幀"
+
+msgid "Enable DSP"
+msgstr "啓用DSP"
+
+msgid "Volume Level"
+msgstr "音量"
+
+msgid "Audio Latency"
+msgstr "音頻延遲"
+
+msgid "CPU Mode"
+msgstr "CPU模式"
+
+msgid "Set a random Gdx UDP Port"
+msgstr "設定隨機 UDP Port"
+
+msgid "Multi-threaded emulation"
+msgstr "多線程模擬"
+
+msgid "Internal Resolution"
+msgstr "內部解像度"
+
+msgid "Automatic Frame Skipping"
+msgstr "自動跳幀"
+
+msgid "Texture Upscaling"
+msgstr "紋理放大"
+
+msgid "AudioSync"
+msgstr "音頻同步"
+
+msgid "Limit frame rate by audio. Minimize audio glitch"
+msgstr "用音頻同步嚟限制幀率，減少音頻問題。"
+
+msgid "Fixed frequency"
+msgstr "固定頻率"
+
+msgid "Limit frame rate by CPU Sleep and Busy-Wait. Minimize input glitch"
+msgstr "用 CPU Sleep 同 Busy-Wait 嚟限制幀率，減少輸入問題。"
+
+msgid "Auto"
+msgstr "自動"
+
+msgid "Automatically sets frequency by Cable & Broadcast type"
+msgstr "根據線材同廣播類型自動設定頻率"
+
+msgid "Native NTSC/VGA frequency"
+msgstr "NTSC/VGA 原生頻率"
+
+msgid "Approximate NTSC/VGA frequency"
+msgstr "NTSC/VGA 近似頻率"
+
+msgid "Native PAL frequency"
+msgstr "PAL 原生頻率"
+
+msgid "Half NTSC/VGA frequency"
+msgstr "NTSC/VGA 半頻率"
+
+msgid "Apply Recommended Settings\nfor Low-Spec PC"
+msgstr "使用建議偏好設定\n低階電腦適用"
+
+msgid "Apply Recommended Settings\nfor Mid-Spec PC"
+msgstr "使用建議偏好設定\n中階電腦適用"
+
+msgid "Apply Recommended Settings\nfor High-Spec PC"
+msgstr "使用建議偏好設定\n高階電腦適用"
+
+msgid ""
+"Use gdxsv recommended settings. Settings on other tabs will also be "
+"modified.\n"
+"\n"
+"Low-Spec:\n"
+"Prioritizes stability of gameplay by minimal load.\n"
+"\n"
+"Mid-Spec:\n"
+"Well-balanced setting that allows for comfortable gameplay with medium "
+"load.\n"
+"\n"
+"High-Spec:\n"
+"Allows for comfortable gameplay by utilizing high load options."
+msgstr ""
+"使用開發者建議嘅偏好設定 (其他版嘅設定都會改埋)\n"
+"\n"
+"低階:\n"
+"以穩定遊戲速度為優先，降低負荷而非追求流暢遊戲嘅設定\n"
+"\n"
+"中階:\n"
+"流暢遊戲同負荷之間取個平衡嘅設定\n"
+"\n"
+"高階:\n"
+"最爽亦係最高負荷嘅設定"
+
+msgid "Use Texture Pack"
+msgstr "高解像度紋理"
+
+msgid "Use up-scaled textures."
+msgstr "使用高品質紋理。"
+
+msgid ""
+"Run the emulated CPU and GPU on different threads.\n"
+"Can reduce the loading, but it may introduce a delay of 1 frame for input.\n"
+"\tEnable = Best for low spec CPU.\n"
+"\tDisable = Best for high spec CPU."
+msgstr ""
+"分拆GPU運算去另一線程，可以降低負荷但係有可能有 1 frame 輸入延遲\n"
+"低階 CPU 建議啓用\n"
+"高階 CPU 建議停用"
+
+msgid "Enable 16:9 Widescreen Hack"
+msgstr "使用 16:9 闊螢幕補丁"
+
+msgid ""
+"Use the following rendering options:\n"
+"    rend.WideScreen=true\n"
+"    rend.SuperWideScreen=true\n"
+"    rend.WidescreenGameHacks=true"
+msgstr "會將螢幕左右嘅黑邊去除，支援闊螢幕。(部分畫面可能會無法正確顯示)"
+
+msgid ""
+"Limit frame rate by VSync. Minimize video glitch"
+msgstr ""
+"等到 VSync 果吓先繪圖。\n"
+"防止畫面撕裂，但係會增加輸入延遲。\n"
+"如果唔覺有撕裂問題，建議停用。"
+
+msgid ""
+"Duplicate frames on high refresh rate monitors (120 Hz and higher)"
+msgstr "會重複顯示同一個畫面兩次。120Hz螢幕適用。"
+
+msgid "Network Settings"
+msgstr "網絡設定"
+
+msgid ""
+"Automatically configure your network router for netplay (IPv4 Only)"
+msgstr "會自動變更Router設定，幫你Port Forward（僅支援IPv4）"
+
+msgid "Gdx UDP Port"
+msgstr "UDP Port"
+
+msgid ""
+"UDP port number used for P2P communication. Cannot use the same number as "
+"another application using."
+msgstr "網絡對戰用嘅 UDP Port。\n唔可以同其他程式/電腦用一樣嘅 Port，會撞。"
+
+msgid "UPnP Now"
+msgstr "而家打通 UPnP"
+
+msgid "Open the port using UPnP"
+msgstr "試吓同 Router 開個 Port。"
+
+msgid "Test Connectivity"
+msgstr "測試連線能力"
+
+msgid ""
+"Analyzes your network for P2P play:\n"
+"\n"
+"OK (Direct): Ideal. Port Forwarding, UPnP, or Full Cone NAT detected.\n"
+"OK (Hole Punching): Good. Moderate NAT detected. Hole Punching supported.\n"
+"Limited (May use Relay): Restricted. Symmetric NAT detected. May require a "
+"relay peer to connect."
+msgstr ""
+"分析你嘅網絡 P2P 對戰能力:\n"
+"\n"
+"OK (Direct): 完美。檢測到已手動開放 Port、UPnP 或 Full Cone NAT。\n"
+"OK (Hole Punching): 良好。檢測到 Moderate NAT。支援 Hole Punching。\n"
+"Limited (May use Relay): 差。檢測到 Symmetric NAT。你可能需要其他玩家幫你 Relay。"
+
+msgid "Gdx Minimum Delay"
+msgstr "最少輸入延遲"
+
+msgid ""
+"Minimum frame of input delay used for rollback communication.\n"
+"Smaller value reduces latency, but uses more CPU and introduces glitches."
+msgstr ""
+"設定網絡對戰時最小輸入延遲。數値越細、輸入延遲越細，但會增加CPU負荷，並增加畫面跳格嘅可能性。"
+
+msgid "Save Replay"
+msgstr "儲存 Replay"
+
+msgid "Save replay file to replays directory"
+msgstr "儲存網絡對戰嘅重播檔案到重播資料夾。"
+
+msgid "Upload Replay"
+msgstr "上載 Replay"
+
+msgid "Automatically upload the replay file after save"
+msgstr "上載網絡對戰嘅重播檔案。"
+
+msgid "Display Network Statistics"
+msgstr "對戰時顯示連線状態"
+
+msgid ""
+"Display network statistics on screen by default.\n"
+"Use Flycast Menu button to show/hide."
+msgstr ""
+"網絡對戰時顯示連線状態。\n"
+"按下Menu button可以切換顯示或隱藏。"
+
+msgid "Enable UPnP"
+msgstr "使用 UPnP"

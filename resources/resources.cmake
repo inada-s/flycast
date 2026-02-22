@@ -56,3 +56,8 @@ cmrc_add_resources(flycast-resources
 	resources/i18n/zh_CN.po
 	resources/i18n/zh_HK.po
 	resources/i18n/zh_TW.po)
+
+cmrc_add_resources(flycast-resources
+	WHENCE resources
+	resources/i18n-gdxsv/ja.po
+	resources/i18n-gdxsv/zh_HK.po)

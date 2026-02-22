@@ -6,7 +6,10 @@
 #include "hw/maple/maple_if.h"
 #include "imgui.h"
 #include "libs.h"
+#include "oslib/i18n.h"
 #include "ui/gui_util.h"
+
+using namespace i18n;
 
 inline static void header(const char* title) {
 	ImGui::PushStyleVar(ImGuiStyleVar_ButtonTextAlign, ImVec2(0.f, 0.5f));	// Left
@@ -16,20 +19,6 @@ inline static void header(const char* title) {
 	ImGui::EndDisabled();
 	ImGui::PopStyleVar();
 	ImGui::PopStyleVar();
-}
-
-// Switch setting text
-// Index 0: English
-// Index 1: Japanese
-// Index 2: Cantonese
-static const char* t(std::initializer_list<const char*> texts) {
-	verify(0 < texts.size());
-
-	unsigned index = 0;
-	if (config::GdxLanguage == 0) index = 1;
-	if (config::GdxLanguage == 1) index = 2;
-	if (texts.size() <= index) index = 0;
-	return *(texts.begin() + index);
 }
 
 void gdxsv_apply_base_settings() {
@@ -91,7 +80,7 @@ void gdxsv_gui_settings_tab()
 	ImGui::Columns(5, "gdxlang", false);
 	ImGui::Text("Language mod:");
 	ImGui::SameLine();
-	ShowHelpMarker(t({ "Patch game language and texture, for DX only" , u8"ゲーム内の文字列やテクスチャに変更を加えます", u8"中文化補丁，修改遊戲圖檔和文字"}));
+	ShowHelpMarker(T("Patch game language and texture, for DX only"));
 	ImGui::NextColumn();
 	OptionRadioButton(u8"日本語", config::GdxLanguage, 0);
 	ImGui::NextColumn();
@@ -102,60 +91,64 @@ void gdxsv_gui_settings_tab()
 	OptionRadioButton("Disabled", config::GdxLanguage, 3);
 	ImGui::Columns(1, nullptr, false);
 
-	auto settings_to_be_changed = []() -> std::string {
-		std::string str = t({ "Settings to be changed:\n\n", u8"設定を変更する:\n\n", u8"將會被更改的設定:\n\n" });
+	auto setting = [](const char* name, const char* value) -> std::string {
+		return std::string(T(name)) + " = " + value + "\n";
+	};
+
+	auto settings_to_be_changed = [&setting]() -> std::string {
+		std::string str = std::string(T("Settings to be changed:")) + "\n\n";
 		// Frame Limit
 		if (config::LimitFPS == false)
-			str += "AudioSync = true\n";
+			str += setting("AudioSync", "true");
 		if (config::FixedFrequency != 2)
-			str += "FixedFrequency = 59.94 Hz\n";
-		
+			str += setting("Fixed frequency", "59.94 Hz");
+
 		// Controls
 		if (config::MapleMainDevices[0] != MapleDeviceType::MDT_SegaController)
-			str += "Dreamcast Device A = Sega Controller\n";
+			str += setting("Dreamcast Device A", "Sega Controller");
 		if (config::MapleExpansionDevices[0][0] != MapleDeviceType::MDT_SegaVMU)
-			str += "Dreamcast Device A Slot 1 = Sega VMU\n";
+			str += setting("Dreamcast Device A Slot 1", "Sega VMU");
 		if (config::Sh4Clock != 200)
-			str += "SH4 Clock = 200 Mhz\n";
-		
+			str += setting("SH4 Clock", "200 Mhz");
+
 		// Video
 		if (config::PerStripSorting)
-			str += "Transparent Sorting = Per Triangle\n";
+			str += setting("Transparent Sorting", "Per Triangle");
 		if (config::DelayFrameSwapping)
-			str += "Delay Frame Swapping = false\n";
+			str += setting("Delay Frame Swapping", "false");
 #if defined(_WIN32)
 		if (config::RendererType != RenderType::DirectX11)
-			str += "Graphics API = DirectX 11\n";
+			str += setting("Graphics API", "DirectX 11");
 #else
 		if (config::RendererType != RenderType::OpenGL)
-			str += "Graphics API = Open GL\n";
+			str += setting("Graphics API", "Open GL");
 #endif
 
 		if (config::SkipFrame != 0)
-			str += "Frame Skipping = 0\n";
+			str += setting("Frame Skipping", "0");
 
 		// Audio
 		if (config::DSPEnabled != false)
-			str += "Enable DSP = false\n";
+			str += setting("Enable DSP", "false");
 		if (config::AudioVolume != 50)
-			str += "Volume Level = 50\n";
+			str += setting("Volume Level", "50");
 		if (config::AudioBufferSize < 2822 || config::AudioBufferSize > 2824)
-			str += "Audio Latency = 64ms\n";
+			str += setting("Audio Latency", "64ms");
 
 		// Others
 		if (config::DynarecEnabled != true)
-			str += "CPU Mode = Dynarec\n";
+			str += setting("CPU Mode", "Dynarec");
 
 		// Network
 		if (config::EnableUPnP != true)
-			str += "Enable UPnP = true\n";
+			str += setting("Enable UPnP", "true");
 		if (config::GdxLocalPort == 0)
-			str += "Set a random Gdx UDP Port\n";
+			str += std::string(T("Set a random Gdx UDP Port")) + "\n";
 
 		return str;
 	};
 
-	if (ImGui::Button(t({ "Apply Recommended Settings\nfor Low-Spec PC", u8"低スペックPC向け\nおすすめ設定適用", u8"使用建議偏好設定\n低階電腦適用" }), ScaledVec2(200, 50))) {
+	if (ImGui::Button(T("Apply Recommended Settings\nfor Low-Spec PC"), ScaledVec2(200, 50))) {
 		gdxsv_apply_base_settings();
 		config::ThreadedRendering = true;
 		config::GdxMinDelay = 3;
@@ -165,21 +158,21 @@ void gdxsv_gui_settings_tab()
 	{
 		auto tip = settings_to_be_changed();
 		if (config::ThreadedRendering != true)
-			tip += "Multi-threaded emulation = true\n";
+			tip += setting("Multi-threaded emulation", "true");
 		if (config::RenderResolution != 720)
-			tip += "Internal Resolution = 1280x720 (x1.5)\n";
+			tip += setting("Internal Resolution", "1280x720 (x1.5)");
 		if (config::AutoSkipFrame != 1)
-			tip += "Automatic Frame Skipping = Normal\n";
+			tip += setting("Automatic Frame Skipping", "Normal");
 		if (config::TextureUpscale != 1)
-			tip += "Texture Upscaling = 1\n";
+			tip += setting("Texture Upscaling", "1");
 		if (config::GdxMinDelay != 3)
-			tip += "Gdx Minimum Delay = 3\n";
-		
-		ImGui::SetTooltip(tip.c_str());
+			tip += setting("Gdx Minimum Delay", "3");
+
+		ImGui::SetTooltip("%s", tip.c_str());
 	}
-	
+
 	ImGui::SameLine();
-	if (ImGui::Button(t({ "Apply Recommended Settings\nfor Mid-Spec PC", u8"中スペックPC向け\nおすすめ設定適用", u8"使用建議偏好設定\n中階電腦適用" }), ScaledVec2(200, 50))) {
+	if (ImGui::Button(T("Apply Recommended Settings\nfor Mid-Spec PC"), ScaledVec2(200, 50))) {
 		gdxsv_apply_base_settings();
 		config::ThreadedRendering = false;
 		config::RenderResolution = 960;
@@ -188,21 +181,21 @@ void gdxsv_gui_settings_tab()
 	{
 		auto tip = settings_to_be_changed();
 		if (config::ThreadedRendering != false)
-			tip += "Multi-threaded emulation = false\n";
+			tip += setting("Multi-threaded emulation", "false");
 		if (config::RenderResolution != 960)
-			tip += "Internal Resolution = 1706x960 (x2)\n";
+			tip += setting("Internal Resolution", "1706x960 (x2)");
 		if (config::AutoSkipFrame != 0)
-			tip += "Automatic Frame Skipping = Disabled\n";
+			tip += setting("Automatic Frame Skipping", "Disabled");
 		if (config::TextureUpscale != 1)
-			tip += "Texture Upscaling = 1\n";
+			tip += setting("Texture Upscaling", "1");
 		if (config::GdxMinDelay != 2)
-			tip += "Gdx Minimum Delay = 2\n";
-		
-		ImGui::SetTooltip(tip.c_str());
+			tip += setting("Gdx Minimum Delay", "2");
+
+		ImGui::SetTooltip("%s", tip.c_str());
 	}
 
 	ImGui::SameLine();
-	if (ImGui::Button(t({ "Apply Recommended Settings\nfor High-Spec PC", u8"高スペックPC向け\nおすすめ設定適用", u8"使用建議偏好設定\n高階電腦適用" }), ScaledVec2(200, 50))) {
+	if (ImGui::Button(T("Apply Recommended Settings\nfor High-Spec PC"), ScaledVec2(200, 50))) {
 		gdxsv_apply_base_settings();
 		config::ThreadedRendering = false;
 		config::RenderResolution = 1440;
@@ -211,112 +204,71 @@ void gdxsv_gui_settings_tab()
 	{
 		auto tip = settings_to_be_changed();
 		if (config::ThreadedRendering != false)
-			tip += "Multi-threaded emulation = false\n";
+			tip += setting("Multi-threaded emulation", "false");
 		if (config::RenderResolution != 1440)
-			tip += "Internal Resolution = 2560x1440 (x3)\n";
+			tip += setting("Internal Resolution", "2560x1440 (x3)");
 		if (config::AutoSkipFrame != 0)
-			tip += "Automatic Frame Skipping = Disabled\n";
+			tip += setting("Automatic Frame Skipping", "Disabled");
 		if (config::GdxMinDelay != 2)
-			tip += "Gdx Minimum Delay = 2\n";
-		
-		ImGui::SetTooltip(tip.c_str());
+			tip += setting("Gdx Minimum Delay", "2");
+
+		ImGui::SetTooltip("%s", tip.c_str());
 	}
 
 	ImGui::SameLine();
-	ShowHelpMarker(t({ "Use gdxsv recommended settings. Settings on other tabs will also be modified.\n\n\
-Low-Spec:\nPrioritizes stability of gameplay by minimal load.\n\n\
-Mid-Spec:\nWell-balanced setting that allows for comfortable gameplay with medium load.\n\n\
-High-Spec:\nAllows for comfortable gameplay by utilizing high load options.",
-u8"開発者おすすめの設定を適用します。このページ以外の設定も変更されます。\n\n\
-低スペック向け:\n快適なプレイよりも負荷を下げてゲームスピードの安定を優先させる設定です。\n\n\
-中スペック向け:\n快適なプレイが可能で負荷も少ないバランスの良い設定です。\n\n\
-高スペック向け:\n快適なプレイが可能で負荷の高いオプションも使用する設定です。",
-u8"使用開發者建議嘅偏好設定 (其他版嘅設定都會改埋)\n\n\
-低階:\n\
-以穩定遊戲速度為優先，降低負荷而非追求流暢遊戲嘅設定\n\n\
-中階:\n\
-流暢遊戲同負荷之間取個平衡嘅設定\n\n\
-高階:\n\
-最爽亦係最高負荷嘅設定"
-		}));
+	ShowHelpMarker(T("Use gdxsv recommended settings. Settings on other tabs will also be modified.\n\n"
+		"Low-Spec:\nPrioritizes stability of gameplay by minimal load.\n\n"
+		"Mid-Spec:\nWell-balanced setting that allows for comfortable gameplay with medium load.\n\n"
+		"High-Spec:\nAllows for comfortable gameplay by utilizing high load options."));
 
-	bool pressed = OptionCheckbox(t({ "UseTexturePack", u8"高解像度テクスチャを使用" }), config::GdxUseTexturePack, t({
-"Use up-scaled textures.",
-u8"ゲーム内で高品質なテクスチャを使用します. ",
-}));
+	bool pressed = OptionCheckbox(T("Use Texture Pack"), config::GdxUseTexturePack,
+		T("Use up-scaled textures."));
 	if (pressed) {
 		gdxsv_custom_texture_update.Reset();
 	}
 
-	OptionCheckbox(t({ "Multi-threaded emulation", u8"マルチスレッドエミュレーション" }), config::ThreadedRendering, t({
-R"(Run the emulated CPU and GPU on different threads.
-Can reduce the loading, but it may introduce a delay of 1 frame for input.
-	Enable = Best for low spec CPU.
-	Disable = Best for high spec CPU.)",
-u8"エミュレーターの計算と描画を別のスレッドで行います。有効にした場合負荷が軽くなりますが、最大1フレームの入力遅延が発生します。\n\
-低スペックCPUを使用している場合、有効を推奨\n\
-高スペックCPUを使用している場合、無効を推奨",
-u8"分拆GPU運算去另一線程，可以降低負荷但係有可能有 1 frame 輸入延遲\n\
-低階 CPU 建議啓用\n\
-高階 CPU 建議停用"
-		}));
+	OptionCheckbox(T("Multi-threaded emulation"), config::ThreadedRendering,
+		T("Run the emulated CPU and GPU on different threads.\n"
+		"Can reduce the loading, but it may introduce a delay of 1 frame for input.\n"
+		"\tEnable = Best for low spec CPU.\n"
+		"\tDisable = Best for high spec CPU."));
 
 #ifdef _WIN32
-	OptionCheckbox(t({ "Joystick Polling", u8"ジョイスティックポーリング" }), config::JoystickPolling, t({
-"Use polling instead of events for joystick input. May improve input latency in multi-threaded mode.",
-u8"ジョイスティック入力をイベントではなくポーリングで取得します。マルチスレッドモードでの入力遅延を改善する可能性があります。"
-		}));
+	OptionCheckbox(T("Joystick Polling"), config::JoystickPolling,
+		T("Use polling instead of events for joystick input. May improve input latency in multi-threaded mode."));
 #endif
 
 	bool widescreen = config::Widescreen.get() && config::WidescreenGameHacks.get();
-	pressed = ImGui::Checkbox(t({ "Enable 16:9 Widescreen Hack", u8"16:9 ワイドモニター対応", u8"使用 16:9 闊螢幕補丁" }), &widescreen);
+	pressed = ImGui::Checkbox(T("Enable 16:9 Widescreen Hack"), &widescreen);
 	if (pressed) {
 		config::Widescreen.set(widescreen);
 		config::SuperWidescreen.set(widescreen);
 		config::WidescreenGameHacks.set(widescreen);
 	}
 	ImGui::SameLine();
-	ShowHelpMarker(t({
-R"(Use the following rendering options:
-    rend.WideScreen=true
-    rend.SuperWideScreen=true
-    rend.WidescreenGameHacks=true)",
-u8"画面左右の黒縁を無くしワイドモニターに対応します。一部画面が正しく表示されなくなる可能性があります。",
-u8"會將螢幕左右嘅黑邊去除，支援闊螢幕。(部分畫面可能會無法正確顯示)"
-		}));
+	ShowHelpMarker(T("Use the following rendering options:\n"
+		"    rend.WideScreen=true\n"
+		"    rend.SuperWideScreen=true\n"
+		"    rend.WidescreenGameHacks=true"));
 
-	OptionCheckbox(t({ "VSync", u8"垂直同期" }), config::VSync, t({
-"Limit frame rate by VSync. Minimize video glitch",
-u8"モニターの更新タイミングを待って描画します。描画乱れが発生しにくくなりますが、表示に遅延が発生する可能性があります。\n\
-無効にしても表示乱れが気にならない場合、無効を推奨",
-u8"等到 VSync 果吓先繪圖。\n防止畫面撕裂，但係會增加輸入延遲。\n如果唔覺有撕裂問題，建議停用。"
-		}));
+	OptionCheckbox(T("VSync"), config::VSync,
+		T("Limit frame rate by VSync. Minimize video glitch"));
 	ImGui::Indent();
 	{
 		DisabledScope scope(!config::VSync);
 
-		OptionCheckbox(t({ "Duplicate frames", u8"重複フレーム表示" }), config::DupeFrames, t({
-"Duplicate frames on high refresh rate monitors (120 Hz and higher)",
-u8"同じフレームを2回表示します。120Hzモニターで60FPSに制限することができます。",
-u8"會重複顯示同一個畫面兩次。120Hz螢幕適用。"
-			}));
+		OptionCheckbox(T("Duplicate frames"), config::DupeFrames,
+			T("Duplicate frames on high refresh rate monitors (120 Hz and higher)"));
 	}
 	ImGui::Unindent();
 
-	header(t({ "Network Settings", u8"ネットワーク設定", u8"網絡設定" }));
-	OptionCheckbox(t({ "Enable UPnP", u8"UPnPを使用", u8"使用 UPnP" }), config::EnableUPnP, t({
-"Automatically configure your network router for netplay (IPv4 Only)",
-u8"ルーターの設定を自動で変更し、ポート開放を行います。(IPv4のみ対応)",
-u8"會自動變更Router設定，幫你Port Forward（僅支援IPv4）"
-		}));
+	header(T("Network Settings"));
+	OptionCheckbox(T("Enable UPnP"), config::EnableUPnP,
+		T("Automatically configure your network router for netplay (IPv4 Only)"));
 
-	ImGui::InputInt(t({ "Gdx UDP Port", u8"UDPポート" }), &config::GdxLocalPort.get());
+	ImGui::InputInt(T("Gdx UDP Port"), &config::GdxLocalPort.get());
 	ImGui::SameLine();
-	ShowHelpMarker(t({
-"UDP port number used for P2P communication. Cannot use the same number as another application using.",
-u8"オンライン対戦で使用するUDPポート番号を設定します。同時に使用する他のアプリケーションと同じポート番号は使用できません。",
-u8"網絡對戰用嘅 UDP Port。\n唔可以同其他程式/電腦用一樣嘅 Port，會撞。"
-		}));
+	ShowHelpMarker(T("UDP port number used for P2P communication. Cannot use the same number as another application using."));
 
 	if (config::GdxLocalPort == 0) {
 		config::GdxLocalPort = get_random_port_number();
@@ -329,7 +281,7 @@ u8"網絡對戰用嘅 UDP Port。\n唔可以同其他程式/電腦用一樣嘅 P
 	}
 
 	const auto buttonWidth = 200;
-	if (ImGui::Button(t({ "UPnP Now", u8"UPnP 実行", u8"而家打通 UPnP" }), ScaledVec2(buttonWidth, 0)) && !upnp_future.valid()) {
+	if (ImGui::Button(T("UPnP Now"), ScaledVec2(buttonWidth, 0)) && !upnp_future.valid()) {
 		upnp_result = "Please wait...";
 		int port = config::GdxLocalPort;
 		upnp_future = std::async(std::launch::async, [port]() -> std::string {
@@ -339,7 +291,7 @@ u8"網絡對戰用嘅 UDP Port。\n唔可以同其他程式/電腦用一樣嘅 P
 			});
 	}
 	ImGui::SameLine();
-	ShowHelpMarker(t({ "Open the port using UPnP", u8"UPnPを使用してUDPポート開放を行います。", u8"試吓同 Router 開個 Port。" }));
+	ShowHelpMarker(T("Open the port using UPnP"));
 	ImGui::SameLine();
 	ImGui::Text("%s", upnp_result.c_str());
 
@@ -356,25 +308,15 @@ u8"網絡對戰用嘅 UDP Port。\n唔可以同其他程式/電腦用一樣嘅 P
 		p2p_feasibility.description = gdxsv.P2PStatus();
 	}
 
-	if (ImGui::Button(t({ "Test Connectivity", u8"接続診断", u8"測試連線能力" }), ScaledVec2(buttonWidth, 0)) && !p2p_future.valid()) {
+	if (ImGui::Button(T("Test Connectivity"), ScaledVec2(buttonWidth, 0)) && !p2p_future.valid()) {
 		p2p_feasibility = { P2PStatus::Testing, "Testing...", "Running diagnostics...", "", "", 0xFFFFFFFF };
 		p2p_future = test_p2p_feasibility(config::GdxLocalPort);
 	}
 	ImGui::SameLine();
-	ShowHelpMarker(t({
-"Analyzes your network for P2P play:\n\n"
-"OK (Direct): Ideal. Port Forwarding, UPnP, or Full Cone NAT detected.\n"
-"OK (Hole Punching): Good. Moderate NAT detected. Hole Punching supported.\n"
-"Limited (May use Relay): Restricted. Symmetric NAT detected. May require a relay peer to connect.",
-u8"P2P対戦に向けたネットワーク診断を行います:\n\n"
-"OK (Direct): 最適。手動ポート開放、UPnP、または Full Cone NAT を確認しました。\n"
-"OK (Hole Punching): 良好。Moderate NAT が検出されました。ホールパンチングが可能です。\n"
-"Limited (May use Relay): 不可。Symmetric NAT が検出されました。リレーが必要になる可能性があります。",
-u8"分析你嘅網絡 P2P 對戰能力:\n\n"
-"OK (Direct): 完美。檢測到已手動開放 Port、UPnP 或 Full Cone NAT。\n"
-"OK (Hole Punching): 良好。檢測到 Moderate NAT。支援 Hole Punching。\n"
-"Limited (May use Relay): 差。檢測到 Symmetric NAT。你可能需要其他玩家幫你 Relay。"
-		}));
+	ShowHelpMarker(T("Analyzes your network for P2P play:\n\n"
+		"OK (Direct): Ideal. Port Forwarding, UPnP, or Full Cone NAT detected.\n"
+		"OK (Hole Punching): Good. Moderate NAT detected. Hole Punching supported.\n"
+		"Limited (May use Relay): Restricted. Symmetric NAT detected. May require a relay peer to connect."));
 	if (!p2p_feasibility.status.empty()) {
 		ImGui::SameLine();
 		ImGui::TextColored(ImGui::ColorConvertU32ToFloat4(p2p_feasibility.color), "%s ", p2p_feasibility.status.c_str());
@@ -383,26 +325,22 @@ u8"分析你嘅網絡 P2P 對戰能力:\n\n"
 	}
 
 	OptionArrowButtons(
-		t({"Gdx Minimum Delay", u8"最小入力遅延", u8"最少輸入延遲"}), config::GdxMinDelay, 2, 6,
-		t({
-"Minimum frame of input delay used for rollback communication.\nSmaller value reduces latency, but uses more CPU and introduces glitches.",
-u8"オンライン対戦時の最小入力遅延フレーム数を設定します。小さい値を設定すると入力遅延が減りますが、CPU使用率が増え表示乱れが発生しやすくなります。",
-u8"設定網絡對戰時最小輸入延遲。數値越細、輸入延遲越細，但會增加CPU負荷，並增加畫面跳格嘅可能性。"
-		}));
+		T("Gdx Minimum Delay"), config::GdxMinDelay, 2, 6,
+		T("Minimum frame of input delay used for rollback communication.\n"
+		"Smaller value reduces latency, but uses more CPU and introduces glitches."));
 
-	OptionCheckbox(t({ "Save Replay" , u8"リプレイ保存", u8"儲存 Replay" }), config::GdxSaveReplay, t({ "Save replay file to replays directory", u8"オンライン対戦のリプレイファイルを保存します。", u8"儲存網絡對戰嘅重播檔案到重播資料夾。" }));
+	OptionCheckbox(T("Save Replay"), config::GdxSaveReplay,
+		T("Save replay file to replays directory"));
 	{
 		DisabledScope scope(!config::GdxSaveReplay);
 		ImGui::SameLine();
-		OptionCheckbox(t({ "Upload Replay", u8"リプレイアップロード", u8"上載 Replay" }), config::GdxUploadReplay, t({ "Automatically upload the replay file after save", u8"オンライン対戦のリプレイファイルを自動アップロードします。", u8"上載網絡對戰嘅重播檔案。" }));
+		OptionCheckbox(T("Upload Replay"), config::GdxUploadReplay,
+			T("Automatically upload the replay file after save"));
 	}
 
-	OptionCheckbox(t({ "Display Network Statistics", u8"通信状況表示", u8"對戰時顯示連線状態" }), config::NetworkStats,
-		t({
-"Display network statistics on screen by default.\nUse Flycast Menu button to show/hide.",
-u8"オンライン対戦時に通信の統計情報を表示します。.\nMenu ボタンを押して表示・非表示を切り替えることができます。",
-u8"網絡對戰時顯示連線状態。\n按下Menu button可以切換顯示或隱藏。",
-		}));
+	OptionCheckbox(T("Display Network Statistics"), config::NetworkStats,
+		T("Display network statistics on screen by default.\n"
+		"Use Flycast Menu button to show/hide."));
 }
 // clang-format on
 

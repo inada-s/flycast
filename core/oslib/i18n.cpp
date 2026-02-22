@@ -138,6 +138,7 @@ void init()
 	static DictionaryManager dictMgr(std::make_unique<ResourceFileSystem>());
 	dictMgr.set_language(Language::from_spec(language, country, variant));
 	dictMgr.add_directory("i18n");
+	dictMgr.add_directory("i18n-gdxsv");
 	dictionary = &dictMgr.get_dictionary();
 }
 
