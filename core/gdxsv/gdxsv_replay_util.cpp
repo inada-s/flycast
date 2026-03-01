@@ -15,6 +15,7 @@
 // clang-format on
 #endif
 
+#include "cfg/cfg.h"
 #include "dirent.h"
 #include "gdxsv.h"
 #include "json.hpp"
@@ -1087,6 +1088,11 @@ void gdxsv_start_replay(const std::string& replay_file, int pov) {
 }
 
 void gdxsv_end_replay() {
+	if (config::loadInt("gdxsv", "batch_replay", 0) != 0) {
+		dc_exit();
+		return;
+	}
+
 	emu.stop();
 	dc_loadstate(90);
 	settings.input.fastForwardMode = false;

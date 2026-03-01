@@ -31,6 +31,9 @@ class GdxsvBackendReplay {
 	bool StartBuffer(const std::vector<u8>& buf, int pov);
 	void Stop();
 	bool ChangeRoundAvailable() const;
+	bool IsBatchReplay() const;
+	const std::vector<proto::BattleLogRound>& GetRoundData() const { return round_data_; }
+	const proto::BattleLogFile& GetLogFile() const { return log_file_; }
 
 	// Network Backend Interface
 	void Open();
@@ -56,6 +59,7 @@ class GdxsvBackendReplay {
 	void RenderControlBar();
 	void GetRoundBounds(int& roundStart, int& roundEnd, int& totalRounds) const;
 	const char* SpeedText() const;
+	void OutputBatchResult();
 
 	struct ReplayCtrlCommand {
 		enum Command {
@@ -175,4 +179,7 @@ class GdxsvBackendReplay {
 	int takeover_saved_frame_ = -1;
 	int takeover_countdown_ = 0;
 	std::deque<u16> takeover_input_buf_;
+
+	std::vector<proto::BattleLogRound> round_data_;
+	u8 prev_win_team_ = 0;
 };

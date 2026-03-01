@@ -4,6 +4,7 @@
 #include <sstream>
 
 #include "SDL_events.h"
+#include "cfg/cfg.h"
 #include "cfg/option.h"
 #include "emulator.h"
 #include "ui/mainui.h"
@@ -11,6 +12,7 @@
 #include "gdxsv.h"
 #include "gdxsv_replay_util.h"
 #include "input/gamepad_device.h"
+#include "json.hpp"
 #include "libs.h"
 #include "ui/gui.h"
 #include "ui/gui_util.h"
@@ -79,12 +81,17 @@ void GdxsvBackendReplay::Reset() {
 	takeover_saved_frame_ = -1;
 	takeover_countdown_ = 0;
 	takeover_input_buf_.clear();
+	round_data_.clear();
+	prev_win_team_ = 0;
 	gdxsv_save_state.Reset();
 	gdxsv.key_display_.Clear();
 }
 
 void GdxsvBackendReplay::OnMainUiLoop() {
 	if (state_ == State::End) {
+		if (IsBatchReplay()) {
+			OutputBatchResult();
+		}
 		state_ = State::None;
 		gdxsv_save_state.Reset();
 		gdxsv.netmode_ = Gdxsv::NetMode::Offline;
@@ -137,7 +144,7 @@ void GdxsvBackendReplay::OnMainUiLoop() {
 		}
 	}
 
-	if (State::LbsStartBattleFlow <= state_ && !pause_menu_opend_) {
+	if (State::LbsStartBattleFlow <= state_ && !pause_menu_opend_ && !IsBatchReplay()) {
 		auto input = mapleInputState[0];
 		// Map analog stick to d-pad (fullAxes are 16-bit, >> 8 to match convertInput thresholds)
 		if ((input.fullAxes[0] >> 8) + 128 <= 128 - 0x20) input.kcode &= ~DC_DPAD_LEFT;
@@ -273,31 +280,41 @@ void GdxsvBackendReplay::OnNextFrame() {
 	if (!end_of_frame_) return;
 	if (seeking_) return;
 
+	const bool batch_mode = IsBatchReplay();
+
 	constexpr int save_interval = 60;
 	auto need_cancel = [&]() -> bool { return ctrl_commands_.contains(ReplayCtrlCommand::SaveFirstFrame) || state_ == State::End; };
 	auto regular_save_state = [&]() {
+		if (batch_mode) return;  // Skip save states in batch mode
 		if ((IsInGame() || IsInBriefing()) && gdxsv_save_state.LastSavedFrame() + save_interval <= key_msg_count_ && recv_buf_.empty() && !takeover_) {
 			gdxsv_save_state.SaveState(key_msg_count_);
 		}
 	};
 
-	// Audio fade-in after save state load (e.g. StepFrameBackward)
-	// Quadratic curve: stays near 0 initially, ramps up quickly at the end
-	if (audio_fade_frames_ > 0) {
-		audio_fade_frames_--;
-		const float t = 1.0f - (float)audio_fade_frames_ / 20.0f; // 0.0 -> 1.0
-		settings.aica.audioFade = t * t;
-	}
+	if (!batch_mode) {
+		// Audio fade-in after save state load (e.g. StepFrameBackward)
+		// Quadratic curve: stays near 0 initially, ramps up quickly at the end
+		if (audio_fade_frames_ > 0) {
+			audio_fade_frames_--;
+			const float t = 1.0f - (float)audio_fade_frames_ / 20.0f; // 0.0 -> 1.0
+			settings.aica.audioFade = t * t;
+		}
 
-	// Unpause if we left the game phase (e.g. stepped into briefing)
-	if (ctrl_pause_ && !IsInGame()) {
-		ctrl_pause_ = false;
-	}
+		// Unpause if we left the game phase (e.g. stepped into briefing)
+		if (ctrl_pause_ && !IsInGame()) {
+			ctrl_pause_ = false;
+		}
 
-	gdxsv.key_display_.enabled(config::GdxReplayKeyDisplay && IsInGame());
+		gdxsv.key_display_.enabled(config::GdxReplayKeyDisplay && IsInGame());
+	}
 	regular_save_state();
 
-	if (0 < ctrl_play_speed_ && !ctrl_pause_ && !pause_menu_opend_ && !need_cancel() && !takeover_) {
+	// Batch mode: run all remaining frames silently at maximum speed
+	if (batch_mode && !need_cancel()) {
+		while (state_ != State::End && !need_cancel()) {
+			RunFrameSilently(true);
+		}
+	} else if (0 < ctrl_play_speed_ && !ctrl_pause_ && !pause_menu_opend_ && !need_cancel() && !takeover_) {
 		for (int skipped_frame = 0; skipped_frame < ctrl_play_speed_; skipped_frame++) {
 			RunFrameSilently(config::GdxSkipRenderingHack && skipped_frame + 1 < ctrl_play_speed_);
 			regular_save_state();
@@ -335,9 +352,11 @@ void GdxsvBackendReplay::OnNextFrame() {
 
 		if (ctrl.cmd == ReplayCtrlCommand::SaveFirstFrame) {
 			verify(recv_buf_.empty());
-			NOTICE_LOG(COMMON, "SaveFirstFrame saved");
-			gdxsv_save_state.Clear();
-			gdxsv_save_state.SaveState(key_msg_count_);
+			if (!batch_mode) {
+				NOTICE_LOG(COMMON, "SaveFirstFrame saved");
+				gdxsv_save_state.Clear();
+				gdxsv_save_state.SaveState(key_msg_count_);
+			}
 			ctrl_commands_.pop_front();
 		}
 
@@ -598,6 +617,7 @@ bool GdxsvBackendReplay::OnOpenMenu() {
 }
 
 void GdxsvBackendReplay::DisplayOSD() {
+	if (IsBatchReplay()) return;
 	if (!seeking_ && pause_menu_opend_) {
 		RenderPauseMenu();
 	}
@@ -690,6 +710,56 @@ void GdxsvBackendReplay::Stop() {
 
 bool GdxsvBackendReplay::ChangeRoundAvailable() const {
 	return 0 < log_file_.start_msg_indexes_size() && log_file_.start_msg_indexes_size() == log_file_.start_msg_randoms_size();
+}
+
+bool GdxsvBackendReplay::IsBatchReplay() const {
+	return config::loadInt("gdxsv", "batch_replay", 0) != 0;
+}
+
+void GdxsvBackendReplay::OutputBatchResult() {
+	nlohmann::json result;
+	result["battle_code"] = log_file_.battle_code();
+	result["disk"] = log_file_.game_disk();
+	result["players"] = log_file_.users_size();
+	result["rounds"] = (int)round_data_.size();
+
+	nlohmann::json round_data_json = nlohmann::json::array();
+	for (const auto& rd : round_data_) {
+		nlohmann::json rd_json;
+		rd_json["win_team"] = rd.win_team();
+		nlohmann::json used_ms_json = nlohmann::json::array();
+		for (int i = 0; i < rd.used_ms_size(); ++i) {
+			used_ms_json.push_back(rd.used_ms(i));
+		}
+		rd_json["used_ms"] = used_ms_json;
+		round_data_json.push_back(rd_json);
+	}
+	result["round_data"] = round_data_json;
+
+	nlohmann::json users_json = nlohmann::json::array();
+	for (int i = 0; i < log_file_.users_size(); ++i) {
+		const auto& user = log_file_.users(i);
+		nlohmann::json u;
+		u["user_id"] = user.user_id();
+		u["pos"] = user.pos();
+		u["team"] = user.team();
+		users_json.push_back(u);
+	}
+	result["users"] = users_json;
+
+	std::string json_str = result.dump();
+
+	// Write to file (reliable for WIN32 subsystem apps where stdout may not be connected)
+	FILE* f = fopen("batch_result.json", "w");
+	if (f) {
+		fprintf(f, "%s\n", json_str.c_str());
+		fclose(f);
+	}
+
+	// Also try stdout and log
+	printf("BATCH_RESULT:%s\n", json_str.c_str());
+	fflush(stdout);
+	NOTICE_LOG(COMMON, "BATCH_RESULT:%s", json_str.c_str());
 }
 
 void GdxsvBackendReplay::Open() {
@@ -1098,6 +1168,8 @@ void GdxsvBackendReplay::ProcessMcsMessage(const McsMessage& msg) {
 		}
 
 		start_msg_count_++;
+		round_data_.resize(start_msg_count_);
+		prev_win_team_ = 0;
 		NOTICE_LOG(COMMON, "StartMsg key_msg_count %d", key_msg_count_);
 
 		if (start_msg_count_ - 1 < log_file_.start_msg_indexes_size()) {
@@ -1147,6 +1219,25 @@ void GdxsvBackendReplay::ProcessMcsMessage(const McsMessage& msg) {
 			std::copy(key_msg.body.begin(), key_msg.body.end(), std::back_inserter(recv_buf_));
 			if (takeover_countdown_ == 0) {
 				gdxsv.key_display_.AppendInput(i, input);
+			}
+		}
+
+		// Monitor WinTeam and collect used_ms (ported from rollback backend)
+		if (!round_data_.empty()) {
+			const int disk = gdxsv.Disk();
+			const u32 WinTeam = disk == 1 ? 0x0c3364b6 : 0x0c3d1948;
+			const u32 PlayerWork = disk == 1 ? 0x0c336854 : 0x0c3d1cd4;
+			const u8 win_team = gdxsv_ReadMem8(WinTeam);
+			if (win_team != 0 && win_team != prev_win_team_) {
+				round_data_.back().set_win_team(win_team);
+				round_data_.back().clear_used_ms();
+				NOTICE_LOG(COMMON, "REPLAY ROUND %zu WIN_TEAM = %d", round_data_.size(), win_team);
+				for (int i = 0; i < log_file_.users_size(); ++i) {
+					const auto ms_index = gdxsv_ReadMem8(PlayerWork + i * 0x2000 + 0x1f02);
+					round_data_.back().add_used_ms(ms_index + 1);  // 0-origin -> 1-origin
+					NOTICE_LOG(COMMON, "REPLAY %d USED MS = %d", i, ms_index + 1);
+				}
+				prev_win_team_ = win_team;
 			}
 		}
 

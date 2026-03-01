@@ -46,7 +46,11 @@ void gdxsv_emu_start() {
 
 	if (gdxsv.Enabled()) {
 		auto replay = config::loadStr("gdxsv", "replay", "");
+		auto batch_replay = config::loadInt("gdxsv", "batch_replay", 0);
 		if (!replay.empty()) {
+			if (batch_replay != 0) {
+				settings.aica.muteAudio = true;
+			}
 			dc_savestate(90);
 			dc_loadstate(99);
 		} else if (!config::loadStr("gdxsv", "rbk_test", "").empty()) {
