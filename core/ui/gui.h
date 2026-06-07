@@ -56,6 +56,11 @@ std::string gui_getCurGameBoxartUrl();
 void gui_takeScreenshot();
 void gui_runOnUiThread(std::function<void()> function);
 
+#ifdef GDB_SERVER
+void gui_show_debugger_wait(const std::string& message);
+void gui_hide_debugger_wait();
+#endif
+
 enum class GuiState {
 	Closed,
 	Commands,
@@ -66,6 +71,7 @@ enum class GuiState {
 	VJoyEditCommands,
 	SelectDisk,
 	Loading,
+	DebuggerWait,
 	NetworkStart,
 	Cheats,
 	GdxsvReplay,

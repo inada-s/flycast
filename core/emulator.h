@@ -145,6 +145,10 @@ public:
 	 */
 	void stepRange(u32 from, u32 to);
 	/**
+	 * Clear any pending single-step or range-step request.
+	 */
+	void cancelStepRequests();
+	/**
 	 * Return whether the emulator is currently running.
 	 */
 	bool running() const {

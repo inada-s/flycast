@@ -1,4 +1,6 @@
 #include "reios.h"
+#include "cfg/option.h"
+#include "debug/gdb_server.h"
 
 extern "C" {
 #include <elf/elf.h>
@@ -61,6 +63,5 @@ bool reios_loadElf(const std::string& elf) {
 		memset(ptr, 0, elf_getProgramHeaderMemorySize(&elfFile, i) - len);
 	}
 	free(elfF);
-
 	return true;
 }

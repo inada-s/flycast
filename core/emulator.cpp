@@ -59,6 +59,19 @@
 settings_t settings;
 constexpr char const *BIOS_TITLE = "Dreamcast BIOS";
 
+static bool useDynarecExecutor()
+{
+#if FEAT_SHREC != DYNAREC_NONE
+#ifdef GDB_SERVER
+	return config::DynarecEnabled && !(config::GDB && config::GDBWaitForConnection);
+#else
+	return config::DynarecEnabled;
+#endif
+#else
+	return false;
+#endif
+}
+
 static void loadSpecialSettings()
 {
 	std::string& prod_id = settings.content.gameId;
@@ -509,7 +522,7 @@ void Emulator::init()
 #if FEAT_SHREC != DYNAREC_NONE
 	recompiler = Get_Sh4Recompiler();
 	recompiler->Init();
-	if(config::DynarecEnabled)
+	if (useDynarecExecutor())
 		INFO_LOG(DYNAREC, "Using Recompiler");
 	else
 #endif
@@ -524,7 +537,7 @@ void Emulator::init()
 Sh4Executor *Emulator::getSh4Executor()
 {
 #if FEAT_SHREC != DYNAREC_NONE
-	if(config::DynarecEnabled)
+	if (useDynarecExecutor())
 		return recompiler;
 	else
 #endif
@@ -687,7 +700,7 @@ void Emulator::loadGame(const char *path, LoadProgress *progress)
 		if (progress)
 		{
 #ifdef GDB_SERVER
-			if(config::GDBWaitForConnection)
+			if (config::GDBWaitForConnection && config::GDBWaitForConnectionMode == config::GDB_WAIT_AT_START)
 				progress->label = "Waiting for debugger...";
 			else
 #endif
@@ -900,6 +913,13 @@ void Emulator::stepRange(u32 from, u32 to)
 	stop();
 }
 
+void Emulator::cancelStepRequests()
+{
+	singleStep = false;
+	stepRangeFrom = 0;
+	stepRangeTo = 0;
+}
+
 void Emulator::loadstate(Deserializer& deser)
 {
 	if (!custom_texture.preloaded())
@@ -976,6 +996,15 @@ void Emulator::run()
 		gdxsv_emu_next_frame();
 		if (ggpo::active())
 			ggpo::nextFrame();
+	} catch (const debugger::Stop&) {
+		// Debugger traps are expected while GDB is attached. In the single-threaded
+		// path we must stop locally so the UI doesn't treat them as fatal or restart
+		// execution before the next GDB packet performs post-trap cleanup.
+		getSh4Executor()->Stop();
+		if (!config::ThreadedRendering) {
+			TermAudio();
+			state = Loaded;
+		}
 	} catch (const std::exception& e) {
 		ERROR_LOG(COMMON, "Exception: %s\n", e.what());
 		setNetworkState(false);
@@ -1093,7 +1122,7 @@ bool Emulator::render()
 			return false;
 		run();
 		// TODO if stopping due to a user request, no frame has been rendered
-		return !renderTimeout;
+		return state == Running && !renderTimeout;
 	}
 	if (!checkStatus())
 		return false;

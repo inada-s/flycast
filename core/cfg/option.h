@@ -483,11 +483,15 @@ extern Option<int, false> VideoRoutingVRes;
 
 // Misc
 
+constexpr int GDB_WAIT_AT_START = 0;
+constexpr int GDB_WAIT_AT_EXECUTABLE_START = 1;
+
 extern Option<bool> SerialConsole;
 extern Option<bool> SerialPTY;
 extern Option<bool> GDB;
 extern Option<int> GDBPort;
 extern Option<bool> GDBWaitForConnection;
+extern Option<int> GDBWaitForConnectionMode;
 extern Option<bool> UseReios;
 extern Option<bool> FastGDRomLoad;
 extern Option<bool> RamMod32MB;

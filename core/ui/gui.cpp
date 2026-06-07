@@ -97,12 +97,47 @@ ImFont *largeFont;
 static Toast toast;
 static ThreadRunner uiThreadRunner;
 
+#ifdef GDB_SERVER
+namespace {
+std::string debuggerWaitOverlayMessage;
+
+void clearDebuggerWaitOverlay()
+{
+	if (debuggerWaitOverlayMessage.empty())
+		return;
+	debuggerWaitOverlayMessage.clear();
+	if (gui_state == GuiState::DebuggerWait)
+		gui_setState(GuiState::Closed);
+}
+
+void gui_display_debugger_wait_overlay()
+{
+	centerNextWindow();
+	ImGui::SetNextWindowSize(ScaledVec2(330, 0));
+	ImGui::SetNextWindowBgAlpha(0.8f);
+	ImguiStyleVar _(ImGuiStyleVar_WindowPadding, ScaledVec2(20, 20));
+
+	if (ImGui::Begin("##debugger_wait", NULL, ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_AlwaysAutoResize))
+	{
+		ImguiStyleVar _(ImGuiStyleVar_FramePadding, ScaledVec2(20, 10));
+		ImGui::AlignTextToFramePadding();
+		ImGui::SetCursorPosX(uiScaled(20.f));
+		ImGui::Text("%s", debuggerWaitOverlayMessage.c_str());
+	}
+	ImGui::End();
+}
+}
+#endif
+
 static void emuEventCallback(Event event, void *)
 {
 	switch (event)
 	{
 	case Event::Resume:
 		game_started = true;
+#ifdef GDB_SERVER
+		clearDebuggerWaitOverlay();
+#endif
 		vgamepad::startGame();
 		break;
 	case Event::Start:
@@ -1423,7 +1458,7 @@ static void gui_display_loadscreen()
 		ImGui::AlignTextToFramePadding();
 		ImGui::SetCursorPosX(uiScaled(20.f));
 		try {
-			const char *label = gameLoader.getProgress().label;
+			const char *label = gameLoader.getProgress().label.load();
 			if (label == nullptr)
 			{
 				if (gameLoader.ready())
@@ -1554,6 +1589,11 @@ void gui_display_ui()
 		break;
 	case GuiState::Loading:
 		gui_display_loadscreen();
+		break;
+	case GuiState::DebuggerWait:
+#ifdef GDB_SERVER
+		gui_display_debugger_wait_overlay();
+#endif
 		break;
 	case GuiState::NetworkStart:
 		gui_network_start();
@@ -1806,6 +1846,21 @@ std::string gui_getCurGameBoxartUrl()
 void gui_runOnUiThread(std::function<void()> function) {
 	uiThreadRunner.runOnThread(function);
 }
+
+#ifdef GDB_SERVER
+void gui_show_debugger_wait(const std::string& message)
+{
+	const LockGuard lock(guiMutex);
+	debuggerWaitOverlayMessage = message;
+	gui_setState(GuiState::DebuggerWait);
+}
+
+void gui_hide_debugger_wait()
+{
+	const LockGuard lock(guiMutex);
+	clearDebuggerWaitOverlay();
+}
+#endif
 
 void gui_takeScreenshot()
 {

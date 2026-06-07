@@ -75,6 +75,8 @@ const std::array<Sh4RegType, 59> Sh4RegList {
 class DebugAgent
 {
 public:
+	static constexpr u16 SOFTWARE_BREAK_OPCODE = 0xC308;
+
 	struct Breakpoint {
 		enum Type
 		{
@@ -107,9 +109,10 @@ public:
 			icache.Invalidate();
 			// Execute one instruction directly
 			emu.getSh4Executor()->Step();
-			WriteMem16_nommu(bpAddr, 0xC308);	// Restore trapa #8 at original location
+			WriteMem16_nommu(bpAddr, SOFTWARE_BREAK_OPCODE);	// Restore trapa #8 at original location
 			icache.Invalidate();
 		}
+		emu.cancelStepRequests();
 		emu.start();
 	}
 
@@ -235,14 +238,17 @@ public:
 	bool insertMatchpoint(Breakpoint::Type type, u32 addr, u32 len)
 	{
 		if (type == Breakpoint::BP_TYPE_SOFTWARE_BREAK) {
-			if (len != 2)
+			// SH4 instructions are 16-bit, but some remote clients (notably radare2)
+			// still request a 4-byte software breakpoint on this target.
+			if (len != 2 && len != 4)
 				return false;
-			if (breakpoints[type].find(addr) != breakpoints[type].end())
+			auto it = breakpoints[type].find(addr);
+			if (it != breakpoints[type].end()) {
+				installSoftwareBreakpoint(it->second);
 				return true;
+			}
 			breakpoints[type][addr] = Breakpoint(type, addr);
-			breakpoints[type][addr].savedOp = ReadMem16_nommu(addr);
-			WriteMem16_nommu(addr, 0xC308);	// trapa #0x20
-			icache.Invalidate();
+			installSoftwareBreakpoint(breakpoints[type][addr]);
 			return true;
 		}
 		else if (type == Breakpoint::BP_TYPE_WRITE_WATCHPOINT) {
@@ -259,13 +265,12 @@ public:
 	bool removeMatchpoint(Breakpoint::Type type, u32 addr, u32 len)
 	{
 		if (type == Breakpoint::BP_TYPE_SOFTWARE_BREAK) {
-			if (len != 2)
+			if (len != 2 && len != 4)
 				return false;
 			auto it = breakpoints[type].find(addr);
 			if (it == breakpoints[type].end())
 				return false;
-			WriteMem16_nommu(addr, it->second.savedOp);
-			icache.Invalidate();
+			restoreSoftwareBreakpoint(it->second);
 			breakpoints[type].erase(it);
 			return true;
 		}
@@ -311,11 +316,13 @@ public:
 	{
 		emu.unloadGame();
 		emu.loadGame(settings.content.path.c_str());
+		reapplySoftwareBreakpoints();
 		emu.start();
 	}
 
 	void detach()
 	{
+		clearMatchpoints();
 		emu.start();
 	}
 
@@ -327,7 +334,7 @@ public:
 	void resetAgent()
 	{
 		stack.clear();
-		watchpoint::reset();
+		clearMatchpoints();
 	}
 
 	int findException(u32 event)
@@ -381,4 +388,37 @@ public:
 
 	std::map<u32, Breakpoint> breakpoints[Breakpoint::Type::BP_TYPE_COUNT];
 	std::vector<std::pair<u32, u32>> stack;
+
+	void installSoftwareBreakpoint(Breakpoint& breakpoint)
+	{
+		const u16 currentOp = ReadMem16_nommu(breakpoint.addr);
+		if (currentOp == SOFTWARE_BREAK_OPCODE)
+			return;
+		breakpoint.savedOp = currentOp;
+		WriteMem16_nommu(breakpoint.addr, SOFTWARE_BREAK_OPCODE);
+		icache.Invalidate();
+	}
+
+	void restoreSoftwareBreakpoint(const Breakpoint& breakpoint)
+	{
+		if (ReadMem16_nommu(breakpoint.addr) != SOFTWARE_BREAK_OPCODE)
+			return;
+		WriteMem16_nommu(breakpoint.addr, breakpoint.savedOp);
+		icache.Invalidate();
+	}
+
+	void reapplySoftwareBreakpoints()
+	{
+		for (auto& [addr, breakpoint] : breakpoints[Breakpoint::BP_TYPE_SOFTWARE_BREAK])
+			installSoftwareBreakpoint(breakpoint);
+	}
+
+	void clearMatchpoints()
+	{
+		for (auto& [addr, breakpoint] : breakpoints[Breakpoint::BP_TYPE_SOFTWARE_BREAK])
+			restoreSoftwareBreakpoint(breakpoint);
+		for (auto& breakpointMap : breakpoints)
+			breakpointMap.clear();
+		watchpoint::reset();
+	}
 };

@@ -142,6 +142,7 @@ class GDBClient:
         self.target = "127.0.0.1:3263"
         self.on_status_change = on_status_change
         self.last_response_time = time.time()
+        self._next_token = 1
 
     def start(self, target="127.0.0.1:3263"):
         """Start GDB and connect to target"""
@@ -167,6 +168,7 @@ class GDBClient:
         # Initialize SH4 settings
         self._send_raw("-gdb-set architecture sh4")
         self._send_raw("-gdb-set endian little")
+        self._send_raw("-gdb-set confirm off")
         # Enable async mode for interrupt support
         self._send_raw("-gdb-set mi-async on")
         self._send_raw("-gdb-set target-async on")
@@ -206,6 +208,12 @@ class GDBClient:
             except:
                 pass
 
+    def _send_tokenized(self, cmd):
+        token = self._next_token
+        self._next_token += 1
+        self._send_raw(f"{token}{cmd}")
+        return token
+
     def send_command(self, cmd):
         """Send CLI command via MI interface"""
         self._send_raw(f"-interpreter-exec console \"{cmd}\"")
@@ -232,27 +240,38 @@ class GDBClient:
     def read_memory(self, addr, length):
         self._send_raw(f"-data-read-memory {addr} x 4 1 {length // 4}")
 
-    def set_breakpoint(self, addr):
-        self._send_raw(f"-break-insert *{addr}")
+    def set_breakpoint(self, addr, tokenized=False):
+        cmd = f"-break-insert *{addr}"
+        if tokenized:
+            return self._send_tokenized(cmd)
+        self._send_raw(cmd)
+        return None
 
-    def set_watchpoint(self, addr, wp_type="write"):
+    def set_watchpoint(self, addr, wp_type="write", tokenized=False):
         """Set a watchpoint at address
         wp_type: 'write', 'read', or 'access'
         """
         # GDB/MI: -break-watch [-a | -r] <expr>
         # -a: access (read/write), -r: read, none: write
+        cmd = None
         if wp_type == "read":
-            self._send_raw(f"-break-watch -r *{addr}")
+            cmd = f"-break-watch -r *{addr}"
         elif wp_type == "access":
-            self._send_raw(f"-break-watch -a *{addr}")
+            cmd = f"-break-watch -a *{addr}"
         else:  # write
-            self._send_raw(f"-break-watch *{addr}")
+            cmd = f"-break-watch *{addr}"
 
-    def delete_breakpoint(self, num):
-        self._send_raw(f"-break-delete {num}")
+        if tokenized:
+            return self._send_tokenized(cmd)
+        self._send_raw(cmd)
+        return None
 
-    def list_breakpoints(self):
-        self._send_raw("-break-list")
+    def delete_breakpoint(self, num, tokenized=False):
+        cmd = f"-break-delete {num}"
+        if tokenized:
+            return self._send_tokenized(cmd)
+        self._send_raw(cmd)
+        return None
 
     def _read_output(self):
         """Read GDB output in background thread"""
@@ -679,6 +698,8 @@ class BreakpointManager:
                     data = json.load(f)
                     self.breakpoints = data.get("breakpoints", [])
                     self.next_id = data.get("next_id", 1)
+                    for bp in self.breakpoints:
+                        bp["gdb_num"] = None
             except Exception as e:
                 print(f"Failed to load breakpoints: {e}")
                 self.breakpoints = []
@@ -686,8 +707,13 @@ class BreakpointManager:
     def save(self):
         """Save breakpoints to file"""
         try:
+            saved_breakpoints = []
+            for bp in self.breakpoints:
+                saved_bp = dict(bp)
+                saved_bp["gdb_num"] = None
+                saved_breakpoints.append(saved_bp)
             data = {
-                "breakpoints": self.breakpoints,
+                "breakpoints": saved_breakpoints,
                 "next_id": self.next_id
             }
             with open(self.filepath, 'w', encoding='utf-8') as f:
@@ -831,7 +857,6 @@ class BreakpointPanel(ttk.LabelFrame):
         ttk.Button(add_frame, text="Edit", width=4, command=self._edit_selected).pack(side=tk.LEFT, padx=1)
         ttk.Button(add_frame, text="Del", width=3, command=self._delete_selected).pack(side=tk.LEFT, padx=1)
         ttk.Button(add_frame, text="Sync", width=4, command=self._request_sync).pack(side=tk.LEFT, padx=1)
-
         # Treeview for breakpoint list
         columns = ("enabled", "type", "address", "expression", "comment")
         self.tree = ttk.Treeview(self, columns=columns, show="headings", height=8)
@@ -1373,11 +1398,16 @@ class GDBClientGUI:
         self._pending_bp_ids = []  # Track pending breakpoint IDs for GDB number assignment
         self._pending_watch_reads = []  # Track pending memory watch reads
         self._target_running = False  # Track if target is running
-        self._step_then_continue = False  # Flag for step-then-continue sequence
         self._sync_pending = False  # Flag for pending breakpoint sync (when target was running)
+        self._session_ready = False  # True once the remote target is fully connected
+        self._sync_in_progress = False  # True while breakpoint changes are still settling
+        self._queued_continue_after_sync = False  # Continue requested while sync was still in progress
+        self._pending_sync_tokens = set()  # MI command tokens still outstanding for breakpoint sync
+        self._refresh_job = None  # Debounced auto-refresh job for stopped state
 
         self._create_menu()
         self._create_widgets()
+        self._update_button_states()
         self._poll_output()
         self._update_status_display()
         self._update_title()
@@ -1438,8 +1468,10 @@ class GDBClientGUI:
         ctrl_frame = ttk.Frame(right_frame)
         ctrl_frame.pack(fill=tk.X, padx=2, pady=2)
 
-        ttk.Button(ctrl_frame, text="Connect", command=self._connect, width=10).pack(side=tk.LEFT, padx=2)
-        ttk.Button(ctrl_frame, text="Disconnect", command=self._disconnect, width=10).pack(side=tk.LEFT, padx=2)
+        self.connect_btn = ttk.Button(ctrl_frame, text="Connect", command=self._connect, width=10)
+        self.connect_btn.pack(side=tk.LEFT, padx=2)
+        self.disconnect_btn = ttk.Button(ctrl_frame, text="Disconnect", command=self._disconnect, width=10)
+        self.disconnect_btn.pack(side=tk.LEFT, padx=2)
         ttk.Separator(ctrl_frame, orient=tk.VERTICAL).pack(side=tk.LEFT, fill=tk.Y, padx=5)
 
         self.run_btn = ttk.Button(ctrl_frame, text="Continue", command=self._toggle_run, width=8)
@@ -1450,7 +1482,8 @@ class GDBClientGUI:
         self.next_btn.pack(side=tk.LEFT, padx=2)
         ttk.Separator(ctrl_frame, orient=tk.VERTICAL).pack(side=tk.LEFT, fill=tk.Y, padx=5)
 
-        ttk.Button(ctrl_frame, text="Refresh", command=self._refresh_all, width=8).pack(side=tk.LEFT, padx=2)
+        self.refresh_btn = ttk.Button(ctrl_frame, text="Refresh", command=self._refresh_all, width=8)
+        self.refresh_btn.pack(side=tk.LEFT, padx=2)
 
         # Status label
         self.status_var = tk.StringVar(value="Disconnected")
@@ -1613,16 +1646,31 @@ class GDBClientGUI:
 
     def _connect(self):
         self._append_output("[Connecting to 127.0.0.1:3263...]\n")
+        self._session_ready = False
+        self._target_running = False
         self.status_var.set("Connecting...")
+        self._update_button_states()
         self.gdb.start("127.0.0.1:3263")
 
     def _disconnect(self):
+        self._cancel_pending_refresh()
         self.gdb.stop()
-        self._append_output("[Disconnected]\n")
+        self._mark_disconnected("[Disconnected]\n")
+
+    def _mark_disconnected(self, message=None):
+        self.gdb.connected = False
+        self._session_ready = False
+        self._target_running = False
+        self._queued_continue_after_sync = False
+        self._pending_sync_tokens.clear()
+        self._set_sync_in_progress(False)
+        if message:
+            self._append_output(message)
         self.status_var.set("Disconnected")
         # Clear GDB numbers
         self.bp_panel.get_manager().clear_gdb_nums()
         self.bp_panel.refresh()
+        self._update_button_states()
 
     def _stepi(self):
         self.gdb.stepi()
@@ -1632,27 +1680,48 @@ class GDBClientGUI:
 
     def _toggle_run(self):
         """Toggle between Continue and Interrupt based on state"""
+        self._cancel_pending_refresh()
         if self._target_running:
             self.gdb.interrupt()
         else:
+            if self._sync_in_progress:
+                self._queued_continue_after_sync = True
+                return
             self.gdb.continue_exec()
 
     def _update_button_states(self):
         """Update button states based on target running state"""
+        self.connect_btn.configure(state=tk.NORMAL if not self.gdb.connected else tk.DISABLED)
+        self.disconnect_btn.configure(state=tk.NORMAL if self.gdb.connected else tk.DISABLED)
+
+        if not self._session_ready:
+            self.refresh_btn.configure(state=tk.DISABLED)
+            self.run_btn.configure(text="Continue", state=tk.DISABLED)
+            self.step_btn.configure(state=tk.DISABLED)
+            self.next_btn.configure(state=tk.DISABLED)
+            return
+
+        if self._sync_in_progress:
+            self.refresh_btn.configure(state=tk.DISABLED)
+            self.run_btn.configure(text="Applying", state=tk.DISABLED)
+            self.step_btn.configure(state=tk.DISABLED)
+            self.next_btn.configure(state=tk.DISABLED)
+            return
+
+        self.refresh_btn.configure(state=tk.NORMAL if not self._target_running else tk.DISABLED)
         if self._target_running:
-            self.run_btn.configure(text="Interrupt")
+            self.run_btn.configure(text="Interrupt", state=tk.NORMAL)
             self.step_btn.configure(state=tk.DISABLED)
             self.next_btn.configure(state=tk.DISABLED)
         else:
-            self.run_btn.configure(text="Continue")
+            self.run_btn.configure(text="Continue", state=tk.NORMAL)
             self.step_btn.configure(state=tk.NORMAL)
             self.next_btn.configure(state=tk.NORMAL)
 
     def _refresh_all(self):
         """Refresh registers, disassembly, breakpoints, and watches"""
         self.gdb.get_registers()
-        self.gdb.list_breakpoints()
-        if self.current_pc:
+        if self.current_pc and not self.auto_refresh.get():
             self.gdb.disassemble(self.current_pc, 30)
         # Read memory watches
         self._read_watches()
@@ -1679,6 +1748,7 @@ class GDBClientGUI:
         """Sync breakpoints with GDB (handles running target)"""
         if not self.gdb.connected:
             return
+        self._cancel_pending_refresh()
 
         # If target is running, interrupt it first and queue the sync
         if self._target_running:
@@ -1696,9 +1766,13 @@ class GDBClientGUI:
             return
 
         manager = self.bp_panel.get_manager()
+        self._pending_sync_tokens.clear()
 
-        # First, delete all GDB breakpoints
-        self.gdb.send_command("delete breakpoints")
+        # Delete previously-synced GDB breakpoints using MI commands so GDB does not
+        # enter an interactive confirmation state.
+        existing_nums = [bp["gdb_num"] for bp in manager.breakpoints if bp.get("gdb_num")]
+        for gdb_num in existing_nums:
+            self._pending_sync_tokens.add(self.gdb.delete_breakpoint(gdb_num, tokenized=True))
 
         # Clear GDB numbers
         manager.clear_gdb_nums()
@@ -1709,20 +1783,21 @@ class GDBClientGUI:
         for bp in manager.get_enabled():
             bp_type = bp.get("type", BreakpointManager.TYPE_EXECUTION)
             if bp_type == BreakpointManager.TYPE_EXECUTION:
-                self.gdb.set_breakpoint(bp["address"])
+                self._pending_sync_tokens.add(self.gdb.set_breakpoint(bp["address"], tokenized=True))
                 exec_count += 1
             elif bp_type == BreakpointManager.TYPE_WRITE:
-                self.gdb.set_watchpoint(bp["address"], "write")
+                self._pending_sync_tokens.add(self.gdb.set_watchpoint(bp["address"], "write", tokenized=True))
                 watch_count += 1
             elif bp_type == BreakpointManager.TYPE_READ:
-                self.gdb.set_watchpoint(bp["address"], "read")
+                self._pending_sync_tokens.add(self.gdb.set_watchpoint(bp["address"], "read", tokenized=True))
                 watch_count += 1
             elif bp_type == BreakpointManager.TYPE_ACCESS:
-                self.gdb.set_watchpoint(bp["address"], "access")
+                self._pending_sync_tokens.add(self.gdb.set_watchpoint(bp["address"], "access", tokenized=True))
                 watch_count += 1
             # Store pending bp_id to match with GDB response
             self._pending_bp_ids.append(bp["id"])
 
+        self._set_sync_in_progress(bool(self._pending_sync_tokens))
         total = exec_count + watch_count
         self._append_output(f"[Synced {total} breakpoints ({exec_count} exec, {watch_count} watch) to GDB]\n")
 
@@ -1762,33 +1837,72 @@ class GDBClientGUI:
         self.output_text.insert(tk.END, text)
         self.output_text.see(tk.END)
 
+    def _cancel_pending_refresh(self):
+        if self._refresh_job is not None:
+            self.root.after_cancel(self._refresh_job)
+            self._refresh_job = None
+        self._pending_watch_reads.clear()
+
+    def _schedule_auto_refresh(self):
+        self._cancel_pending_refresh()
+        # Delay auto-refresh long enough that a quick Continue after a breakpoint
+        # hit doesn't enqueue another burst of MI requests first.
+        self._refresh_job = self.root.after(200, self._run_auto_refresh)
+
+    def _run_auto_refresh(self):
+        self._refresh_job = None
+        if self.auto_refresh.get() and self._session_ready and not self._target_running:
+            self._refresh_all()
+
+    def _set_sync_in_progress(self, enabled):
+        self._sync_in_progress = enabled
+        self._update_button_states()
+
+    def _finish_sync_in_progress(self):
+        self._sync_in_progress = False
+        self._update_button_states()
+        if self._queued_continue_after_sync and self._session_ready and not self._target_running:
+            self._queued_continue_after_sync = False
+            self._toggle_run()
+
     def _parse_mi_output(self, line):
         """Parse GDB/MI output and update GUI"""
+        token_match = re.match(r'^(\d+)(?=[\^])', line)
+        token = int(token_match.group(1)) if token_match else None
+        normalized_line = re.sub(r'^\d+(?=[\^])', '', line)
+
         # Notify watchdog of response (any line starting with ^ or * is a response)
-        if line.startswith('^') or line.startswith('*') or line.startswith('='):
+        if normalized_line.startswith('^') or normalized_line.startswith('*') or normalized_line.startswith('='):
             self.gdb.notify_response()
 
+        if token in self._pending_sync_tokens and (normalized_line.startswith("^done") or normalized_line.startswith("^error")):
+            self._pending_sync_tokens.discard(token)
+            if not self._pending_sync_tokens:
+                self._finish_sync_in_progress()
+
         # Connection status
-        if "^connected" in line:
+        if "^connected" in normalized_line:
+            self._session_ready = True
             self.status_var.set("Connected")
+            self._update_button_states()
             self._refresh_all()
             # Sync breakpoints after connection
             self.root.after(500, self._sync_breakpoints)
-        elif "^error" in line:
-            if "Remote connection closed" in line:
-                self.status_var.set("Disconnected")
-                # Clear GDB numbers on disconnect
-                self.bp_panel.get_manager().clear_gdb_nums()
-                self.bp_panel.refresh()
+        elif "[GDB process terminated]" in normalized_line:
+            self._mark_disconnected("[GDB process terminated]\n")
+        elif "Remote connection closed" in normalized_line:
+            self._mark_disconnected()
+        elif "=thread-group-exited" in normalized_line:
+            self._mark_disconnected()
 
         # Stop notification
-        if "*stopped" in line:
+        if "*stopped" in normalized_line:
             self._target_running = False
             self._update_button_states()
 
             # Extract PC from *stopped message if available
             # Format: *stopped,...,frame={addr="0x8c010000",...}
-            frame_match = re.search(r'frame=\{[^}]*addr="(0x[0-9a-fA-F]+)"', line)
+            frame_match = re.search(r'frame=\{[^}]*addr="(0x[0-9a-fA-F]+)"', normalized_line)
             if frame_match:
                 try:
                     new_pc = int(frame_match.group(1), 16)
@@ -1796,60 +1910,52 @@ class GDBClientGUI:
                 except:
                     pass
 
-            # Check if this is part of step-then-continue sequence
-            if self._step_then_continue:
-                self._step_then_continue = False
-                # Continue execution after stepping over the breakpoint
-                self.root.after(10, self.gdb.continue_exec)
-                return  # Don't refresh yet, we're continuing
-
             # Check if we have a pending breakpoint sync
             if self._sync_pending:
                 self._sync_pending = False
-                # Perform the actual sync now that target is stopped
+                # Perform the actual sync now that target is stopped, then
+                # resume only after the MI breakpoint commands have completed.
+                self._queued_continue_after_sync = True
                 self._do_sync_breakpoints()
-                # Resume execution
-                self.root.after(10, self.gdb.continue_exec)
                 return  # Don't refresh yet, we're continuing
 
             self.status_var.set("Stopped")
             if self.auto_refresh.get():
-                self._refresh_all()
+                self._schedule_auto_refresh()
 
         # Running notification
-        if "*running" in line:
+        if "*running" in normalized_line:
+            self._cancel_pending_refresh()
             self._target_running = True
             self.status_var.set("Running")
+            if self.disasm_panel.lines_data:
+                self.disasm_panel.update_disassembly(self.disasm_panel.lines_data, None)
             self._update_button_states()
 
         # Register values
-        if "^done,register-values=" in line:
-            self._parse_registers(line)
+        if "^done,register-values=" in normalized_line:
+            self._parse_registers(normalized_line)
 
         # Disassembly
-        if "^done,asm_insns=" in line:
-            self._parse_disassembly(line)
+        if "^done,asm_insns=" in normalized_line:
+            self._parse_disassembly(normalized_line)
 
         # Memory - check if it's for a watch or for memory dump panel
         # Format: ^done,addr="...",nr-bytes="...",memory=[{addr="...",data=["0x00",...]}]
-        if "memory=[" in line and "^done," in line:
+        if "memory=[" in normalized_line and "^done," in normalized_line:
             if self._pending_watch_reads:
-                self._parse_watch_memory(line)
+                self._parse_watch_memory(normalized_line)
             else:
-                self._parse_memory(line)
+                self._parse_memory(normalized_line)
 
         # Breakpoint created (^done,bkpt={...}) or Watchpoint (^done,wpt={...} or hw-...wpt)
-        if "^done,bkpt=" in line or "^done,wpt=" in line or "^done,hw-" in line:
-            self._parse_new_breakpoint(line)
-
-        # Breakpoint list
-        if "BreakpointTable" in line:
-            self._parse_breakpoints(line)
+        if "^done,bkpt=" in normalized_line or "^done,wpt=" in normalized_line or "^done,hw-" in normalized_line:
+            self._parse_new_breakpoint(normalized_line)
 
         # Console output (show in output panel)
-        if line.startswith("~"):
+        if normalized_line.startswith("~"):
             # Remove MI prefix and unescape
-            text = line[1:].strip()
+            text = normalized_line[1:].strip()
             if text.startswith('"') and text.endswith('"'):
                 text = text[1:-1].replace("\\n", "\n").replace("\\t", "\t")
             self._append_output(text)
@@ -1870,8 +1976,10 @@ class GDBClientGUI:
                 if name == "pc":
                     try:
                         self.current_pc = int(value, 16)
-                        # Auto-update disassembly
-                        if self.auto_refresh.get():
+                        # Auto-update disassembly only while the target is still
+                        # stopped; otherwise stale register replies can enqueue
+                        # extra work in front of the next continue.
+                        if self.auto_refresh.get() and not self._target_running and not self._sync_in_progress:
                             self.gdb.disassemble(self.current_pc, 30)
                     except:
                         pass
@@ -1970,21 +2078,12 @@ class GDBClientGUI:
                 # For watchpoints, we don't always have an address in the response
                 self._on_breakpoint_created(gdb_num, None)
 
-    def _parse_breakpoints(self, line):
-        """Parse breakpoint list from MI output"""
-        # We now manage breakpoints locally, so just log this
-        pass
-
     def _poll_output(self):
         """Poll for GDB output and update GUI"""
         try:
             while True:
                 line = self.gdb.output_queue.get_nowait()
                 self._parse_mi_output(line)
-
-                # Also show raw MI output for debugging
-                if not line.startswith("(gdb)"):
-                    self._append_output(line)
         except queue.Empty:
             pass
 
