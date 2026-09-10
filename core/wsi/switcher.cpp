@@ -22,6 +22,8 @@
 #include "context.h"
 #include "cfg/option.h"
 #include "oslib/i18n.h"
+#include "ui/null_imgui_driver.h"
+#include "gdxsv/gdxsv_emu_hooks.h"
 
 #include "gl_context.h"
 #include "rend/dx9/dxcontext.h"
@@ -36,6 +38,13 @@ GraphicsContext *GraphicsContext::instance;
 
 void initRenderApi(void *window, void *display)
 {
+	if (gdxsv_headless())
+	{
+		// No graphics API at all: the UI draws into a driver that discards it.
+		imguiDriver.reset();
+		imguiDriver = std::make_unique<NullImGuiDriver>();
+		return;
+	}
 #ifdef USE_VULKAN
 	if (isVulkan(config::RendererType))
 	{
@@ -93,6 +102,11 @@ void initRenderApi(void *window, void *display)
 
 void termRenderApi()
 {
+	if (gdxsv_headless())
+	{
+		imguiDriver.reset();
+		return;
+	}
 	if (GraphicsContext::Instance() != nullptr)
 		GraphicsContext::Instance()->term();
 	verify(GraphicsContext::Instance() == nullptr);

@@ -197,6 +197,11 @@ void GdxsvBackendReplay::Reset() {
 void GdxsvBackendReplay::OnMainUiLoop() {
 	const UiState ui = ui_snapshot_.Read();
 	if (ui.state == State::End) {
+		// A headless replay run is done the moment playback ends: exit with
+		// success so a backward-compat harness sees the replay played through.
+		if (gdxsv_headless()) {
+			gdxsv_headless_exit(0);
+		}
 		// Join emulation before resetting its state or restoring the lobby.
 		emu.stop();
 		state_ = State::None;
@@ -1694,7 +1699,15 @@ bool GdxsvBackendReplay::Start() {
 	// whatever the renderer manages, and in Live Spectate the only thing
 	// holding it back is running out of input, which makes arrival jitter the
 	// clock. Restored in Stop().
-	config::FixedFrequency.override(2);
+	// Headless test runs have no display to pace to, so run flat out instead of
+	// pinning to 59.94Hz: fast-forward skips the frame wait and lets a whole
+	// replay play in a fraction of its real duration. Restored in Stop().
+	if (gdxsv_headless()) {
+		settings.input.fastForwardMode = true;
+		config::FixedFrequency.override(0);
+	} else {
+		config::FixedFrequency.override(2);
+	}
 	gdxsv_frame_period_trim_us = 0;
 
 	live_buffer_frames_ = std::clamp(config::loadInt("gdxsv", "LiveBufferFrames", kLiveDefaultBuffer), kLiveMinBuffer, kLiveMaxBuffer);

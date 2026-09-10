@@ -12,6 +12,7 @@
 #include "emulator.h"
 #include "gdx_rpc.h"
 #include "gdxsv.h"
+#include "gdxsv_emu_hooks.h"
 #include "gdxsv.pb.h"
 #include "imgui/imgui.h"
 #include "imgui/imgui_internal.h"
@@ -330,10 +331,34 @@ void GdxsvBackendRollback::OnMainUiLoop() {
 		}
 	}
 
-	if (is_local_test_ && State::Closed <= state_) {
-	//if (is_local_test_ && State::End <= state_) {
-		static int local_test_closing = 120;
-		if (--local_test_closing == 0) dc_exit();
+	// A local test exits on its own once the match is over. CloseWait is set
+	// the moment the battle ends (close_reason "game_end"); triggering here,
+	// rather than at Closed, gets the process out before the normal
+	// return-to-lobby flow blocks retrying a lobby server that isn't there.
+	if (is_local_test_ && State::CloseWait <= state_) {
+		static int local_test_closing = 180;
+		if (--local_test_closing == 0) {
+			// The exit status is how a test harness learns whether the match
+			// ran to its end or broke off. A normal battle closes with
+			// "game_end" or "cl_app_close" (the game closing its socket on the
+			// way back to the lobby); these reasons mean the netcode never got
+			// going or broke mid-match.
+			const std::string reason = report_.close_reason();
+			const bool broke = reason == "unreachable" || reason == "ggpo_start_failure"
+							|| reason == "ggpo_start_timeout" || reason == "error_fast_return"
+							|| reason == "cl_error" || reason.empty();
+			NOTICE_LOG(COMMON, "RollbackNet local test %s: close_reason=%s", broke ? "failed" : "finished",
+					   reason.c_str());
+			const int code = broke ? 3 : 0;
+			if (gdxsv_headless()) {
+				// A finished headless test has nothing to release; exit hard so
+				// the status is exactly this code, not whatever SDL teardown
+				// might turn it into.
+				gdxsv_headless_exit(code);
+			}
+			gdxsv_set_exit_code(code);
+			dc_exit();
+		}
 	}
 }
 

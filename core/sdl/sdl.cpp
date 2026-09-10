@@ -1,5 +1,6 @@
 #if defined(USE_SDL)
 #include "types.h"
+#include "gdxsv/gdxsv_emu_hooks.h"
 #include "cfg/cfg.h"
 #include "sdl/sdl.h"
 #ifdef _WIN32
@@ -872,6 +873,14 @@ void sdl_window_create()
 #endif
 	}
 	sdlDeInit.initialized = true;
+	if (gdxsv_headless())
+	{
+		// No window: give the UI a nominal size so layout math stays finite.
+		// Configurable so tests can exercise aspect-ratio-dependent code
+		// (e.g. the widescreen HUD layout) at a chosen viewport.
+		settings.display.width = config::loadInt("gdxsv", "headless_width", 640);
+		settings.display.height = config::loadInt("gdxsv", "headless_height", 480);
+	}
 	try {
 		initRenderApi();
 	} catch (const FlycastException& e) {
@@ -890,7 +899,7 @@ void sdl_window_create()
 void sdl_window_destroy()
 {
 #ifndef __SWITCH__
-	if (!settings.naomi.slave && settings.naomi.drivingSimSlave == 0)
+	if (window != nullptr && !settings.naomi.slave && settings.naomi.drivingSimSlave == 0)
 	{
 		get_window_state();
 		config::saveInt("window", "left", windowPos.x);

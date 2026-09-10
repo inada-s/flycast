@@ -392,7 +392,7 @@ int main(int argc, char* argv[])
 	flycast_term();
 	os_UninstallFaultHandler();
 
-	return 0;
+	return gdxsv_exit_code();
 }
 
 [[noreturn]] void os_DebugBreak()

@@ -2,6 +2,8 @@
 #define __STDC_FORMAT_MACROS 1
 #endif
 #include "types.h"
+#include "gdxsv/gdxsv_emu_hooks.h"
+#include <cstdlib>
 
 #if defined(__unix__) || defined(__HAIKU__)
 #include "log/LogManager.h"
@@ -273,6 +275,10 @@ int main(int argc, char* argv[])
 	INFO_LOG(BOOT, "Data dir is:   %s", get_writable_data_path("").c_str());
 
 #if defined(USE_SDL)
+	// Without a display server SDL has nothing to open; fall back to its dummy
+	// driver so headless runs (gdxsv:headless=yes) get past initialization.
+	if (getenv("SDL_VIDEODRIVER") == nullptr && getenv("DISPLAY") == nullptr && getenv("WAYLAND_DISPLAY") == nullptr)
+		setenv("SDL_VIDEODRIVER", "dummy", 1);
 	// init video now: on rpi3 it installs a sigsegv handler(?)
 	if (SDL_Init(SDL_INIT_VIDEO) != 0)
 	{
@@ -300,7 +306,7 @@ int main(int argc, char* argv[])
 	flycast_term();
 	os_UninstallFaultHandler();
 
-	return 0;
+	return gdxsv_exit_code();
 }
 
 [[noreturn]] void os_DebugBreak()

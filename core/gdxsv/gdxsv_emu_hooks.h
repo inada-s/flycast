@@ -65,3 +65,18 @@ void gdxsv_crash_append_log(FILE* f);
 void gdxsv_crash_append_tag(const std::string& logfile, std::vector<http::PostField>& post_fields);
 
 bool gdxsv_is_using_memwatch();
+
+// Headless test mode (gdxsv:headless=yes): no window, no graphics API, the
+// null renderer. Meant for automated runs on machines without a display.
+bool gdxsv_headless();
+
+// Exit status the process should end with. gdxsv sets it from local test
+// results so a harness can tell a finished match from a broken one.
+void gdxsv_set_exit_code(int code);
+int gdxsv_exit_code();
+
+// Exit the process immediately with the given status, flushing open files but
+// skipping teardown. Used to end a finished headless test: there is no window,
+// GPU or audio device to release, and the normal SDL teardown path can crash
+// on the way out, which would mask the test's real result.
+[[noreturn]] void gdxsv_headless_exit(int code);

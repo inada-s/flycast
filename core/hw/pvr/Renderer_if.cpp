@@ -289,6 +289,11 @@ static void rend_create_renderer()
 #ifdef NO_REND
 	renderer	 = rend_norend();
 #else
+	if (gdxsv_headless())
+	{
+		renderer = rend_norend();
+		return;
+	}
 	switch (config::RendererType)
 	{
 	default:
