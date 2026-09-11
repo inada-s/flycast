@@ -101,6 +101,12 @@ void gdxsv_emu_reset() {
 	gdxsv.Reset();
 }
 
+void gdxsv_emu_state_restored() {
+	if (gdxsv.Enabled()) {
+		gdxsv.InvalidateWidescreenPatch();
+	}
+}
+
 // Headless boot probe: after gdxsv:headless_probe_frames vblanks, exit cleanly.
 // Lets a test boot the game a fixed number of frames (e.g. far enough for
 // HookVBlank->WritePatch to apply the gdxsv patches) and then exit, without

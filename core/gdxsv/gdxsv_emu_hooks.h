@@ -30,6 +30,9 @@ void gdxsv_emu_start();
 
 void gdxsv_emu_reset();
 
+// All deserialization paths, including replay seeks and rollback.
+void gdxsv_emu_state_restored();
+
 void gdxsv_emu_vblank();
 
 void gdxsv_emu_end_frame();
