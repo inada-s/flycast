@@ -102,9 +102,11 @@ void gdxsv_emu_reset() {
 }
 
 // Headless boot probe: after gdxsv:headless_probe_frames vblanks, optionally
-// dump memory ranges (gdxsv:dumpmem="<hexaddr>:<len>[,...]") and exit. Lets a
+// dump memory ranges (gdxsv:dumpmem="<hexaddr>:<len>[;...]") and exit. Lets a
 // test boot the game far enough for HookVBlank->WritePatch to apply the gdxsv
 // patches, then read the patched memory, without starting a battle.
+// Ranges are separated by ';' (not ',') because the -config CLI parser
+// (core/cfg/cl.cpp) splits each --config argument's value on commas.
 static void gdxsv_headless_probe_tick() {
 	if (!gdxsv_headless())
 		return;
@@ -124,7 +126,7 @@ static void gdxsv_headless_probe_tick() {
 		if (f != nullptr) {
 			std::stringstream ss(spec);
 			std::string range;
-			while (std::getline(ss, range, ',')) {
+			while (std::getline(ss, range, ';')) {
 				auto colon = range.find(':');
 				if (colon == std::string::npos)
 					continue;
