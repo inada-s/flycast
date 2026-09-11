@@ -82,9 +82,9 @@ void gdxsv_emu_start() {
 		} else if (gdxsv_headless() && config::loadBool("gdxsv", "headless_loadstate", false)) {
 			// Headless inspection boot: resume from the shared slot-99 lobby
 			// savestate (no battle, no online boot) so HookVBlank->WritePatch
-			// applies the gdxsv patches within a few frames. A test then reads
-			// the patched memory via the headless probe (headless_probe_frames
-			// + dumpmem) without a long cold boot or any network.
+			// applies the gdxsv patches within a few frames. A test harness then
+			// reads the patched memory from a Lua script (flycast.memory.*)
+			// without a long cold boot or any network.
 			if (gdxsv_ensure_replay_savestate(gdxsv.Disk())) {
 				dc_loadstate(99);
 			}
