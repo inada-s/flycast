@@ -101,12 +101,11 @@ void gdxsv_emu_reset() {
 	gdxsv.Reset();
 }
 
-// Headless boot probe: after gdxsv:headless_probe_frames vblanks, optionally
-// dump memory ranges (gdxsv:dumpmem="<hexaddr>:<len>[;...]") and exit. Lets a
-// test boot the game far enough for HookVBlank->WritePatch to apply the gdxsv
-// patches, then read the patched memory, without starting a battle.
-// Ranges are separated by ';' (not ',') because the -config CLI parser
-// (core/cfg/cl.cpp) splits each --config argument's value on commas.
+// Headless boot probe: after gdxsv:headless_probe_frames vblanks, exit cleanly.
+// Lets a test boot the game a fixed number of frames (e.g. far enough for
+// HookVBlank->WritePatch to apply the gdxsv patches) and then exit, without
+// starting a battle. Reading memory is done from a Lua script in the test
+// harness (flycast.memory.read*), so no dump code lives here.
 static void gdxsv_headless_probe_tick() {
 	if (!gdxsv_headless())
 		return;
@@ -118,29 +117,6 @@ static void gdxsv_headless_probe_tick() {
 	static int count = 0;
 	if (++count < probe_frames)
 		return;
-
-	const std::string spec = config::loadStr("gdxsv", "dumpmem", "");
-	if (!spec.empty()) {
-		std::string path = get_writable_data_path("dumpmem.txt");
-		FILE *f = nowide::fopen(path.c_str(), "w");
-		if (f != nullptr) {
-			std::stringstream ss(spec);
-			std::string range;
-			while (std::getline(ss, range, ';')) {
-				auto colon = range.find(':');
-				if (colon == std::string::npos)
-					continue;
-				u32 addr = (u32)strtoul(range.substr(0, colon).c_str(), nullptr, 16);
-				u32 len = (u32)strtoul(range.substr(colon + 1).c_str(), nullptr, 0);
-				fprintf(f, "%08x %u ", addr, len);
-				for (u32 i = 0; i < len; i++)
-					fprintf(f, "%02x", gdxsv_ReadMem8(addr + i));
-				fprintf(f, "\n");
-			}
-			fclose(f);
-			NOTICE_LOG(COMMON, "headless probe: dumped %s", path.c_str());
-		}
-	}
 	NOTICE_LOG(COMMON, "headless probe: exiting after %d frames", probe_frames);
 	gdxsv_headless_exit(0);
 }
