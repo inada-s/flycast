@@ -101,6 +101,12 @@ void gdxsv_emu_reset() {
 	gdxsv.Reset();
 }
 
+void gdxsv_emu_state_restored() {
+	if (gdxsv.Enabled()) {
+		gdxsv.InvalidateWidescreenPatch();
+	}
+}
+
 // Headless boot probe: after gdxsv:headless_probe_frames vblanks, optionally
 // dump memory ranges (gdxsv:dumpmem="<hexaddr>:<len>[;...]") and exit. Lets a
 // test boot the game far enough for HookVBlank->WritePatch to apply the gdxsv

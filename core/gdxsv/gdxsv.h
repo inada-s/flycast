@@ -60,6 +60,7 @@ class Gdxsv {
 	void WritePatch();
 	int Disk() const { return disk_; }
 	bool WidescreenPatchEnabled() const { return enabled_ && widescreen_patch_enabled_; }
+	void InvalidateWidescreenPatch() { widescreen_viewport_width_ = 0; }
 	std::string UserId() const { return user_id_; }
 	MiniUPnP& UPnP() { return upnp_; }
 
@@ -68,7 +69,6 @@ class Gdxsv {
 	std::vector<u8> GeneratePlatformInfoPacket();
 	std::vector<u8> GenerateP2PMatchReportPacket();
 	void ApplyOnlinePatch(bool first_time);
-	void ResetWidescreenPatch();
 	void WritePatchDisk1();
 	void WritePatchDisk2();
 	void WriteWidescreenPatchDisk2();
@@ -84,10 +84,13 @@ class Gdxsv {
 	std::map<std::string, u32> symbols_;
 	proto::GamePatchList patch_list_;
 	bool going_to_battle_ = false;
-	// Snapshotted once in Reset(). Widescreen changes require a game restart.
+	// Enabling the hack requires a restart; aspect/HUD placement update per frame.
 	bool widescreen_patch_enabled_ = false;
-	float widescreen_patch_aspect_ = 4.f / 3.f;
-	float widescreen_hud_aspect_ = 16.f / 9.f;
+	// A zero width invalidates the last successfully applied viewport/settings.
+	int widescreen_viewport_width_ = 0;
+	int widescreen_viewport_height_ = 0;
+	bool widescreen_super_ = false;
+	int widescreen_hud_layout_ = 0;
 
 	std::shared_future<std::map<std::string, int>> gcp_ping_test_result_;
 	std::shared_future<std::pair<bool, std::string>> public_ipv4_, public_ipv6_;

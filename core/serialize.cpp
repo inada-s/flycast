@@ -17,6 +17,7 @@
 #include "cfg/option.h"
 #include "imgread/common.h"
 #include "achievements/achievements.h"
+#include "gdxsv/gdxsv_emu_hooks.h"
 
 void dc_serialize(Serializer& ser)
 {
@@ -96,6 +97,7 @@ void dc_deserialize(Deserializer& deser)
 	reios_deserialize(deser);
 	achievements::deserialize(deser);
 	sh4_sched_ffts();
+	gdxsv_emu_state_restored();
 
 	DEBUG_LOG(SAVESTATE, "Loaded %d bytes", (u32)deser.size());
 }

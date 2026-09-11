@@ -82,40 +82,8 @@ const char *Gdxsv::NetModeString() const {
 	return "Unknown";
 }
 
-void Gdxsv::ResetWidescreenPatch() {
-	constexpr float kDisk2StockAspect = 4.f / 3.f;
-	constexpr float kDisk2SafeHudAspect = 16.f / 9.f;
-	widescreen_patch_enabled_ = false;
-	widescreen_patch_aspect_ = kDisk2StockAspect;
-	widescreen_hud_aspect_ = kDisk2SafeHudAspect;
-	widescreen_patch_enabled_ = config::Widescreen.get() && config::WidescreenGameHacks.get();
-	const bool super_widescreen = config::SuperWidescreen.get();
-	const float viewport_aspect = settings.display.width > 0 && settings.display.height > 0
-								  ? static_cast<float>(settings.display.width) / settings.display.height
-								  : kDisk2SafeHudAspect;
-	if (disk_ == 2 && widescreen_patch_enabled_) {
-		if (!super_widescreen) {
-			widescreen_patch_aspect_ = 16.f / 9.f;
-		} else {
-			widescreen_patch_aspect_ = viewport_aspect;
-		}
-		switch (config::GdxWidescreenHudLayout.get()) {
-		case 0:
-			widescreen_hud_aspect_ = kDisk2StockAspect;
-			break;
-		case 2:
-			widescreen_hud_aspect_ = widescreen_patch_aspect_;
-			break;
-		default:
-			widescreen_hud_aspect_ = std::min(viewport_aspect, kDisk2SafeHudAspect);
-			break;
-		}
-	}
-	NOTICE_LOG(COMMON, "gdxsv widescreen snapshot: enabled=%s aspect=%.6f hud-aspect=%.6f",
-			   widescreen_patch_enabled_ ? "yes" : "no", widescreen_patch_aspect_, widescreen_hud_aspect_);
-}
-
 void Gdxsv::Reset() {
+	InvalidateWidescreenPatch();
 	lbs_net_.Reset();
 	udp_net_.Reset();
 	rollback_net_.Reset();
@@ -140,7 +108,7 @@ void Gdxsv::Reset() {
 	std::string disk_num(ip_meta.disk_num, 1);
 	if (disk_num == "1") disk_ = 1;
 	if (disk_num == "2") disk_ = 2;
-	ResetWidescreenPatch();
+	widescreen_patch_enabled_ = config::Widescreen.get() && config::WidescreenGameHacks.get();
 	settings.gdxsv.disk = disk_;
 	settings.gdxsv.skipRenderingBaseAddr = (disk_ == 1) ? 0x0c064cce : (disk_ == 2) ? 0x0c0520e2 : 0;
 
@@ -278,6 +246,10 @@ void Gdxsv::HookEndOfFrame() {
 }
 
 void Gdxsv::HookNextFrame() {
+	// Apply viewport changes on the emulation thread between SH4 runs,
+	// keeping guest-memory writes and code-cache resets off the SDL thread.
+	if (disk_ == 2)
+		WriteWidescreenPatchDisk2();
 	if (netmode_ == NetMode::Replay) {
 		gdxsv.replay_net_.OnNextFrame();
 	}
@@ -682,6 +654,7 @@ void Gdxsv::WritePatch() {
 
 #include "gdxsv_patch.inc"
 
+		InvalidateWidescreenPatch();
 		gdxsv_WriteMem32(symbols_["disk"], (int)disk_);
 		// Restore the backend flag cleared by payload initialization so guest
 		// polling can reach HandleRPC without first sending another request.
@@ -689,7 +662,6 @@ void Gdxsv::WritePatch() {
 	}
 
 	if (disk_ == 2) {
-		WriteWidescreenPatchDisk2();
 		if (symbols_["lang_patch_id"] == 0 || gdxsv_ReadMem32(symbols_["lang_patch_id"]) != symbols_[":lang_patch_id"] ||
 			symbols_[":lang_patch_lang"] != (u8)GdxsvLanguage::Language()) {
 			NOTICE_LOG(COMMON, "lang_patch id=%d prev=%d lang=%d", gdxsv_ReadMem32(symbols_["lang_patch_id"]), symbols_[":lang_patch_id"],
@@ -856,127 +828,134 @@ void Gdxsv::WriteWidescreenPatchDisk2() {
 	if (!widescreen_patch_enabled_)
 		return;
 
-	constexpr float kDisk2StockAspect = 4.f / 3.f;
-	constexpr float kDisk2CullVerticalHalfExtent = 0.075f;
-	constexpr float kDisk2InformationTextStockX = -0.0457f;
-	constexpr float kDisk2ModelClipStockCenter = 320.f;
-	// Both users of the shared briefing/battle transition builder load it through
-	// this callback pointer. The generated gdxsv connection payload supplies the
-	// replacement function and its independently patchable left/right literals.
-	constexpr u32 kDisk2TransitionMattePointer = 0x0c1955ac;
-	auto gdxsv_FloatBits = [](float value) {
+	const int width = settings.display.width;
+	const int height = settings.display.height;
+	if (width <= 0 || height <= 0)
+		return; // A minimized window must not replace the last usable aspect.
+
+	const bool super_widescreen = config::SuperWidescreen;
+	const int hud_layout = config::GdxWidescreenHudLayout;
+	// State restoration and payload installation invalidate this host cache.
+	// Unchanged frames need no symbol lookups, guest reads or aspect arithmetic.
+	if (width == widescreen_viewport_width_ && height == widescreen_viewport_height_ &&
+		super_widescreen == widescreen_super_ && hud_layout == widescreen_hud_layout_)
+		return;
+	if (symbols_.count("gdx_widescreen_transition_right_x") == 0)
+		return;
+	// A savestate can restore an older payload while host symbols stay current.
+	// Wait for WritePatch() to install the current payload before publishing hooks.
+	if (gdxsv_ReadMem32(symbols_["patch_id"]) != symbols_[":patch_id"])
+		return;
+
+	constexpr float stock_aspect = 4.f / 3.f;
+	const float viewport_aspect = static_cast<float>(width) / height;
+	const float aspect = super_widescreen ? viewport_aspect : 16.f / 9.f;
+	// HUD placement follows the viewport. Full Width must stay within the
+	// rendered image when SuperWidescreen is off.
+	float hud_aspect = stock_aspect;
+	if (hud_layout == 1)
+		hud_aspect = std::max(stock_aspect, std::min(viewport_aspect, 16.f / 9.f));
+	else if (hud_layout == 2)
+		hud_aspect = std::max(stock_aspect, std::min(viewport_aspect, aspect));
+
+	auto float_bits = [](float value) {
 		u32 bits;
-		static_assert(sizeof(bits) == sizeof(value));
 		std::memcpy(&bits, &value, sizeof(bits));
 		return bits;
 	};
 
-	const float widescreen_aspect = widescreen_patch_aspect_;
-	const float widescreen_scale = widescreen_aspect / kDisk2StockAspect;
-	auto widescreen_x_word = [&](float stock_x) {
-		return gdxsv_FloatBits(kDisk2ModelClipStockCenter + (stock_x - kDisk2ModelClipStockCenter) * widescreen_scale);
-	};
-	const u32 wider_left = widescreen_x_word(-5.f);
-	const u32 wider_right = widescreen_x_word(645.f);
-	// The widescreen helper functions/data are emitted from gdxsv_patch/src/main.c
-	// and installed by the main gdxsv_patch.inc (see WritePatch); their addresses
-	// come from symbols_, so nothing is hard-coded here.
-	const u32 transition_right_x = symbols_["gdx_widescreen_transition_right_x"];
-	if (gdxsv_ReadMem32(transition_right_x) == wider_right)
-		return;
-
-	const u32 cull_positive = gdxsv_FloatBits(kDisk2CullVerticalHalfExtent * widescreen_aspect);
-	const u32 cull_negative = cull_positive ^ 0x80000000u;
-	const float hud_right_offset = kDisk2CullVerticalHalfExtent * (widescreen_hud_aspect_ - kDisk2StockAspect);
-	const float hud_left_offset = -hud_right_offset;
-	const float hud_half_left_offset = hud_left_offset * 0.5f;
-
-	// --- Battle HUD margin anchors ---
-	// The stock table remains available to the shim. Right-side types 0..3 and
-	// force-gauge type 6 use the normal offset. Information-panel type 12 uses
-	// half the offset because its renderer has twice the effective screen
-	// response. Its dynamic glyph loop has a separate private X-origin literal.
-	constexpr u32 kDisk2CockpitRendererTablePointer = 0x0c1196f0;
-	constexpr u32 kDisk2StockCockpitRendererTable = 0x0c2403a4;
-	const u32 kDisk2WidescreenCockpitRendererTable = symbols_["gdx_widescreen_hud_renderer_table"];
-	const u32 cockpit_renderer_table = gdxsv_ReadMem32(kDisk2CockpitRendererTablePointer);
-	if (widescreen_hud_aspect_ > kDisk2StockAspect) {
-		if (cockpit_renderer_table != kDisk2StockCockpitRendererTable &&
-			cockpit_renderer_table != kDisk2WidescreenCockpitRendererTable) {
-			ERROR_LOG(COMMON, "widescreen HUD patch rejected: renderer table=%08x", cockpit_renderer_table);
-			return;
+	// Install the hooks independently of viewport/HUD changes. Keeping
+	// the HUD shim installed with zero offsets also handles objects which
+	// have already copied its callback from the table.
+	const u32 hud_table = symbols_["gdx_widescreen_hud_renderer_table"];
+	const u32 transition = symbols_["gdx_widescreen_transition_matte"];
+	const u32 fade_submit = symbols_["gdx_widescreen_fade_submit"];
+	const u32 result = symbols_["gdx_widescreen_result_black_postproject"];
+	const u32 old_table = gdxsv_ReadMem32(0x0c1196f0);
+	const bool patch_table = (old_table & 0x1fffffff) >= 0x0c4e0200 &&
+		(old_table & 0x1fffffff) < 0x0c500000;
+	if (old_table != 0x0c2403a4 && old_table != hud_table && !patch_table) {
+		if (old_table != 0) {
+			static bool warned = false;
+			if (!warned) {
+				WARN_LOG(COMMON, "Widescreen update deferred: unrecognized HUD renderer table=%08x", old_table);
+				warned = true;
+			}
 		}
-		gdxsv_WriteMem32(symbols_["gdx_widescreen_hud_right_offset"], gdxsv_FloatBits(hud_right_offset));
-		gdxsv_WriteMem32(symbols_["gdx_widescreen_hud_left_offset"], gdxsv_FloatBits(hud_left_offset));
-		gdxsv_WriteMem32(symbols_["gdx_widescreen_hud_half_left_offset"], gdxsv_FloatBits(hud_half_left_offset));
-		gdxsv_WriteMem32(kDisk2CockpitRendererTablePointer, symbols_["gdx_widescreen_hud_renderer_table"]);
-		gdxsv_WriteMem32(0x0c1213cc, gdxsv_FloatBits(kDisk2InformationTextStockX + hud_half_left_offset)); // stock -0.0457f
+		return; // The game image may not be ready, or the table may be unsupported.
 	}
 
-	// --- Generic full-screen black fade (owner 0x0c015d0c) ---
-	gdxsv_WriteMem32(0x0c1ce374, wider_left);
-	gdxsv_WriteMem32(0x0c1ce384, wider_left);
-	gdxsv_WriteMem32(0x0c1ce394, wider_right);
-	gdxsv_WriteMem32(0x0c1ce3a4, wider_right);
+	const bool install = old_table != hud_table ||
+		gdxsv_ReadMem32(0x0c1955ac) != transition || gdxsv_ReadMem32(0x0c1be1e4) != result ||
+		gdxsv_ReadMem32(0x0c049f70) != fade_submit;
+	if (install) {
+		gdxsv_WriteMem32(0x0c1196f0, hud_table);
+		gdxsv_WriteMem32(0x0c1955ac, transition);
+		gdxsv_WriteMem32(0x0c049f70, fade_submit); // private general-fade submit pointer
+		// Intro/battle MS and building horizontal culling.
+		gdxsv_WriteMem16(0x0c1aebea, 0x0009); // stock 0x8fc9
+		gdxsv_WriteMem16(0x0c1aec04, 0x0009); // stock 0x8dbc
+		gdxsv_WriteMem16(0x0c1ab226, 0x0009); // stock 0x8faf
+		gdxsv_WriteMem16(0x0c1ab240, 0x0009); // stock 0x8da2
+		// Result-screen post-projection hook, preserving its live registers.
+		gdxsv_WriteMem16(0x0c1be1dc, 0xd201); // mov.l 0x0c1be1e4,r2
+		gdxsv_WriteMem16(0x0c1be1de, 0x422b); // jmp @r2
+		gdxsv_WriteMem16(0x0c1be1e0, 0x0009); // nop (delay slot)
+		gdxsv_WriteMem16(0x0c1be1e2, 0x0009); // literal alignment
+		gdxsv_WriteMem32(0x0c1be1e4, result);
+	}
 
-	// --- Opening full-height black fade (owner 0x0c057e48) ---
-	gdxsv_WriteMem32(0x0c1d3b88, wider_left);
-	gdxsv_WriteMem32(0x0c1d3b98, wider_left);
-	gdxsv_WriteMem32(0x0c1d3ba8, wider_right);
-	gdxsv_WriteMem32(0x0c1d3bb8, wider_right);
+	const float scale = aspect / stock_aspect;
+	const u32 left = float_bits(320.f - 325.f * scale);
+	const u32 right = float_bits(320.f + 325.f * scale);
+	const float hud_offset = 0.075f * (hud_aspect - stock_aspect);
+	const u32 right_x = symbols_["gdx_widescreen_transition_right_x"];
+	const u32 hud_right = symbols_["gdx_widescreen_hud_right_offset"];
+	widescreen_viewport_width_ = width;
+	widescreen_viewport_height_ = height;
+	widescreen_super_ = super_widescreen;
+	widescreen_hud_layout_ = hud_layout;
+	// After invalidation, restored guest values may already match. Avoid
+	// rewriting them and resetting the SH4 code cache in that case.
+	if (!install && gdxsv_ReadMem32(right_x) == right &&
+		gdxsv_ReadMem32(hud_right) == float_bits(hud_offset))
+		return;
 
-	// --- Later opening centre-field fade (owner 0x0c057f54) ---
-	gdxsv_WriteMem32(0x0c1d3bc8, wider_left);
-	gdxsv_WriteMem32(0x0c1d3bd8, wider_left);
-	gdxsv_WriteMem32(0x0c1d3be8, wider_right);
-	gdxsv_WriteMem32(0x0c1d3bf8, wider_right);
+	gdxsv_WriteMem32(symbols_["gdx_widescreen_transition_left_x"], left);
+	gdxsv_WriteMem32(right_x, right);
+	gdxsv_WriteMem32(hud_right, float_bits(hud_offset));
+	gdxsv_WriteMem32(symbols_["gdx_widescreen_hud_left_offset"], float_bits(-hud_offset));
+	gdxsv_WriteMem32(symbols_["gdx_widescreen_hud_half_left_offset"], float_bits(-hud_offset * 0.5f));
+	// The information panel's glyph loop has a private X-origin literal.
+	gdxsv_WriteMem32(0x0c1213cc, float_bits(-0.0457f - hud_offset * 0.5f));
 
-	// --- Title-logo fade and held black mask (owner 0x0c15d1b4) ---
-	gdxsv_WriteMem32(0x0c1d3e78, wider_left);
-	gdxsv_WriteMem32(0x0c1d3e88, wider_left);
-	gdxsv_WriteMem32(0x0c1d3e98, wider_right);
-	gdxsv_WriteMem32(0x0c1d3ea8, wider_right);
+	// Each quad lists its two left and two right X coordinates. Include a
+	// five-pixel overscan margin for fades at fractional viewport aspects.
+	static constexpr u32 mattes[][4] = {
+		{0x0c1ce334, 0x0c1ce344, 0x0c1ce354, 0x0c1ce364}, // menu background gray fade
+		{0x0c1ce374, 0x0c1ce384, 0x0c1ce394, 0x0c1ce3a4}, // full-screen fade
+		{0x0c1d3b88, 0x0c1d3b98, 0x0c1d3ba8, 0x0c1d3bb8}, // opening fade
+		{0x0c1d3bc8, 0x0c1d3bd8, 0x0c1d3be8, 0x0c1d3bf8}, // centre-field fade
+		{0x0c1d3e78, 0x0c1d3e88, 0x0c1d3e98, 0x0c1d3ea8}, // title-logo mask
+		{0x0c1d3c60, 0x0c1d3c70, 0x0c1d3c80, 0x0c1d3c90}, // upper cinema bar
+		{0x0c1d3ca0, 0x0c1d3cb0, 0x0c1d3cc0, 0x0c1d3cd0}, // lower cinema bar
+		{0x0c1deba8, 0x0c1debc8, 0x0c1debb8, 0x0c1debd8}, // pause overlay
+		{0x0c1e01b0, 0x0c1e01d0, 0x0c1e01c0, 0x0c1e01e0}, // network return-to-lobby mask
+	};
+	for (const auto& quad : mattes) {
+		gdxsv_WriteMem32(quad[0], left);
+		gdxsv_WriteMem32(quad[1], left);
+		gdxsv_WriteMem32(quad[2], right);
+		gdxsv_WriteMem32(quad[3], right);
+	}
+	gdxsv_WriteMem32(0x0c055280, float_bits(-0.075f * aspect));
+	gdxsv_WriteMem32(0x0c055284, float_bits(0.075f * aspect));
+	gdxsv_WriteMem32(symbols_["gdx_widescreen_result_black_scale"], float_bits(scale * 650.f / 640.f));
 
-	// --- Persistent opening/briefing cinema bars (owner 0x0c0631fe) ---
-	gdxsv_WriteMem32(0x0c1d3c60, wider_left);
-	gdxsv_WriteMem32(0x0c1d3c70, wider_left);
-	gdxsv_WriteMem32(0x0c1d3c80, wider_right);
-	gdxsv_WriteMem32(0x0c1d3c90, wider_right);
-	gdxsv_WriteMem32(0x0c1d3ca0, wider_left);
-	gdxsv_WriteMem32(0x0c1d3cb0, wider_left);
-	gdxsv_WriteMem32(0x0c1d3cc0, wider_right);
-	gdxsv_WriteMem32(0x0c1d3cd0, wider_right);
-
-	// --- In-battle pause-menu semi-transparent overlay (owner 0x0c01c68c) ---
-	gdxsv_WriteMem32(0x0c1deba8, wider_left);
-	gdxsv_WriteMem32(0x0c1debb8, wider_right);
-	gdxsv_WriteMem32(0x0c1debc8, wider_left);
-	gdxsv_WriteMem32(0x0c1debd8, wider_right);
-
-	// --- Shared selection/briefing/battle transition ---
-	gdxsv_WriteMem32(symbols_["gdx_widescreen_transition_left_x"], wider_left);
-	gdxsv_WriteMem32(transition_right_x, wider_right);
-	gdxsv_WriteMem32(kDisk2TransitionMattePointer, symbols_["gdx_widescreen_transition_matte"]);
-
-	// --- Intro/battle MS and building horizontal culling ---
-	gdxsv_WriteMem16(0x0c1aebea, 0x0009); // stock 0x8fc9
-	gdxsv_WriteMem16(0x0c1aec04, 0x0009); // stock 0x8dbc
-	gdxsv_WriteMem16(0x0c1ab226, 0x0009); // stock 0x8faf
-	gdxsv_WriteMem16(0x0c1ab240, 0x0009); // stock 0x8da2
-	gdxsv_WriteMem32(0x0c055280, cull_negative); // stock -0.100f
-	gdxsv_WriteMem32(0x0c055284, cull_positive); // stock +0.100f
-
-	// --- Result-screen hollow black surround (FUN_0c1be120) ---
-	gdxsv_WriteMem32(symbols_["gdx_widescreen_result_black_scale"], gdxsv_FloatBits(widescreen_scale * 650.f / 640.f));
-	gdxsv_WriteMem16(0x0c1be1dc, 0xd201); // mov.l 0x0c1be1e4,r2
-	gdxsv_WriteMem16(0x0c1be1de, 0x422b); // jmp @r2
-	gdxsv_WriteMem16(0x0c1be1e0, 0x0009); // nop (delay slot)
-	gdxsv_WriteMem16(0x0c1be1e2, 0x0009); // literal alignment
-	gdxsv_WriteMem32(0x0c1be1e4, symbols_["gdx_widescreen_result_black_postproject"]);
-
+	// Some parameters are literals in the game's code. Invalidate only when
+	// hooks or parameters actually changed, never for an unchanged frame.
 	emu.getSh4Executor()->ResetCache();
-	NOTICE_LOG(COMMON, "widescreen patch refreshed: aspect=%.6f hud-aspect=%.6f",
-			   widescreen_aspect, widescreen_hud_aspect_);
+	NOTICE_LOG(COMMON, "widescreen patch refreshed: aspect=%.6f hud-aspect=%.6f", aspect, hud_aspect);
 }
 
 bool Gdxsv::StartReplayFile(const char *path, int pov) {

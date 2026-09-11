@@ -26,4 +26,5 @@ sh4-linux-gnu-objcopy \
     --only-section gdx.main1 --only-section gdx.main2 \
     --only-section gdx.data --only-section gdx.func \
     bin/main.o bin/gdxsv_patch.o
-sh4-linux-gnu-objdump -h -D bin/gdxsv_patch.o > bin/gdxsv_patch.asm
+# Include zero initializers when replacing an older payload in guest RAM.
+sh4-linux-gnu-objdump -h -D -z bin/gdxsv_patch.o > bin/gdxsv_patch.asm
