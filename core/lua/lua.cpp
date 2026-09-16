@@ -24,6 +24,7 @@
 #include "ui/gui.h"
 #include "ui/gui_util.h"
 #include "hw/mem/addrspace.h"
+#include "hw/sh4/sh4_memwatch.h"
 #include "cfg/option.h"
 #include "emulator.h"
 #include "input/gamepad_device.h"
@@ -103,6 +104,55 @@ static void eventCallback(const char *tag)
 void overlay()
 {
 	eventCallback("overlay");
+}
+
+template<typename T>
+static LuaRef readMemoryTable(u32 address, int count, lua_State* L);
+
+// ai-analysis memwatch (off unless FLYCAST_MEMWATCH=1 or FLYCAST_WATCH is set, see sh4_memwatch.h)
+static bool watchEnabled() {
+	return memwatch::enabled();
+}
+
+static bool watchAdd(u32 lo, u32 hi, lua_State *L)
+{
+	if (!memwatch::enabled())
+		luaL_error(L, "memory watch is off: start flycast with FLYCAST_MEMWATCH=1");
+	return memwatch::addRange(lo, hi);
+}
+
+static void watchRemove(u32 lo, u32 hi) {
+	memwatch::removeRange(lo, hi);
+}
+
+static void watchClear() {
+	memwatch::clearRanges();
+}
+
+// hits since the last call: { {frame=, pc=, pr=, addr=, size=, old=, new=}, ... }, pc = writing instruction
+static LuaRef watchHits(lua_State *L)
+{
+	LuaRef t(L);
+	t = newTable(L);
+	int i = 1;
+	for (const memwatch::Hit& h : memwatch::takeHits())
+	{
+		LuaRef e(L);
+		e = newTable(L);
+		e["frame"] = h.frame;
+		e["pc"] = h.pc;
+		e["pr"] = h.pr;
+		e["addr"] = h.addr;
+		e["size"] = h.size;
+		e["old"] = h.oldValue;
+		e["new"] = h.newValue;
+		t[i++] = e;
+	}
+	return t;
+}
+
+static u32 watchDropped() {
+	return memwatch::takeDropped();
 }
 
 template<typename T>
@@ -553,6 +603,12 @@ static void luaRegister(lua_State *L)
 				.addFunction("write16", addrspace::writet<u16>)
 				.addFunction("write32", addrspace::writet<u32>)
 				.addFunction("write64", addrspace::writet<u64>)
+				.addFunction("watchEnabled", watchEnabled)
+				.addFunction("watchAdd", watchAdd)
+				.addFunction("watchRemove", watchRemove)
+				.addFunction("watchClear", watchClear)
+				.addFunction("watchHits", watchHits)
+				.addFunction("watchDropped", watchDropped)
 			.endNamespace()
 
 			.beginNamespace("input")

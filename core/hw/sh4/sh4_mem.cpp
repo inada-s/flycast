@@ -5,6 +5,7 @@
 #include "types.h"
 
 #include "sh4_mem.h"
+#include "sh4_memwatch.h"
 #include "hw/holly/sb_mem.h"
 #include "sh4_mmr.h"
 #include "hw/pvr/elan.h"
@@ -290,7 +291,15 @@ u8* GetMemPtr(u32 addr, u32 size)
 	return nullptr;
 }
 
+static void SetMemoryHandlersImpl();
+
 void SetMemoryHandlers()
+{
+	SetMemoryHandlersImpl();
+	memwatch::installHandlers();
+}
+
+static void SetMemoryHandlersImpl()
 {
 #ifdef STRICT_MODE
 	static bool interpreterRunning;

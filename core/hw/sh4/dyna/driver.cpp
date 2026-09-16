@@ -153,6 +153,28 @@ bool RuntimeBlockInfo::Setup(u32 rpc,fpscr_t rfpu_cfg)
 	return true;
 }
 
+// ai/sh4-block-cover: FLYCAST_COVER=file logs every block the dynarec compiles: frame addr size (physical guest
+// addresses). Compile happens on first execution, so the log is the executed-code coverage (dedupe: cache resets recompile).
+#include <cstdio>
+#include <cstdlib>
+#include "hw/pvr/Renderer_if.h"
+static FILE *coverLog;
+static bool coverInit;
+static void coverBlock(const RuntimeBlockInfo *rbi)
+{
+	if (!coverInit)
+	{
+		coverInit = true;
+		const char *name = std::getenv("FLYCAST_COVER");
+		if (name != nullptr && *name != 0)
+			coverLog = std::fopen(name, "w");
+	}
+	if (coverLog == nullptr)
+		return;
+	std::fprintf(coverLog, "%u %08x %u\n", FrameCount, rbi->addr, rbi->sh4_code_size);
+	std::fflush(coverLog);
+}
+
 //Called to compile code @pc
 static DynarecCodeEntryPtr compilePC(u32 blockcheck_failures)
 {
@@ -168,6 +190,7 @@ static DynarecCodeEntryPtr compilePC(u32 blockcheck_failures)
 		delete rbi;
 		return nullptr;
 	}
+	coverBlock(rbi);
 	rbi->blockcheck_failures = blockcheck_failures;
 	if (smc_hotspots.find(rbi->addr) != smc_hotspots.end())
 	{

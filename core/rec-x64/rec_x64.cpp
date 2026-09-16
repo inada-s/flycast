@@ -16,6 +16,7 @@ using namespace Xbyak::util;
 
 #include "hw/sh4/sh4_core.h"
 #include "hw/sh4/sh4_mem.h"
+#include "hw/sh4/sh4_memwatch.h"
 #include "x64_regalloc.h"
 #include "xbyak_base.h"
 #include "oslib/unwind_info.h"
@@ -171,6 +172,11 @@ public:
 					mov(dword[rax], op.rs2._imm);
 				}
 
+				if (memwatch::enabled())
+				{
+					mov(rax, (uintptr_t)&memwatch::fallbackPc);
+					mov(dword[rax], block->vaddr + op.guest_offs);
+				}
 				mov(call_regs[1], op.rs3._imm);
 				mov(call_regs64[0], (uintptr_t)&sh4ctx);
 
@@ -252,7 +258,8 @@ public:
 
 			case shop_writem:
 			{
-				if (!GenWriteMemImmediate(op, block))
+				bool watch = memwatch::enabled() && !mmu_enabled();
+				if (watch || !GenWriteMemImmediate(op, block))
 				{
 					shil_param_to_host_reg(op.rs1, call_regs[0]);
 					if (!op.rs3.is_null())
@@ -280,7 +287,18 @@ public:
 						shil_param_to_host_reg(op.rs2, call_regs64[1]);
 
 					int size = op.size == 1 ? MemSize::S8 : op.size == 2 ? MemSize::S16 : op.size == 4 ? MemSize::S32 : MemSize::S64;
-					GenCall((void (*)())MemHandlers[optimise ? MemType::Fast : MemType::Slow][size][MemOp::W], mmu_enabled());
+					if (watch)
+					{
+						// ai-analysis memwatch: every write is a call that carries the guest pc and pr
+						mov(call_regs[2], block->vaddr + op.guest_offs);
+						shil_param_to_host_reg(shil_param(reg_pr), call_regs[3]);
+						GenCall(size == MemSize::S8 ? (void (*)())memwatch::dynWrite8
+								: size == MemSize::S16 ? (void (*)())memwatch::dynWrite16
+								: size == MemSize::S32 ? (void (*)())memwatch::dynWrite32
+								: (void (*)())memwatch::dynWrite64);
+					}
+					else
+						GenCall((void (*)())MemHandlers[optimise ? MemType::Fast : MemType::Slow][size][MemOp::W], mmu_enabled());
 				}
 			}
 			break;
