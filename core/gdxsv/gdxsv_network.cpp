@@ -5,6 +5,7 @@
 #include <random>
 #include <thread>
 
+#include "oslib/ax_offline.h"
 #include "oslib/http_client.h"
 #include "sleep.h"
 #include "gdxsv.h"
@@ -148,6 +149,13 @@ static void wait_p2p_status() {
 std::future<P2PFeasibility> test_p2p_feasibility(int port) {
 	return std::async(std::launch::async, [port]() -> P2PFeasibility {
 		P2PFeasibility res;
+		if (axoffline::enabled()) {
+			res.status_code = P2PStatus::Blocked;
+			res.status = "Offline";
+			res.description = "AX_OFFLINE";
+			res.color = 0xFFFFFFFF;
+			return res;
+		}
 		res.color = 0xFFFFFFFF; // White
 		res.status_code = P2PStatus::Blocked;
 
@@ -264,6 +272,7 @@ std::future<P2PFeasibility> test_p2p_feasibility(int port) {
 std::future<std::map<std::string, int>> gcp_ping_test() {
 	auto fn = []() -> std::map<std::string, int> {
 		std::map<std::string, int> test_result;
+		if (axoffline::enabled()) return test_result;
 
 		// powered by https://github.com/GoogleCloudPlatform/gcping
 		const std::string get_path = "/api/ping";
@@ -456,6 +465,7 @@ std::string mask_ip_address(std::string addr) {
 }
 
 bool TcpClient::Connect(const char *host, int port) {
+	if (axoffline::blockHost(host, port)) return false;
 	NOTICE_LOG(COMMON, "TCP Connect: %s:%d", host, port);
 
 	sock_t new_sock = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
@@ -609,6 +619,7 @@ void TcpClient::Close() {
 
 bool UdpRemote::Open(const char *host, int port, IpPref pref) {
 	verify(0 < port && port < 65536);
+	if (axoffline::blockHost(host, port)) return false;
 	addrinfo *res = nullptr;
 	addrinfo hints{};
 	switch (pref) {

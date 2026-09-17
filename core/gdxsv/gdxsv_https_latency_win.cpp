@@ -7,6 +7,7 @@
 #include <windows.h>
 #include <wininet.h>
 
+#include "oslib/ax_offline.h"
 #include "oslib/http_client.h"
 
 namespace {
@@ -65,6 +66,8 @@ static bool performHead(HINTERNET connection, const std::string& path, int& stat
 GdxsvHttpsLatencyResult measureGdxsvHttpsLatency(const std::string& host, const std::string& path, int attempts)
 {
 	GdxsvHttpsLatencyResult result;
+	if (axoffline::blockHost(host, 443))
+		return result;
 
 	HINTERNET internet = InternetOpenA(http::getUserAgent().c_str(), INTERNET_OPEN_TYPE_PRECONFIG, nullptr, nullptr, 0);
 	if (internet == nullptr)

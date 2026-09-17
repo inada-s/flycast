@@ -1,4 +1,6 @@
 target_sources(${PROJECT_NAME} PRIVATE
+        ax_offline.cpp
+        ax_offline.h
         directory.cpp
         directory.h
         host_context.h

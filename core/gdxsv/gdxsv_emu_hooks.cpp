@@ -8,6 +8,7 @@
 
 #include "cfg/cfg.h"
 #include "gdxsv.h"
+#include "oslib/ax_offline.h"
 #include "libs.h"
 #include "stdclass.h"
 #include <nowide/cstdio.hpp>
@@ -88,6 +89,9 @@ void gdxsv_emu_start() {
 			if (gdxsv_ensure_replay_savestate(gdxsv.Disk())) {
 				dc_loadstate(99);
 			}
+		} else if (axoffline::enabled()) {
+			// ai-analysis (AX_OFFLINE): no latency check, public IP or P2P probe - all three need
+			// the internet, and the latency-check GUI state would never finish without results.
 		} else {
 			gdxsv.StartPingTest();
 			gui_setState(GuiState::GdxsvLatencyCheck);

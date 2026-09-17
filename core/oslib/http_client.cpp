@@ -19,6 +19,7 @@
 #include "build.h"
 #if !defined(__ANDROID__) && !defined(__APPLE__)
 #include "http_client.h"
+#include "ax_offline.h"
 
 #ifdef _WIN32
 #ifndef TARGET_UWP
@@ -38,6 +39,8 @@ void init()
 
 int get(const std::string& url, std::vector<u8>& content, std::string& contentType)
 {
+	if (axoffline::blockUrl(url))
+		return 0;
 	HINTERNET hUrl = InternetOpenUrl(hInet, url.c_str(), NULL, 0, INTERNET_FLAG_EXISTING_CONNECT | INTERNET_FLAG_NO_AUTH | INTERNET_FLAG_NO_UI, 0);
 	if (hUrl == NULL)
 	{
@@ -70,6 +73,8 @@ int get(const std::string& url, std::vector<u8>& content, std::string& contentTy
 
 static int post(const std::string& url, const char *headers, const u8 *payload, u32 payloadSize, std::vector<u8>& reply)
 {
+	if (axoffline::blockUrl(url))
+		return 0;
 	char scheme[16], host[256], path[256];
 	URL_COMPONENTS components{};
 	components.dwStructSize = sizeof(components);
@@ -140,6 +145,8 @@ static int post(const std::string& url, const char *headers, const u8 *payload, 
 
 int post(const std::string& url, const char *payload, const char *contentType, std::vector<u8>& reply)
 {
+	if (axoffline::blockUrl(url))
+		return 0;
 	char buf[512];
 	if (contentType != nullptr) {
 		snprintf(buf, sizeof(buf), "Content-Type: %s", contentType);
@@ -150,6 +157,8 @@ int post(const std::string& url, const char *payload, const char *contentType, s
 
 int post(const std::string& url, const std::vector<PostField>& fields)
 {
+	if (axoffline::blockUrl(url))
+		return 0;
 	static const std::string boundary("----flycast-boundary-8304529454");
 
 	std::string content;
@@ -251,6 +260,8 @@ static CURL *makeCurlEasy(const std::string& url)
 
 int get(const std::string& url, std::vector<u8>& content, std::string& contentType)
 {
+	if (axoffline::blockUrl(url))
+		return 0;
 	CURL *curl = makeCurlEasy(url);
 
 	std::vector<u8> recvBuffer;
@@ -276,6 +287,8 @@ int get(const std::string& url, std::vector<u8>& content, std::string& contentTy
 
 int post(const std::string& url, const char *payload, const char *contentType, std::vector<u8>& reply)
 {
+	if (axoffline::blockUrl(url))
+		return 0;
 	CURL *curl = makeCurlEasy(url);
 	curl_easy_setopt(curl, CURLOPT_NOSIGNAL, 1);
 
@@ -307,6 +320,8 @@ int post(const std::string& url, const char *payload, const char *contentType, s
 
 int post(const std::string& url, const std::vector<PostField>& fields)
 {
+	if (axoffline::blockUrl(url))
+		return 0;
 	CURL *curl = makeCurlEasy(url);
 	curl_easy_setopt(curl, CURLOPT_NOSIGNAL, 1);
 

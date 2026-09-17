@@ -6,6 +6,7 @@
 
 #include <curl/curl.h>
 
+#include "oslib/ax_offline.h"
 #include "oslib/http_client.h"
 
 namespace {
@@ -35,6 +36,8 @@ static CURLcode performHead(CURL *curl, long& status)
 GdxsvHttpsLatencyResult measureGdxsvHttpsLatency(const std::string& host, const std::string& path, int attempts)
 {
 	GdxsvHttpsLatencyResult result;
+	if (axoffline::blockHost(host, 443))
+		return result;
 	const std::string url = "https://" + host + path;
 
 	CURL *curl = curl_easy_init();
