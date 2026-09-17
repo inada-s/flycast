@@ -17,6 +17,7 @@ using namespace Xbyak::util;
 #include "hw/sh4/sh4_core.h"
 #include "hw/sh4/sh4_mem.h"
 #include "hw/sh4/sh4_memwatch.h"
+#include "hw/sh4/sh4_axtrace.h"
 #include "x64_regalloc.h"
 #include "xbyak_base.h"
 #include "oslib/unwind_info.h"
@@ -148,6 +149,13 @@ public:
 		}
 		mov(rax, (uintptr_t)&sh4ctx.cycle_counter);
 		sub(dword[rax], block->guest_cycles);
+
+		if (axtrace::enabled())
+		{
+			// ai-analysis: record this block entry and the edge from the previous block
+			mov(call_regs64[0], (uintptr_t)axtrace::registerBlock(block));
+			GenCall((void (*)())axtrace::enter);
+		}
 
 		regalloc.DoAlloc(block);
 

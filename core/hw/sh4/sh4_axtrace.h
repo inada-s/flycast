@@ -1,0 +1,52 @@
+// ai-analysis: executed-block / observed-edge recorder for reverse engineering. Off unless switched on.
+//
+// Switch: env AX_TRACE=<file> records from boot and writes <file> at exit; env AX_TRACE_ON=1 turns the
+// mechanism on with recording stopped, so a Lua script scopes the trace to one scenario
+// (flycast.trace.start/stop/mark/save/clear/stats).
+// The AX_TRACE exit write only happens on a clean exit: a harness that kills the process (ac_trials.py
+// does) gets nothing, so scripted runs should call flycast.trace.save(path) themselves.
+//
+// What it records, at every dynarec block ENTRY (x64 recompiler only):
+//   count[block]++            -> log line "B <blockstart> <endpc> <count>"
+//   edge[prev.exitpc, block]  -> log line "E <branchpc> <blockstart> <count>"
+// Addresses are physical guest addresses (0x0c......), the same space the analysis db uses.
+// <endpc> is one past the last instruction of the block; <branchpc> is the address of the branch
+// instruction that ended the previous block (so an edge matches a static call/jump site), or the
+// address of its last instruction when the block ends without a branch.
+// Caveat: an interrupt or an exception entering a new block produces an edge from whatever branch
+// ended the interrupted block. Those edges exist in the log and have no static counterpart.
+#pragma once
+#include "types.h"
+
+struct RuntimeBlockInfo;
+
+namespace axtrace
+{
+struct Block
+{
+	u32 addr;	// physical block start
+	u32 endpc;	// physical, one past the last instruction
+	u32 exitpc;	// physical, the branch instruction that ends the block
+	u32 pad;
+	u64 count;
+};
+
+// true when switched on by env (fixed at first call)
+bool enabled();
+// true while entries are being recorded
+bool recording();
+
+// called by the recompiler while compiling a block; returns the stable record to pass to enter()
+Block *registerBlock(const RuntimeBlockInfo *rbi);
+// called at the start of every compiled block
+void DYNACALL enter(Block *b);
+
+void start(const char *label);
+void stop();
+void mark(const char *text);
+void clear();
+// writes the log (format v1, what ax.py ingest reads); returns the number of B+E lines, -1 on error
+int save(const char *path);
+u32 blockCount();
+u32 edgeCount();
+}

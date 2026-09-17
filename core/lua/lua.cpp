@@ -25,6 +25,7 @@
 #include "ui/gui_util.h"
 #include "hw/mem/addrspace.h"
 #include "hw/sh4/sh4_memwatch.h"
+#include "hw/sh4/sh4_axtrace.h"
 #include "cfg/option.h"
 #include "emulator.h"
 #include "input/gamepad_device.h"
@@ -153,6 +154,45 @@ static LuaRef watchHits(lua_State *L)
 
 static u32 watchDropped() {
 	return memwatch::takeDropped();
+}
+
+// ai-analysis block/edge tracer (off unless AX_TRACE or AX_TRACE_ON is set, see sh4_axtrace.h)
+static bool traceEnabled() {
+	return axtrace::enabled();
+}
+
+static void traceStart(const char *label, lua_State *L)
+{
+	if (!axtrace::enabled())
+		luaL_error(L, "block tracer is off: start flycast with AX_TRACE_ON=1");
+	axtrace::start(label);
+}
+
+static void traceStop() {
+	axtrace::stop();
+}
+
+static void traceMark(const char *text) {
+	axtrace::mark(text);
+}
+
+static void traceClear() {
+	axtrace::clear();
+}
+
+static int traceSave(const char *path) {
+	return axtrace::save(path);
+}
+
+// { blocks = , edges = , recording = }
+static LuaRef traceStats(lua_State *L)
+{
+	LuaRef t(L);
+	t = newTable(L);
+	t["blocks"] = axtrace::blockCount();
+	t["edges"] = axtrace::edgeCount();
+	t["recording"] = axtrace::recording();
+	return t;
 }
 
 template<typename T>
@@ -609,6 +649,16 @@ static void luaRegister(lua_State *L)
 				.addFunction("watchClear", watchClear)
 				.addFunction("watchHits", watchHits)
 				.addFunction("watchDropped", watchDropped)
+			.endNamespace()
+
+			.beginNamespace("trace")
+				.addFunction("enabled", traceEnabled)
+				.addFunction("start", traceStart)
+				.addFunction("stop", traceStop)
+				.addFunction("mark", traceMark)
+				.addFunction("clear", traceClear)
+				.addFunction("save", traceSave)
+				.addFunction("stats", traceStats)
 			.endNamespace()
 
 			.beginNamespace("input")

@@ -44,6 +44,8 @@ target_sources(${PROJECT_NAME} PRIVATE
         sh4_interrupts.h
         sh4_mem.cpp
         sh4_mem.h
+        sh4_axtrace.cpp
+        sh4_axtrace.h
         sh4_memwatch.cpp
         sh4_memwatch.h
         sh4_mmr.cpp
