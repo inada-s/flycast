@@ -130,7 +130,28 @@ static void watchClear() {
 	memwatch::clearRanges();
 }
 
-// hits since the last call: { {frame=, pc=, pr=, addr=, size=, old=, new=}, ... }, pc = writing instruction
+// ai-analysis read watch: independent switch (FLYCAST_MEMREADWATCH=1 / FLYCAST_RWATCH), same hit list
+static bool rwatchEnabled() {
+	return memwatch::readEnabled();
+}
+
+static bool rwatchAdd(u32 lo, u32 hi, lua_State *L)
+{
+	if (!memwatch::readEnabled())
+		luaL_error(L, "memory read watch is off: start flycast with FLYCAST_MEMREADWATCH=1");
+	return memwatch::addReadRange(lo, hi);
+}
+
+static void rwatchRemove(u32 lo, u32 hi) {
+	memwatch::removeReadRange(lo, hi);
+}
+
+static void rwatchClear() {
+	memwatch::clearReadRanges();
+}
+
+// hits since the last call: { {frame=, pc=, pr=, addr=, size=, old=, new=, rw=}, ... },
+// pc = the accessing instruction; rw = "r" for a read (old=0, new=value read), "w" for a write
 static LuaRef watchHits(lua_State *L)
 {
 	LuaRef t(L);
@@ -147,6 +168,7 @@ static LuaRef watchHits(lua_State *L)
 		e["size"] = h.size;
 		e["old"] = h.oldValue;
 		e["new"] = h.newValue;
+		e["rw"] = std::string(h.isRead ? "r" : "w");
 		t[i++] = e;
 	}
 	return t;
@@ -649,6 +671,10 @@ static void luaRegister(lua_State *L)
 				.addFunction("watchClear", watchClear)
 				.addFunction("watchHits", watchHits)
 				.addFunction("watchDropped", watchDropped)
+				.addFunction("rwatchEnabled", rwatchEnabled)
+				.addFunction("rwatchAdd", rwatchAdd)
+				.addFunction("rwatchRemove", rwatchRemove)
+				.addFunction("rwatchClear", rwatchClear)
 			.endNamespace()
 
 			.beginNamespace("trace")

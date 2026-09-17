@@ -22,16 +22,47 @@ constexpr size_t MaxHits = 1 << 20;
 struct Range { u32 lo, hi; };
 Range ranges[MaxRanges];
 std::atomic<int> rangeCount;
-std::mutex mutex;	// guards ranges (writers), hits, log
+Range rranges[MaxRanges];
+std::atomic<int> rrangeCount;
+std::mutex mutex;	// guards ranges (writers), hits, logs
 std::vector<Hit> hits;
 u32 dropped;
 FILE *logFile;
+FILE *rlogFile;
 int state = -1;	// -1 unknown, 0 off, 1 on
+int rstate = -1;	// read watch, same
 
 WriteMem8Func origWrite8;
 WriteMem16Func origWrite16;
 WriteMem32Func origWrite32;
 WriteMem64Func origWrite64;
+
+ReadMem8Func origRead8;
+ReadMem16Func origRead16;
+ReadMem32Func origRead32;
+ReadMem64Func origRead64;
+
+// "lo-hi,lo-hi" (hex, inclusive, physical) -> addRange/addReadRange
+void parseRanges(const char *p, bool read)
+{
+	while (*p)
+	{
+		char *end;
+		u32 lo = (u32)std::strtoul(p, &end, 16);
+		u32 hi = lo;
+		if (end == p)
+			break;
+		if (*end == '-')
+			hi = (u32)std::strtoul(end + 1, &end, 16);
+		if (read)
+			addReadRange(lo, hi);
+		else
+			addRange(lo, hi);
+		p = end;
+		while (*p == ',' || *p == ' ')
+			p++;
+	}
+}
 
 void init()
 {
@@ -44,23 +75,37 @@ void init()
 	state = 1;
 	if (!haveRanges)
 		return;
-	const char *p = env;
-	while (*p)
-	{
-		char *end;
-		u32 lo = (u32)std::strtoul(p, &end, 16);
-		u32 hi = lo;
-		if (end == p)
-			break;
-		if (*end == '-')
-			hi = (u32)std::strtoul(end + 1, &end, 16);
-		addRange(lo, hi);
-		p = end;
-		while (*p == ',' || *p == ' ')
-			p++;
-	}
+	parseRanges(env, false);
 	const char *logName = std::getenv("FLYCAST_WATCH_LOG");
 	logFile = std::fopen(logName != nullptr ? logName : "watch.log", "w");
+}
+
+void rinit()
+{
+	rstate = 0;
+	const char *env = std::getenv("FLYCAST_RWATCH");
+	const char *sw = std::getenv("FLYCAST_MEMREADWATCH");
+	bool haveRanges = env != nullptr && *env != 0;
+	if (!haveRanges && (sw == nullptr || std::strcmp(sw, "1") != 0))
+		return;
+	rstate = 1;
+	if (!haveRanges)
+		return;
+	parseRanges(env, true);
+	const char *logName = std::getenv("FLYCAST_RWATCH_LOG");
+	rlogFile = std::fopen(logName != nullptr ? logName : "rwatch.log", "w");
+}
+
+inline bool rhit(u32 addr, u32 size)
+{
+	int n = rrangeCount.load(std::memory_order_relaxed);
+	if (n == 0)
+		return false;
+	u32 a = addr & 0x1fffffff;
+	for (int i = 0; i < n; i++)
+		if (a <= rranges[i].hi && a + size - 1 >= rranges[i].lo)
+			return true;
+	return false;
 }
 
 inline bool hit(u32 addr, u32 size)
@@ -99,12 +144,56 @@ void record(u32 addr, u32 size, u64 newv, u32 pc, u32 pr)
 	if (hits.size() >= MaxHits)
 		dropped++;
 	else
-		hits.push_back({ FrameCount, pc, pr, addr, size, oldv, newv });
+		hits.push_back({ FrameCount, pc, pr, addr, size, oldv, newv, false });
+}
+
+void recordRead(u32 addr, u32 size, u64 v, u32 pc, u32 pr)
+{
+	std::lock_guard<std::mutex> lock(mutex);
+	if (rlogFile != nullptr)
+	{
+		std::fprintf(rlogFile, "%u %08x %08x %08x %u 0 %llx\n", FrameCount, pc + 2, pr, addr, size,
+				(unsigned long long)v);
+		std::fflush(rlogFile);
+	}
+	if (hits.size() >= MaxHits)
+		dropped++;
+	else
+		hits.push_back({ FrameCount, pc, pr, addr, size, 0, v, true });
 }
 
 // Interpreter: Sh4cntx.pc is the instruction + 2. Dynarec: only the interpreter fallback ops get here.
 inline u32 handlerPc() {
 	return config::DynarecEnabled ? fallbackPc : Sh4cntx.pc - 2;
+}
+
+u8 DYNACALL hookRead8(u32 addr)
+{
+	u8 v = origRead8(addr);
+	if (rhit(addr, 1))
+		recordRead(addr, 1, v, handlerPc(), Sh4cntx.pr);
+	return v;
+}
+u16 DYNACALL hookRead16(u32 addr)
+{
+	u16 v = origRead16(addr);
+	if (rhit(addr, 2))
+		recordRead(addr, 2, v, handlerPc(), Sh4cntx.pr);
+	return v;
+}
+u32 DYNACALL hookRead32(u32 addr)
+{
+	u32 v = origRead32(addr);
+	if (rhit(addr, 4))
+		recordRead(addr, 4, v, handlerPc(), Sh4cntx.pr);
+	return v;
+}
+u64 DYNACALL hookRead64(u32 addr)
+{
+	u64 v = origRead64(addr);
+	if (rhit(addr, 8))
+		recordRead(addr, 8, v, handlerPc(), Sh4cntx.pr);
+	return v;
 }
 
 void DYNACALL hookWrite8(u32 addr, u8 data)
@@ -140,20 +229,38 @@ bool enabled()
 	return state == 1;
 }
 
+bool readEnabled()
+{
+	if (rstate < 0)
+		rinit();
+	return rstate == 1;
+}
+
 void installHandlers()
 {
-	if (!enabled())
-		return;
-	if (WriteMem8 == &hookWrite8)
-		return;
-	origWrite8 = WriteMem8;
-	origWrite16 = WriteMem16;
-	origWrite32 = WriteMem32;
-	origWrite64 = WriteMem64;
-	WriteMem8 = &hookWrite8;
-	WriteMem16 = &hookWrite16;
-	WriteMem32 = &hookWrite32;
-	WriteMem64 = &hookWrite64;
+	if (enabled() && WriteMem8 != &hookWrite8)
+	{
+		origWrite8 = WriteMem8;
+		origWrite16 = WriteMem16;
+		origWrite32 = WriteMem32;
+		origWrite64 = WriteMem64;
+		WriteMem8 = &hookWrite8;
+		WriteMem16 = &hookWrite16;
+		WriteMem32 = &hookWrite32;
+		WriteMem64 = &hookWrite64;
+	}
+	// instruction fetch goes through IReadMem16 and is deliberately not watched
+	if (readEnabled() && ReadMem8 != &hookRead8)
+	{
+		origRead8 = ReadMem8;
+		origRead16 = ReadMem16;
+		origRead32 = ReadMem32;
+		origRead64 = ReadMem64;
+		ReadMem8 = &hookRead8;
+		ReadMem16 = &hookRead16;
+		ReadMem32 = &hookRead32;
+		ReadMem64 = &hookRead64;
+	}
 }
 
 bool addRange(u32 lo, u32 hi)
@@ -190,6 +297,42 @@ void clearRanges()
 {
 	std::lock_guard<std::mutex> lock(mutex);
 	rangeCount.store(0);
+}
+
+bool addReadRange(u32 lo, u32 hi)
+{
+	lo &= 0x1fffffff;
+	hi &= 0x1fffffff;
+	if (hi < lo)
+		std::swap(lo, hi);
+	std::lock_guard<std::mutex> lock(mutex);
+	int n = rrangeCount.load();
+	if (n >= MaxRanges)
+		return false;
+	rranges[n] = { lo, hi };
+	rrangeCount.store(n + 1);
+	return true;
+}
+
+void removeReadRange(u32 lo, u32 hi)
+{
+	lo &= 0x1fffffff;
+	hi &= 0x1fffffff;
+	std::lock_guard<std::mutex> lock(mutex);
+	int n = rrangeCount.load();
+	for (int i = 0; i < n; i++)
+		if (rranges[i].lo == lo && rranges[i].hi == hi)
+		{
+			rranges[i] = rranges[n - 1];
+			rrangeCount.store(n - 1);
+			return;
+		}
+}
+
+void clearReadRanges()
+{
+	std::lock_guard<std::mutex> lock(mutex);
+	rrangeCount.store(0);
 }
 
 std::vector<Hit> takeHits()
@@ -231,5 +374,34 @@ void DYNACALL dynWrite64(u32 addr, u64 data, u32 pc, u32 pr)
 	if (hit(addr, 8))
 		record(addr, 8, data, pc, pr);
 	addrspace::write64(addr, data);
+}
+
+u32 DYNACALL dynRead8(u32 addr, u32 pc, u32 pr)
+{
+	u8 v = addrspace::read8(addr);
+	if (rhit(addr, 1))
+		recordRead(addr, 1, v, pc, pr);
+	return (u32)(s32)(s8)v;	// stock handlers sign-extend 8/16 bit reads
+}
+u32 DYNACALL dynRead16(u32 addr, u32 pc, u32 pr)
+{
+	u16 v = addrspace::read16(addr);
+	if (rhit(addr, 2))
+		recordRead(addr, 2, v, pc, pr);
+	return (u32)(s32)(s16)v;
+}
+u32 DYNACALL dynRead32(u32 addr, u32 pc, u32 pr)
+{
+	u32 v = addrspace::read32(addr);
+	if (rhit(addr, 4))
+		recordRead(addr, 4, v, pc, pr);
+	return v;
+}
+u64 DYNACALL dynRead64(u32 addr, u32 pc, u32 pr)
+{
+	u64 v = addrspace::read64(addr);
+	if (rhit(addr, 8))
+		recordRead(addr, 8, v, pc, pr);
+	return v;
 }
 }

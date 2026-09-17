@@ -228,7 +228,9 @@ public:
 			break;
 
 			case shop_readm:
-				if (!GenReadMemImmediate(op, block))
+			{
+				bool rwatch = memwatch::readEnabled() && !mmu_enabled();
+				if (rwatch || !GenReadMemImmediate(op, block))
 				{
 					// Not an immediate address
 					shil_param_to_host_reg(op.rs1, call_regs[0]);
@@ -247,7 +249,18 @@ public:
 					genMmuLookup(block, op, 0);
 
 					int size = op.size == 1 ? MemSize::S8 : op.size == 2 ? MemSize::S16 : op.size == 4 ? MemSize::S32 : MemSize::S64;
-					GenCall((void (*)())MemHandlers[optimise ? MemType::Fast : MemType::Slow][size][MemOp::R], mmu_enabled());
+					if (rwatch)
+					{
+						// ai-analysis memwatch: every read is a call that carries the guest pc and pr
+						mov(call_regs[1], block->vaddr + op.guest_offs);
+						shil_param_to_host_reg(shil_param(reg_pr), call_regs[2]);
+						GenCall(size == MemSize::S8 ? (void (*)())memwatch::dynRead8
+								: size == MemSize::S16 ? (void (*)())memwatch::dynRead16
+								: size == MemSize::S32 ? (void (*)())memwatch::dynRead32
+								: (void (*)())memwatch::dynRead64);
+					}
+					else
+						GenCall((void (*)())MemHandlers[optimise ? MemType::Fast : MemType::Slow][size][MemOp::R], mmu_enabled());
 
 #if ALLOC_F64 == false
 					if (size == MemSize::S64)
@@ -262,7 +275,8 @@ public:
 						host_reg_to_shil_param(op.rd, rcx);
 					}
 				}
-				break;
+			}
+			break;
 
 			case shop_writem:
 			{

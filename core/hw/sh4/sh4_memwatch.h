@@ -3,6 +3,10 @@
 // Switch: env FLYCAST_WATCH="lo-hi,lo-hi" (inclusive physical ranges, hex) watches from boot and logs to
 // FLYCAST_WATCH_LOG (default watch.log): "frame pc pr addr size old new", pc = writing instruction + 2.
 // Env FLYCAST_MEMWATCH=1 enables the mechanism with no initial range (ranges added from Lua).
+//
+// The READ watch is a separate switch (reads are ~10x more frequent, so it is never on by accident):
+// env FLYCAST_RWATCH="lo-hi,lo-hi" logs reads to FLYCAST_RWATCH_LOG (default rwatch.log), same line
+// format with newValue = the value read and old = 0; env FLYCAST_MEMREADWATCH=1 enables it with no range.
 // Works with the interpreter and the x64 dynarec: when enabled, the dynarec compiles every guest write as a call
 // that carries the guest pc, so no write is inlined. When disabled nothing here runs.
 #pragma once
@@ -18,18 +22,24 @@ struct Hit
 	u32 pr;
 	u32 addr;
 	u32 size;
-	u64 oldValue;
-	u64 newValue;
+	u64 oldValue;	// reads: 0
+	u64 newValue;	// reads: the value read
+	bool isRead;
 };
 
 // true when switched on by env (fixed at first call)
 bool enabled();
-// wraps the WriteMem* handlers (interpreter and dynarec instruction fallbacks)
+// same for the read watch (independent switch)
+bool readEnabled();
+// wraps the WriteMem*/ReadMem* handlers (interpreter and dynarec instruction fallbacks)
 void installHandlers();
 
 bool addRange(u32 lo, u32 hi);
 void removeRange(u32 lo, u32 hi);
 void clearRanges();
+bool addReadRange(u32 lo, u32 hi);
+void removeReadRange(u32 lo, u32 hi);
+void clearReadRanges();
 std::vector<Hit> takeHits();
 u32 takeDropped();
 
@@ -38,6 +48,12 @@ void DYNACALL dynWrite8(u32 addr, u32 data, u32 pc, u32 pr);
 void DYNACALL dynWrite16(u32 addr, u32 data, u32 pc, u32 pr);
 void DYNACALL dynWrite32(u32 addr, u32 data, u32 pc, u32 pr);
 void DYNACALL dynWrite64(u32 addr, u64 data, u32 pc, u32 pr);
+// dynarec read entry points (pc = reading instruction). Return value matches the stock read handlers:
+// 8/16 bit sign-extended into 32.
+u32 DYNACALL dynRead8(u32 addr, u32 pc, u32 pr);
+u32 DYNACALL dynRead16(u32 addr, u32 pc, u32 pr);
+u32 DYNACALL dynRead32(u32 addr, u32 pc, u32 pr);
+u64 DYNACALL dynRead64(u32 addr, u32 pc, u32 pr);
 // pc of the instruction a dynarec block is running through the interpreter fallback
 extern u32 fallbackPc;
 }
