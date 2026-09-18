@@ -1,6 +1,7 @@
 // ai-analysis: executed-block / observed-edge recorder. See sh4_axtrace.h for the switches and format.
 #include "sh4_axtrace.h"
 #include "sh4_mem.h"
+#include "sh4_if.h"
 #include "dyna/blockmanager.h"
 #include "hw/pvr/Renderer_if.h"
 
@@ -138,8 +139,35 @@ static void bumpEdge(u32 src, u32 dst)
 	edgesDropped++;
 }
 
+static std::unordered_map<u32, bool> hooks;	// physical pc -> hooked
+static bool anyHook;
+static std::vector<HookHit> hookHits;
+static u64 hookSeq, hookDrop;
+static constexpr size_t HOOK_MAX = 65536;
+
+void hookAdd(u32 pc) { hooks[pc & 0x1fffffff] = true; anyHook = true; }
+void hookRemove(u32 pc) { hooks.erase(pc & 0x1fffffff); anyHook = !hooks.empty(); }
+void hookClear() { hooks.clear(); anyHook = false; hookHits.clear(); hookDrop = 0; }
+std::vector<HookHit> hookTake() { std::vector<HookHit> v; v.swap(hookHits); return v; }
+u64 hookDropped() { return hookDrop; }
+
 void DYNACALL enter(Block *b)
 {
+	if (anyHook && hooks.count(b->addr))
+	{
+		if (hookHits.size() < HOOK_MAX)
+		{
+			HookHit h;
+			h.pc = b->addr;
+			h.pr = Sh4cntx.pr;
+			for (int i = 0; i < 16; i++)
+				h.r[i] = Sh4cntx.r[i];
+			h.seq = hookSeq++;
+			hookHits.push_back(h);
+		}
+		else
+			hookDrop++;
+	}
 	if (!rec)
 	{
 		prev = nullptr;

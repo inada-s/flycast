@@ -17,6 +17,7 @@
 // ended the interrupted block. Those edges exist in the log and have no static counterpart.
 #pragma once
 #include "types.h"
+#include <vector>
 
 struct RuntimeBlockInfo;
 
@@ -49,4 +50,16 @@ void clear();
 int save(const char *path);
 u32 blockCount();
 u32 edgeCount();
+
+// PC hooks (s112): when a compiled block that STARTS at a hooked physical address is entered, snapshot
+// r0-r15 + pr (context is flushed at block entry, before the block's register allocation). Works whenever
+// the tracer is enabled (AX_TRACE / AX_TRACE_ON), independent of start/stop. Only block starts can be
+// hooked (function entries, branch targets): check the address is a "B" line of a trace first.
+struct HookHit { u32 pc; u32 pr; u32 r[16]; u64 seq; };
+void hookAdd(u32 pc);
+void hookRemove(u32 pc);
+void hookClear();
+// moves the recorded hits out (max 65536 buffered; the rest counted in hookDropped)
+std::vector<HookHit> hookTake();
+u64 hookDropped();
 }

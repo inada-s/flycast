@@ -207,6 +207,41 @@ static int traceSave(const char *path) {
 }
 
 // { blocks = , edges = , recording = }
+// s112 PC hooks: register snapshot at entry of a block starting at pc (see sh4_axtrace.h)
+static void traceHookAdd(u32 pc, lua_State *L)
+{
+	if (!axtrace::enabled())
+		luaL_error(L, "block tracer is off: start flycast with AX_TRACE_ON=1");
+	axtrace::hookAdd(pc);
+}
+static void traceHookRemove(u32 pc) {
+	axtrace::hookRemove(pc);
+}
+static void traceHookClear() {
+	axtrace::hookClear();
+}
+static LuaRef traceHookHits(lua_State *L)
+{
+	LuaRef t = newTable(L);
+	int n = 1;
+	for (const auto& h : axtrace::hookTake())
+	{
+		LuaRef e = newTable(L);
+		e["pc"] = h.pc;
+		e["pr"] = h.pr;
+		e["seq"] = (lua_Integer)h.seq;
+		LuaRef r = newTable(L);
+		for (int i = 0; i < 16; i++)
+			r[i] = h.r[i];
+		e["r"] = r;
+		t[n++] = e;
+	}
+	return t;
+}
+static lua_Integer traceHookDropped() {
+	return (lua_Integer)axtrace::hookDropped();
+}
+
 static LuaRef traceStats(lua_State *L)
 {
 	LuaRef t(L);
@@ -685,6 +720,11 @@ static void luaRegister(lua_State *L)
 				.addFunction("clear", traceClear)
 				.addFunction("save", traceSave)
 				.addFunction("stats", traceStats)
+				.addFunction("hookAdd", traceHookAdd)
+				.addFunction("hookRemove", traceHookRemove)
+				.addFunction("hookClear", traceHookClear)
+				.addFunction("hookHits", traceHookHits)
+				.addFunction("hookDropped", traceHookDropped)
 			.endNamespace()
 
 			.beginNamespace("input")
