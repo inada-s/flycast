@@ -144,10 +144,14 @@ static bool anyHook;
 static std::vector<HookHit> hookHits;
 static u64 hookSeq, hookDrop;
 static constexpr size_t HOOK_MAX = 65536;
+struct HookCap { int reg; s32 off; u32 n; bool deref; s32 ptrOff; };
+static std::vector<HookCap> hookCaps;
 
 void hookAdd(u32 pc) { hooks[pc & 0x1fffffff] = true; anyHook = true; }
 void hookRemove(u32 pc) { hooks.erase(pc & 0x1fffffff); anyHook = !hooks.empty(); }
-void hookClear() { hooks.clear(); anyHook = false; hookHits.clear(); hookDrop = 0; }
+void hookClear() { hooks.clear(); anyHook = false; hookHits.clear(); hookDrop = 0; hookCaps.clear(); }
+void hookCapture(int reg, s32 off, u32 nwords) { if (reg >= 0 && reg < 16 && nwords > 0 && nwords <= 256) hookCaps.push_back({ reg, off, nwords, false, 0 }); }
+void hookCaptureDeref(int reg, s32 ptrOff, s32 off, u32 nwords) { if (reg >= 0 && reg < 16 && nwords > 0 && nwords <= 256) hookCaps.push_back({ reg, off, nwords, true, ptrOff }); }
 std::vector<HookHit> hookTake() { std::vector<HookHit> v; v.swap(hookHits); return v; }
 u64 hookDropped() { return hookDrop; }
 
@@ -163,7 +167,21 @@ void DYNACALL enter(Block *b)
 			for (int i = 0; i < 16; i++)
 				h.r[i] = Sh4cntx.r[i];
 			h.seq = hookSeq++;
-			hookHits.push_back(h);
+			for (const HookCap& c : hookCaps)
+			{
+				u32 base = Sh4cntx.r[c.reg];
+				if (c.deref)
+				{
+					u32 p = base + c.ptrOff;
+					base = (p & 0x1f000003) == 0x0c000000 ? addrspace::read32(p) : 0;
+				}
+				for (u32 i = 0; i < c.n; i++)
+				{
+					u32 a = base + c.off + i * 4;
+					h.mem.push_back((a & 0x1f000003) == 0x0c000000 ? addrspace::read32(a) : 0xdeadbeef);
+				}
+			}
+			hookHits.push_back(std::move(h));
 		}
 		else
 			hookDrop++;

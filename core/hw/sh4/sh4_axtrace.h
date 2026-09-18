@@ -55,8 +55,13 @@ u32 edgeCount();
 // r0-r15 + pr (context is flushed at block entry, before the block's register allocation). Works whenever
 // the tracer is enabled (AX_TRACE / AX_TRACE_ON), independent of start/stop. Only block starts can be
 // hooked (function entries, branch targets): check the address is a "B" line of a trace first.
-struct HookHit { u32 pc; u32 pr; u32 r[16]; u64 seq; };
+struct HookHit { u32 pc; u32 pr; u32 r[16]; u64 seq; std::vector<u32> mem; };
 void hookAdd(u32 pc);
+// s136: at every hook hit also copy nwords u32 from r[reg]+off (per capture, in order added; main RAM
+// 0x0c000000-0x0cffffff only, else 0xdeadbeef) into HookHit::mem. Cleared by hookClear.
+void hookCapture(int reg, s32 off, u32 nwords);
+// same, base = u32 at r[reg]+ptrOff (one dereference: a field of the object r[reg] points to)
+void hookCaptureDeref(int reg, s32 ptrOff, s32 off, u32 nwords);
 void hookRemove(u32 pc);
 void hookClear();
 // moves the recorded hits out (max 65536 buffered; the rest counted in hookDropped)

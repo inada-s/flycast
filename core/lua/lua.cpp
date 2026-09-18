@@ -28,6 +28,9 @@
 #include "hw/sh4/sh4_axtrace.h"
 #include "cfg/option.h"
 #include "emulator.h"
+#include "hw/pvr/Renderer_if.h"
+#include "gdxsv/gdxsv.h"
+#include <stb_image_write.h>
 #include "input/gamepad_device.h"
 #include "input/mouse.h"
 #include "hw/maple/maple_devs.h"
@@ -217,6 +220,12 @@ static void traceHookAdd(u32 pc, lua_State *L)
 static void traceHookRemove(u32 pc) {
 	axtrace::hookRemove(pc);
 }
+static void traceHookCapture(int reg, int off, int nwords) {
+	axtrace::hookCapture(reg, off, (u32)nwords);
+}
+static void traceHookCaptureDeref(int reg, int ptrOff, int off, int nwords) {
+	axtrace::hookCaptureDeref(reg, ptrOff, off, (u32)nwords);
+}
 static void traceHookClear() {
 	axtrace::hookClear();
 }
@@ -234,6 +243,13 @@ static LuaRef traceHookHits(lua_State *L)
 		for (int i = 0; i < 16; i++)
 			r[i] = h.r[i];
 		e["r"] = r;
+		if (!h.mem.empty())
+		{
+			LuaRef m = newTable(L);
+			for (size_t i = 0; i < h.mem.size(); i++)
+				m[(int)i + 1] = h.mem[i];
+			e["mem"] = m;
+		}
 		t[n++] = e;
 	}
 	return t;
@@ -601,7 +617,21 @@ static void luaRegister(lua_State *L)
 						gui_open_settings();
 				}))
 				.addFunction("exit", dc_exit)
+				// ai-analysis: write the last rendered frame to a PNG now (Lua-only; needs rend.ThreadedRendering=no
+				// so the GL context is on this thread). Returns false if no frame is available.
+				.addFunction("screenshot", std::function<bool(const std::string&)>([](const std::string& path) {
+					std::vector<u8> raw;
+					int w = 0, h = 0;
+					if (renderer == nullptr || !renderer->GetLastFrame(raw, w, h) || raw.empty())
+						return false;
+					stbi_flip_vertically_on_write(0);
+					return stbi_write_png(path.c_str(), w, h, 3, raw.data(), w * 3) != 0;
+				}))
 				.addFunction("displayNotification", os_notify)
+			.endNamespace()
+
+			.beginNamespace("gdxsv")	// ai-analysis
+				.addFunction("replayIndex", std::function<int()>([]() { return gdxsv.ReplayKeyMsgCount(); }))
 			.endNamespace()
 
 	  		.beginNamespace("config")
@@ -723,6 +753,8 @@ static void luaRegister(lua_State *L)
 				.addFunction("hookAdd", traceHookAdd)
 				.addFunction("hookRemove", traceHookRemove)
 				.addFunction("hookClear", traceHookClear)
+				.addFunction("hookCapture", traceHookCapture)
+				.addFunction("hookCaptureDeref", traceHookCaptureDeref)
 				.addFunction("hookHits", traceHookHits)
 				.addFunction("hookDropped", traceHookDropped)
 			.endNamespace()

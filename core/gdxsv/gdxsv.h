@@ -18,6 +18,8 @@ class Gdxsv {
 	friend GdxsvBackendRollback;
 	friend GdxsvBackendTcp;
 	friend GdxsvBackendUdp;
+	// ai-analysis: Lua flycast.gdxsv.replayIndex()
+	int ReplayKeyMsgCount() const { return replay_net_.KeyMsgCount(); }
 
 	enum class NetMode {
 		Offline,

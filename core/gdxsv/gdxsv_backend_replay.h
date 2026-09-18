@@ -41,6 +41,8 @@ class GdxsvBackendReplay {
 	// of stopping when it catches up.
 	bool StartLive(const std::string& host, const std::string& battle_code, int pov);
 	void Stop();
+	// ai-analysis: input frames consumed so far (whole-battle input_index), read-only for Lua
+	int KeyMsgCount() const { return key_msg_count_; }
 
 	// Network Backend Interface
 	void Open();
