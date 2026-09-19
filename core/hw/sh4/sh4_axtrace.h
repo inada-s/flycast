@@ -59,6 +59,7 @@ struct HookHit { u32 pc; u32 pr; u32 r[16]; u64 seq; std::vector<u32> mem; };
 void hookAdd(u32 pc);
 // s136: at every hook hit also copy nwords u32 from r[reg]+off (per capture, in order added; main RAM
 // 0x0c000000-0x0cffffff only, else 0xdeadbeef) into HookHit::mem. Cleared by hookClear.
+// s166: reg 16 = FP registers: words fr[off/4 .. off/4+nwords-1] at the hit (off in bytes, 0..0x3c)
 void hookCapture(int reg, s32 off, u32 nwords);
 // same, base = u32 at r[reg]+ptrOff (one dereference: a field of the object r[reg] points to)
 void hookCaptureDeref(int reg, s32 ptrOff, s32 off, u32 nwords);

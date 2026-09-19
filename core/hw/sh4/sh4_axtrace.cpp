@@ -150,7 +150,7 @@ static std::vector<HookCap> hookCaps;
 void hookAdd(u32 pc) { hooks[pc & 0x1fffffff] = true; anyHook = true; }
 void hookRemove(u32 pc) { hooks.erase(pc & 0x1fffffff); anyHook = !hooks.empty(); }
 void hookClear() { hooks.clear(); anyHook = false; hookHits.clear(); hookDrop = 0; hookCaps.clear(); }
-void hookCapture(int reg, s32 off, u32 nwords) { if (reg >= 0 && reg < 16 && nwords > 0 && nwords <= 256) hookCaps.push_back({ reg, off, nwords, false, 0 }); }
+void hookCapture(int reg, s32 off, u32 nwords) { if (reg >= 0 && reg <= 16 && nwords > 0 && nwords <= 256) hookCaps.push_back({ reg, off, nwords, false, 0 }); }
 void hookCaptureDeref(int reg, s32 ptrOff, s32 off, u32 nwords) { if (reg >= 0 && reg < 16 && nwords > 0 && nwords <= 256) hookCaps.push_back({ reg, off, nwords, true, ptrOff }); }
 std::vector<HookHit> hookTake() { std::vector<HookHit> v; v.swap(hookHits); return v; }
 u64 hookDropped() { return hookDrop; }
@@ -169,6 +169,15 @@ void DYNACALL enter(Block *b)
 			h.seq = hookSeq++;
 			for (const HookCap& c : hookCaps)
 			{
+				if (c.reg == 16)	// s166: FP bank, fr[off/4 + i]
+				{
+					for (u32 i = 0; i < c.n; i++)
+					{
+						s32 k = c.off / 4 + (s32)i;
+						h.mem.push_back(k >= 0 && k < 16 ? Sh4cntx.fr_hex(k) : 0xdeadbeef);
+					}
+					continue;
+				}
 				u32 base = Sh4cntx.r[c.reg];
 				if (c.deref)
 				{
