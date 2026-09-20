@@ -121,6 +121,23 @@ int ax_fake_timesync_frames() {
 	static int n = (int)config::loadInt("gdxsv", "ax_fake_timesync_frames", 1);
 	return n;
 }
+
+// gdxsv:ax_skip_from=A + gdxsv:ax_skip_to=B -> inside ggpo frames [A,B] only: arm a timesync skip on EVERY
+// frame and allow the skip to fire on ANY KeyMsg1 frame, not just frame%10==0. The alignment between DC2's own
+// flow (when it stops asking for input) and the ggpo frame counter is arbitrary in a real battle, so forcing
+// the phase here reproduces an alignment the stock %10 gate only reaches by luck.
+int ax_skip_from() {
+	static int n = (int)config::loadInt("gdxsv", "ax_skip_from", 0);
+	return n;
+}
+int ax_skip_to() {
+	static int n = (int)config::loadInt("gdxsv", "ax_skip_to", 0);
+	return n;
+}
+bool ax_in_skip_window(int frame) {
+	const int a = ax_skip_from();
+	return 0 < a && a <= frame && frame <= ax_skip_to();
+}
 }  // namespace
 
 void GdxsvBackendRollback::DisplayOSD() {
@@ -640,10 +657,10 @@ u32 GdxsvBackendRollback::OnSockRead(u32 addr, u32 size) {
 						 : gdxsv_ReadMem8(0x0c3d16d4) == 2 && gdxsv_ReadMem8(0x0c3d16d5) == 7;
 	};
 	const int skipFrameCount = ggpo::getSkippedFrames(frame);
-	if (const int fts = ax_fake_timesync(); 0 < fts && !ggpo::isInRollback()) {
+	if (const int fts = ax_fake_timesync(); (0 < fts || ax_in_skip_window(frame)) && !ggpo::isInRollback()) {
 		// ai-analysis: force the timesync-skip path that only shows up under real network drift.
 		static int last_fake = -1;
-		if (frame % fts == 0 && frame != last_fake && ggpo::timeSyncFrames == 0) {
+		if ((ax_in_skip_window(frame) || (0 < fts && frame % fts == 0)) && frame != last_fake && ggpo::timeSyncFrames == 0) {
 			last_fake = frame;
 			ggpo::timeSyncFrames = ax_fake_timesync_frames();
 			NOTICE_LOG(COMMON, "ax_fake_timesync: frame=%d ahead=%d", frame, ax_fake_timesync_frames());
@@ -807,7 +824,7 @@ u32 GdxsvBackendRollback::OnSockRead(u32 addr, u32 size) {
 			const int tsFrames = ggpo::timeSyncFrames;
 			const int dsc = gdxsv_ReadMem16(DataStopCounter);
 			const int rbk = ggpo::isInRollback() ? 1 : 0;
-			if (!ggpo::isInRollback() && 0 < dsc && tsFrames > 0 && frame % 10 == 0) {
+			if (!ggpo::isInRollback() && 0 < dsc && tsFrames > 0 && (frame % 10 == 0 || ax_in_skip_window(frame))) {
 				ggpo::timeSyncFrames.fetch_sub(1);
 				ggpo::notifySkipInput();
 				DEBUG_LOG(COMMON, "KeyMsg1 frame=%d: skipFrame remaining=%d", frame, tsFrames - 1);
