@@ -90,6 +90,19 @@ void ax_log_input(const char* ev, int frame, int rbk, int dsc, int skc, u64 inpu
 	fflush(f);
 }
 
+// gdxsv:ax_input_log_all=1 -> also log every other Mcs message and every poll whose DataStopCounter != 1
+int ax_input_log_all() {
+	static int n = (int)config::loadInt("gdxsv", "ax_input_log_all", 0);
+	return n;
+}
+
+void ax_log_other(const char* ev, const char* name, int frame, int rbk, int dsc, int len) {
+	FILE* f = ax_input_log_file();
+	if (f == nullptr || !ax_input_log_all()) return;
+	fprintf(f, "%s %s f=%d rbk=%d dsc=%d len=%d\n", ev, name, frame, rbk, dsc, len);
+	fflush(f);
+}
+
 int ax_fake_timesync() {
 	static int n = (int)config::loadInt("gdxsv", "ax_fake_timesync", 0);
 	return n;
@@ -725,6 +738,10 @@ u32 GdxsvBackendRollback::OnSockRead(u32 addr, u32 size) {
 	}
 
 	int msg_len = gdxsv_ReadMem8(InetBuf);
+	if (msg_len == 0 && ax_input_log_all()) {
+		const int dsc0 = gdxsv_ReadMem16(DataStopCounter);
+		if (dsc0 != 1) ax_log_other("poll", "-", frame, ggpo::isInRollback() ? 1 : 0, dsc0, 0);
+	}
 	if (0 < msg_len) {
 		if (msg_len == 0x82) {
 			msg_len = 20;
@@ -735,6 +752,10 @@ u32 GdxsvBackendRollback::OnSockRead(u32 addr, u32 size) {
 			msg.body[i] = gdxsv_ReadMem8(InetBuf + i);
 			gdxsv_WriteMem8(InetBuf + i, 0);
 		}
+
+		if (msg.Type() != McsMessage::KeyMsg1)
+			ax_log_other("msg", McsMessage::MsgTypeName(msg.Type()), frame, ggpo::isInRollback() ? 1 : 0,
+						 gdxsv_ReadMem16(DataStopCounter), msg_len);
 
 		if (msg.Type() == McsMessage::ConnectionIdMsg) {
 			state_ = State::StopEmulator;
