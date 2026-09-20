@@ -103,6 +103,14 @@ void ax_log_other(const char* ev, const char* name, int frame, int rbk, int dsc,
 	fflush(f);
 }
 
+// gdxsv:ax_drop_deliver=N -> on every Nth forced/real timesync skip, suppress the tail delivery of that
+// frame (the `skc+1 == dsc` append). Reproduces "DC2 never left dsc at skc+1" WITHOUT touching game memory.
+int ax_drop_deliver() {
+	static int n = (int)config::loadInt("gdxsv", "ax_drop_deliver", 0);
+	return n;
+}
+int ax_drop_frame = -1;
+
 int ax_fake_timesync() {
 	static int n = (int)config::loadInt("gdxsv", "ax_fake_timesync", 0);
 	return n;
@@ -804,6 +812,13 @@ u32 GdxsvBackendRollback::OnSockRead(u32 addr, u32 size) {
 				ggpo::notifySkipInput();
 				DEBUG_LOG(COMMON, "KeyMsg1 frame=%d: skipFrame remaining=%d", frame, tsFrames - 1);
 				ax_log_input("skip_ts", frame, rbk, dsc, skipFrameCount, 0);
+				if (0 < ax_drop_deliver()) {
+					static int ax_skip_seen = 0;
+					if (++ax_skip_seen % ax_drop_deliver() == 0) {
+						ax_drop_frame = frame;
+						ax_log_input("drop_arm", frame, rbk, dsc, skipFrameCount, 0);
+					}
+				}
 			} else if (0 < skipFrameCount && dsc < skipFrameCount + 1) {
 				DEBUG_LOG(COMMON, "KeyMsg1 frame=%d: skipFrame replaying", frame);
 				ax_log_input("skip_rep", frame, rbk, dsc, skipFrameCount, 0);
@@ -898,8 +913,12 @@ u32 GdxsvBackendRollback::OnSockRead(u32 addr, u32 size) {
 	}
 
 	if (0 < skipFrameCount && skipFrameCount + 1 == gdxsv_ReadMem16(DataStopCounter)) {
+		if (frame == ax_drop_frame) {
+			ax_log_input("drop", frame, ggpo::isInRollback() ? 1 : 0, gdxsv_ReadMem16(DataStopCounter), skipFrameCount, 0);
+		} else {
 		const u64 in = appendKeyMsg1Inputs();
 		ax_log_input("append2", frame, ggpo::isInRollback() ? 1 : 0, gdxsv_ReadMem16(DataStopCounter), skipFrameCount, in);
+	}
 	}
 
 	if (!ggpo::isInRollback()) {
