@@ -65,6 +65,43 @@ void drawConnectionDiagram(int elapsed, const uint8_t matrix[4][4], const std::m
 void drawNetworkStat(const proto::P2PMatching& matching);
 }  // namespace
 
+namespace {
+// ai-analysis (off unless the config key is set; a normal run never executes any of this):
+//   gdxsv:ax_input_log=<path>    one line per KeyMsg1 decision (append / timesync skip / replay skip)
+//   gdxsv:ax_fake_timesync=N     every N ggpo frames, pretend GGPO reported "1 frame ahead"
+FILE* ax_input_log_file() {
+	static FILE* f = []() -> FILE* {
+		const auto path = config::loadStr("gdxsv", "ax_input_log", "");
+		if (path.empty()) return nullptr;
+		FILE* fp = nowide::fopen(path.c_str(), "w");
+		if (fp == nullptr)
+			ERROR_LOG(COMMON, "ax_input_log: fopen failed %s", path.c_str());
+		else
+			NOTICE_LOG(COMMON, "ax_input_log: %s", path.c_str());
+		return fp;
+	}();
+	return f;
+}
+
+void ax_log_input(const char* ev, int frame, int rbk, int dsc, int skc, u64 inputs) {
+	FILE* f = ax_input_log_file();
+	if (f == nullptr) return;
+	fprintf(f, "%s f=%d rbk=%d dsc=%d skc=%d in=%016llx\n", ev, frame, rbk, dsc, skc, (unsigned long long)inputs);
+	fflush(f);
+}
+
+int ax_fake_timesync() {
+	static int n = (int)config::loadInt("gdxsv", "ax_fake_timesync", 0);
+	return n;
+}
+
+// how many "frames ahead" the faked timesync reports (GGPO's own event sets the same field)
+int ax_fake_timesync_frames() {
+	static int n = (int)config::loadInt("gdxsv", "ax_fake_timesync_frames", 1);
+	return n;
+}
+}  // namespace
+
 void GdxsvBackendRollback::DisplayOSD() {
 	const auto elapsed = ping_pong_.ElapsedMs();
 	if (1550 < elapsed && elapsed < 6900) {
@@ -582,6 +619,15 @@ u32 GdxsvBackendRollback::OnSockRead(u32 addr, u32 size) {
 						 : gdxsv_ReadMem8(0x0c3d16d4) == 2 && gdxsv_ReadMem8(0x0c3d16d5) == 7;
 	};
 	const int skipFrameCount = ggpo::getSkippedFrames(frame);
+	if (const int fts = ax_fake_timesync(); 0 < fts && !ggpo::isInRollback()) {
+		// ai-analysis: force the timesync-skip path that only shows up under real network drift.
+		static int last_fake = -1;
+		if (frame % fts == 0 && frame != last_fake && ggpo::timeSyncFrames == 0) {
+			last_fake = frame;
+			ggpo::timeSyncFrames = ax_fake_timesync_frames();
+			NOTICE_LOG(COMMON, "ax_fake_timesync: frame=%d ahead=%d", frame, ax_fake_timesync_frames());
+		}
+	}
 	const auto appendKeyMsg1Inputs = [&]() {
 		u64 inputs = 0;
 		for (int i = 0; i < matching_.player_count(); ++i) {
@@ -730,14 +776,19 @@ u32 GdxsvBackendRollback::OnSockRead(u32 addr, u32 size) {
 
 		if (msg.Type() == McsMessage::KeyMsg1) {
 			const int tsFrames = ggpo::timeSyncFrames;
-			if (!ggpo::isInRollback() && 0 < gdxsv_ReadMem16(DataStopCounter) && tsFrames > 0 && frame % 10 == 0) {
+			const int dsc = gdxsv_ReadMem16(DataStopCounter);
+			const int rbk = ggpo::isInRollback() ? 1 : 0;
+			if (!ggpo::isInRollback() && 0 < dsc && tsFrames > 0 && frame % 10 == 0) {
 				ggpo::timeSyncFrames.fetch_sub(1);
 				ggpo::notifySkipInput();
 				DEBUG_LOG(COMMON, "KeyMsg1 frame=%d: skipFrame remaining=%d", frame, tsFrames - 1);
-			} else if (0 < skipFrameCount && gdxsv_ReadMem16(DataStopCounter) < skipFrameCount + 1) {
+				ax_log_input("skip_ts", frame, rbk, dsc, skipFrameCount, 0);
+			} else if (0 < skipFrameCount && dsc < skipFrameCount + 1) {
 				DEBUG_LOG(COMMON, "KeyMsg1 frame=%d: skipFrame replaying", frame);
+				ax_log_input("skip_rep", frame, rbk, dsc, skipFrameCount, 0);
 			} else {
-				appendKeyMsg1Inputs();
+				const u64 in = appendKeyMsg1Inputs();
+				ax_log_input("append", frame, rbk, dsc, skipFrameCount, in);
 			}
 		}
 
@@ -826,7 +877,8 @@ u32 GdxsvBackendRollback::OnSockRead(u32 addr, u32 size) {
 	}
 
 	if (0 < skipFrameCount && skipFrameCount + 1 == gdxsv_ReadMem16(DataStopCounter)) {
-		appendKeyMsg1Inputs();
+		const u64 in = appendKeyMsg1Inputs();
+		ax_log_input("append2", frame, ggpo::isInRollback() ? 1 : 0, gdxsv_ReadMem16(DataStopCounter), skipFrameCount, in);
 	}
 
 	if (!ggpo::isInRollback()) {
