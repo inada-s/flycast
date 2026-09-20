@@ -453,10 +453,14 @@ bool GdxsvBackendRollback::StartLocalTest(const char* param) {
 		NOTICE_LOG(COMMON, "RandomInput Seed=%d", seed + me);
 		ggpo::randomInput(true, seed + me, 0x0004 | 0x0400 | 0x0200 | 0x0010 | 0x0040);
 	}
-	DummyRuleData[6] = 1;
-	DummyRuleData[7] = 0;
-	DummyRuleData[8] = 1;
-	DummyRuleData[9] = 0;
+	// gdxsv:ax_rbk_vital=N -> team total cost for the local rollback test (default 1 = the battle ends with
+	// round 1). Raising it on every peer identically (it is code, not the savestate) lets the test battle play
+	// round 2/3, i.e. reach a round transition.
+	const int ax_vital = (int)config::loadInt("gdxsv", "ax_rbk_vital", 1);
+	DummyRuleData[6] = ax_vital & 0xff;
+	DummyRuleData[7] = (ax_vital >> 8) & 0xff;
+	DummyRuleData[8] = ax_vital & 0xff;
+	DummyRuleData[9] = (ax_vital >> 8) & 0xff;
 
 	proto::P2PMatching matching;
 	matching.set_battle_code("0123456");
