@@ -112,6 +112,26 @@ int ax_drop_deliver() {
 }
 int ax_drop_frame = -1;
 
+// gdxsv:ax_drop_after_pause=K (window: ax_pause_min 35 <= gap <= ax_pause_max 60, after ax_pause_after 500 deliveries) -> one forced skip whose delivery is
+// swallowed, on the Kth KeyMsg1 after a round-end pause. Addresses the incident's block-2 position
+// (a lost idle input in the post-pause band) without depending on absolute frame numbers (s240).
+int ax_drop_after_pause() {
+	static int n = (int)config::loadInt("gdxsv", "ax_drop_after_pause", 0);
+	return n;
+}
+int ax_pause_min() {
+	static int n = (int)config::loadInt("gdxsv", "ax_pause_min", 35);
+	return n;
+}
+int ax_pause_max() {
+	static int n = (int)config::loadInt("gdxsv", "ax_pause_max", 60);
+	return n;
+}
+int ax_pause_after() {
+	static int n = (int)config::loadInt("gdxsv", "ax_pause_after", 500);
+	return n;
+}
+
 int ax_fake_timesync() {
 	static int n = (int)config::loadInt("gdxsv", "ax_fake_timesync", 0);
 	return n;
@@ -826,17 +846,40 @@ u32 GdxsvBackendRollback::OnSockRead(u32 addr, u32 size) {
 		}
 
 		if (msg.Type() == McsMessage::KeyMsg1) {
-			const int tsFrames = ggpo::timeSyncFrames;
 			const int dsc = gdxsv_ReadMem16(DataStopCounter);
 			const int rbk = ggpo::isInRollback() ? 1 : 0;
-			if (!ggpo::isInRollback() && 0 < dsc && tsFrames > 0 && (frame % 10 == 0 || ax_in_skip_window(frame))) {
+			// s240: gdxsv:ax_drop_after_pause=K -> force a skip + swallow its delivery on the Kth KeyMsg1
+			// after a round-end pause (a KeyMsg1 silence of ax_pause_min frames, default 30). Frame numbers
+			// cannot address that band: round length varies 4k-13k frames between runs.
+			bool ax_pp_hit = false;
+			if (const int k = ax_drop_after_pause(); 0 < k && !ggpo::isInRollback()) {
+				static int ax_last_km1 = -1, ax_pp = -1, ax_km1_seen = 0;
+				const int gap = 0 <= ax_last_km1 ? frame - ax_last_km1 : 0;
+				// A round-end pause is the 39/40-frame no-poll gap (s231 gaps.py), seen only once the round is
+				// under way: the battle boot has gaps of 99 and ~330 deliveries in (s240 drop at f831 = round 1).
+				if (ax_pause_after() <= ++ax_km1_seen && ax_pause_min() <= gap && gap <= ax_pause_max())
+					ax_pp = 0;
+				else if (0 <= ax_pp)
+					ax_pp++;
+				ax_last_km1 = frame;
+				if (ax_pp == k && 0 < dsc) {
+					ax_pp_hit = true;
+					ggpo::timeSyncFrames = 1;
+					ax_log_input("pp_hit", frame, rbk, dsc, skipFrameCount, 0);
+				}
+			}
+			const int tsFrames = ggpo::timeSyncFrames;
+			if (!ggpo::isInRollback() && 0 < dsc && tsFrames > 0 && (frame % 10 == 0 || ax_in_skip_window(frame) || ax_pp_hit)) {
 				ggpo::timeSyncFrames.fetch_sub(1);
 				ggpo::notifySkipInput();
 				DEBUG_LOG(COMMON, "KeyMsg1 frame=%d: skipFrame remaining=%d", frame, tsFrames - 1);
 				ax_log_input("skip_ts", frame, rbk, dsc, skipFrameCount, 0);
 				// s240: with ax_skip_from/to set, only drop inside that window - otherwise the first NATURAL
 				// skip elsewhere takes the drop (s240 lost it at f800, mid-round, which kills the peer: s220).
-				if (0 < ax_drop_deliver() && (ax_skip_from() <= 0 || ax_in_skip_window(frame))) {
+				if (ax_pp_hit) {
+					ax_drop_frame = frame;
+					ax_log_input("drop_arm", frame, rbk, dsc, skipFrameCount, 0);
+				} else if (0 < ax_drop_deliver() && (ax_skip_from() <= 0 || ax_in_skip_window(frame))) {
 					static int ax_skip_seen = 0;
 					if (++ax_skip_seen % ax_drop_deliver() == 0) {
 						ax_drop_frame = frame;
