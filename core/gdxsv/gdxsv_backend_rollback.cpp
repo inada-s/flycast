@@ -105,6 +105,7 @@ void ax_log_other(const char* ev, const char* name, int frame, int rbk, int dsc,
 
 // gdxsv:ax_drop_deliver=N -> on every Nth forced/real timesync skip, suppress the tail delivery of that
 // frame (the `skc+1 == dsc` append). Reproduces "DC2 never left dsc at skc+1" WITHOUT touching game memory.
+// With ax_skip_from/to set, only skips inside that window are counted and dropped (s240).
 int ax_drop_deliver() {
 	static int n = (int)config::loadInt("gdxsv", "ax_drop_deliver", 0);
 	return n;
@@ -833,7 +834,9 @@ u32 GdxsvBackendRollback::OnSockRead(u32 addr, u32 size) {
 				ggpo::notifySkipInput();
 				DEBUG_LOG(COMMON, "KeyMsg1 frame=%d: skipFrame remaining=%d", frame, tsFrames - 1);
 				ax_log_input("skip_ts", frame, rbk, dsc, skipFrameCount, 0);
-				if (0 < ax_drop_deliver()) {
+				// s240: with ax_skip_from/to set, only drop inside that window - otherwise the first NATURAL
+				// skip elsewhere takes the drop (s240 lost it at f800, mid-round, which kills the peer: s220).
+				if (0 < ax_drop_deliver() && (ax_skip_from() <= 0 || ax_in_skip_window(frame))) {
 					static int ax_skip_seen = 0;
 					if (++ax_skip_seen % ax_drop_deliver() == 0) {
 						ax_drop_frame = frame;
