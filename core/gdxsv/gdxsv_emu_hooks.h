@@ -69,6 +69,11 @@ void gdxsv_crash_append_tag(const std::string& logfile, std::vector<http::PostFi
 
 bool gdxsv_is_using_memwatch();
 
+// Debug (gdxsv:sync_log): called by GGPO at each frame boundary to log RNG callers.
+void gdxsv_rng_trace_frame_end(int frame);
+// Debug (gdxsv:rbk_ms): true while random test input must stay released (outside battle).
+bool gdxsv_rbk_hold_input();
+
 // Headless test mode (gdxsv:headless=yes): no window, no graphics API, the
 // null renderer. Meant for automated runs on machines without a display.
 bool gdxsv_headless();

@@ -57,6 +57,9 @@ class Gdxsv {
 	bool StartLiveSpectate(const char* battle_code, int pov);
 	void StopReplay();
 	bool StartRollbackTest(const char* param);
+	bool LoadPatchFile(const std::string& path);
+	// Debug: how many online-patch codes currently hold changed / original / other values.
+	std::string OnlinePatchStatus() const;
 	void WritePatch();
 	int Disk() const { return disk_; }
 	bool WidescreenPatchEnabled() const { return enabled_ && widescreen_patch_enabled_; }

@@ -30,6 +30,11 @@ WIDE = int(os.getenv("WIDE", 0))
 ROM = os.getenv("ROM", r"C:\rom\gdx-disc2\gdx-disc2.gdi")
 FLYCAST = os.getenv("FLYCAST", "/Applications/Flycast-gdxsv.app" if IS_MAC else r"R:\Temp\flycast.exe")
 FLYCAST2 = os.getenv("FLYCAST2")
+PATCH_FILE = os.getenv("PATCH_FILE", "")
+SYNC_LOG = int(os.getenv("SYNC_LOG", 0))
+RBK_MS = os.getenv("RBK_MS", "")
+PATCH_EVERY_FRAME = int(os.getenv("PATCH_EVERY_FRAME", 0))
+FAKE_TIMESYNC = int(os.getenv("FAKE_TIMESYNC", 0))
 
 
 def q(path: str) -> str:
@@ -197,13 +202,27 @@ def conf_window_layout(idx: int):
     return f"--config window:top={y} --config window:left={x} --config window:width={W} --config window:height={H} --config config:rend.WideScreen={wide} --config config:rend.WidescreenGameHacks={wide}"
 
 
+def local_exe(name: str) -> str:
+    """Point at the copy in the working directory explicitly.
+
+    cmd.exe skips the current directory when resolving a bare command name if
+    NoDefaultCurrentDirectoryInExePath is set (it is on some dev machines), so
+    "flycast.exe" alone fails with "not recognized". Prefixing ".\\" always
+    works. macOS already passes a full path.
+    """
+    if IS_MAC or os.path.isabs(name) or os.sep in name or "/" in name:
+        return name
+    return os.path.join(".", name)
+
+
 def run(idx, *arg_list) -> subprocess.Popen:
-    cmd = " ".join(arg_list)
+    exe, *rest = arg_list
+    cmd = " ".join([local_exe(exe), *rest])
     print(cmd)
     new_env = os.environ.copy()
     if not CAPTURE:
         # Debug aid for rollback testing; it has no place in a capture rig.
-        new_env["GGPO_NETWORK_DELAY"] = "16"
+        new_env["GGPO_NETWORK_DELAY"] = os.getenv("GGPO_NETWORK_DELAY", "16")
     # new_env["GGPO_OOP_PERCENT"] = "1"
     if idx == 0:
         # new_env["GGPO_NETWORK_JAM_DELAY"] = "500"
@@ -268,6 +287,25 @@ def run_spectate(idx: int) -> subprocess.Popen:
     )
 
 
+def conf_rbk_debug(idx: int):
+    # PATCH_FILE: gdxsv-reveng patch sheet (e.g. patches/dc2.txt) applied as if delivered by LBS.
+    # SYNC_LOG=1: each instance writes work/flycastN/sync_log.txt for tools/sync_check.py.
+    args = []
+    if PATCH_FILE:
+        args.append(f"--config gdxsv:patch_file={q(os.path.abspath(PATCH_FILE))}")
+    if SYNC_LOG:
+        args.append("--config gdxsv:sync_log=yes")
+    if RBK_MS:
+        # RBK_MS=a,b,c,d: Disk 2 MS id per slot (e.g. 17 Guntank, 11 Gyan, 12 Gogg, 14 Z'Gok)
+        args.append(f"--config gdxsv:rbk_ms={RBK_MS}")
+    if FAKE_TIMESYNC:
+        # FAKE_TIMESYNC=K: peer 1 slows down (timesync skip) every K frames, like a peer running ahead
+        args.append(f"--config gdxsv:rbk_fake_timesync={FAKE_TIMESYNC}")
+    if PATCH_EVERY_FRAME:
+        args.append("--config gdxsv:patch_write_once=no")
+    return " ".join(args)
+
+
 def run_rbk_test(idx: int) -> subprocess.Popen:
     return run(idx,
         FLYCAST_NAME,
@@ -276,12 +314,13 @@ def run_rbk_test(idx: int) -> subprocess.Popen:
         conf_window_layout(idx),
         conf_log(idx),
         f"--config gdxsv:rbk_test={idx+1}/{N}",
+        conf_rbk_debug(idx),
         q(ROM),
     )
 
 
 def run_rbk_test_random(idx: int) -> subprocess.Popen:
-    seed = random.randint(1, 99999)
+    seed = int(os.getenv("SEED", 0)) or random.randint(1, 99999)  # SEED fixes the random inputs for a rerun
     return run(idx,
         FLYCAST_NAME,
         conf_gdxsv(idx),
@@ -289,6 +328,7 @@ def run_rbk_test_random(idx: int) -> subprocess.Popen:
         conf_window_layout(idx),
         conf_log(idx),
         f"--config gdxsv:rbk_test={idx+1}/{N} --config gdxsv:rand_input={seed}",
+        conf_rbk_debug(idx),
         q(ROM),
     )
 
@@ -321,7 +361,7 @@ def run_emu_benchmark(idx: int) -> subprocess.Popen:
     new_env = os.environ.copy()
     new_env["FLYCAST_EMU_BENCHMARK_FRAMES"] = str(EMU_BENCHMARK_FRAMES)
     cmd = " ".join([
-        FLYCAST_NAME,
+        local_exe(FLYCAST_NAME),
         conf_gdxsv(idx),
         conf_volume(idx),
         conf_window_layout(idx),
@@ -377,6 +417,9 @@ def exec_func(func_name: str):
             wdir = prepare_workdir(i+1)
             os.chdir(wdir)
             truncate("flycast.log")
+            for stale in ("sync_log.txt", "rng_trace.txt"):
+                if os.path.exists(stale):
+                    os.remove(stale)
             p = func(i)
             if i == 0:
                 threading.Thread(target=tail, args=(p, "flycast.log"), name="tail", daemon=True).start()

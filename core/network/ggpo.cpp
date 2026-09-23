@@ -92,6 +92,7 @@ static void getLocalInput(MapleInputState inputState[4])
 #include "ui/gui.h"
 #include "ui/gui_util.h"
 #include "hw/mem/mem_watch.h"
+#include "hw/sh4/dyna/blockmanager.h"
 #include <string.h>
 #include <chrono>
 #include <thread>
@@ -397,6 +398,9 @@ static bool load_game_state(unsigned char *buffer, int len)
 					(u32)pages.vram.size(), (u32)pages.elanram.size(), (u32)pages.aram.size());
 	}
 	dc_deserialize(deser);
+	// Draws recorded for the frames being discarded must not leak into the resimulation.
+	gdxsvRngTraceGame.clear();
+	gdxsvRngTraceEffect.clear();
 	if (deser.size() != (u32)len)
 	{
 		ERROR_LOG(NETWORK, "load_game_state len %d used %d", len, (int)deser.size());
@@ -418,6 +422,7 @@ static bool save_game_state(unsigned char **buffer, int *len, int *checksum, int
 {
 	verify(!emu.getSh4Executor()->IsCpuRunning());
 	lastSavedFrame = frame;
+	gdxsv_rng_trace_frame_end(frame);
 	// TODO this is way too much memory
 	size_t allocSize = settings.platform.isNaomi() ? 20_MB : 10_MB;
 	*buffer = (unsigned char *)malloc(allocSize);
@@ -857,6 +862,11 @@ bool nextFrame()
 		ggpo::getCurrentFrame(&frame);
 		if ((frame + localPlayerNum) % 5 == 0) {
 			kcode[0] = ~(randSource() & randInputMask);
+		}
+		if (gdxsv_rbk_hold_input()) {
+			// Outside battle only tap A: menus still advance, but the MS select cursor never
+			// moves, so the ids gdxsv:rbk_ms holds in the slot table are the ones confirmed.
+			kcode[0] |= ~(u32)DC_BTN_A;
 		}
 	}
 

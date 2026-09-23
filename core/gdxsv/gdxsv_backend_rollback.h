@@ -41,6 +41,7 @@ class GdxsvBackendRollback {
 	const std::vector<proto::BattleLogRound> &GetRoundData() { return round_data_; }
 	void ClearReport() { report_.Clear(); }
 	void ToggleNetworkStat() { osd_network_stat_ = !osd_network_stat_; }
+	void OnVBlank();
 
    private:
 	void ApplyPatch(bool first_time);
@@ -53,6 +54,9 @@ class GdxsvBackendRollback {
 	// happen inline where those vectors are written (they're written on every
 	// speculative/rollback simulation pass, not just the final settled one).
 	void FlushConfirmedToSpectatorUplink();
+	// Debug aid for desync hunting (gdxsv:sync_log=1): one line per simulated
+	// frame; the last line of each frame is the settled one to compare across peers.
+	void WriteSyncLog(int frame, int player_count);
 
 	State state_ = State::None;
 	bool is_local_test_ = false;
@@ -63,6 +67,11 @@ class GdxsvBackendRollback {
 	int start_button_counter_ = 0;
 	int recv_delay_ = 0;
 	int port_ = 0;
+	FILE* sync_log_ = nullptr;
+	int sync_log_last_frame_ = -1;
+	std::string sync_log_patch_status_;
+	std::vector<u8> local_test_ms_;  // gdxsv:rbk_ms=a,b,c,d (Disk 2 MS ids held until each battle starts)
+	int fake_timesync_interval_ = 0;  // gdxsv:rbk_fake_timesync=K
 	std::deque<u8> recv_buf_;
 	LbsMessageReader lbs_tx_reader_;
 	proto::P2PMatching matching_;

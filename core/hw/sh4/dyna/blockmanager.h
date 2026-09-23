@@ -6,6 +6,7 @@
 #include "stdclass.h"
 
 #include <memory>
+#include <vector>
 
 typedef void (*DynarecCodeEntryPtr)();
 struct RuntimeBlockInfo;
@@ -69,6 +70,12 @@ struct RuntimeBlockInfo
 void bm_WriteBlockMap(const std::string& file);
 
 DynarecCodeEntryPtr DYNACALL bm_GetCodeByVAddr(u32 addr);
+
+// gdxsv desync debugging: return addresses (PR) of calls into the Disk 2 game RNG
+// (0c05284e) and effect RNG (0c052820), collected while gdxsvRngTraceEnabled.
+extern bool gdxsvRngTraceEnabled;
+extern std::vector<u32> gdxsvRngTraceGame;
+extern std::vector<u32> gdxsvRngTraceEffect;
 RuntimeBlockInfoPtr bm_GetBlock(void* dynarec_code);
 RuntimeBlockInfoPtr bm_GetStaleBlock(void* dynarec_code);
 RuntimeBlockInfoPtr DYNACALL bm_GetBlock(u32 addr);

@@ -2,6 +2,7 @@
 
 #include <xxhash.h>
 #include <zlib.h>
+#include <nowide/cstdio.hpp>
 
 #include <algorithm>
 #include <cmath>
@@ -236,6 +237,9 @@ void Gdxsv::HookVBlank() {
 	if (!ggpo::active()) {
 		// Don't edit memory at vsync if ggpo::active
 		WritePatch();
+	}
+	if (netmode_ == NetMode::McsRollback) {
+		rollback_net_.OnVBlank();
 	}
 }
 
@@ -1015,10 +1019,94 @@ bool Gdxsv::StartRollbackTest(const char *param) {
 
 	if (rollback_net_.StartLocalTest(param)) {
 		netmode_ = NetMode::McsRollback;
+		// Local rollback tests never talk to LBS, so a server-delivered
+		// balance patch can only be exercised by loading it from a file.
+		const auto patch_file = config::loadStr("gdxsv", "patch_file", "");
+		if (!patch_file.empty() && LoadPatchFile(patch_file)) {
+			ApplyOnlinePatch(true);
+		}
 		return true;
 	}
 
 	return false;
+}
+
+// Reads the gdxsv-reveng patch sheet format: "# name" starts a patch, other "#" lines are comments,
+// "size, address, original, changed" adds a code to it.
+bool Gdxsv::LoadPatchFile(const std::string& path) {
+	FILE* fp = nowide::fopen(path.c_str(), "r");
+	if (fp == nullptr) {
+		ERROR_LOG(COMMON, "patch_file: cannot open %s", path.c_str());
+		return false;
+	}
+
+	RestoreOnlinePatch();
+	// Production patches are delivered with write_once set; mirror that by default.
+	const bool write_once = config::loadBool("gdxsv", "patch_write_once", true);
+	proto::GamePatch* patch = nullptr;
+	char line[512];
+	while (std::fgets(line, sizeof(line), fp) != nullptr) {
+		std::string s(line);
+		s.erase(s.find_last_not_of(" \t\r\n") + 1);
+		if (s.empty()) continue;
+		if (s[0] == '#' && (s.size() < 2 || s[1] != ' ')) {
+			continue;  // "#..." without a space is a comment / disabled code, as in gdxsv lbs_local.py and patch.go
+		}
+		if (s[0] == '#') {
+			patch = patch_list_.add_patches();
+			patch->set_name(s.substr(s.find_first_not_of("# ")));
+			patch->set_write_once(write_once);
+			continue;
+		}
+		unsigned size, address, original, changed;
+		if (std::sscanf(s.c_str(), "%u , %x , %x , %x", &size, &address, &original, &changed) != 4) {
+			ERROR_LOG(COMMON, "patch_file: bad line: %s", s.c_str());
+			continue;
+		}
+		if (patch == nullptr) {
+			patch = patch_list_.add_patches();
+			patch->set_name("unnamed");
+			patch->set_write_once(write_once);
+		}
+		auto code = patch->add_codes();
+		code->set_size(size);
+		code->set_address(address);
+		code->set_original(original);
+		code->set_changed(changed);
+	}
+	std::fclose(fp);
+
+	NOTICE_LOG(COMMON, "patch_file: loaded %d patches from %s (write_once=%d)", patch_list_.patches_size(), path.c_str(),
+			   write_once);
+	return true;
+}
+
+std::string Gdxsv::OnlinePatchStatus() const {
+	int changed = 0, original = 0, other = 0;
+	std::string reverted;
+	for (const auto& patch : patch_list_.patches()) {
+		bool patch_reverted = false;
+		for (const auto& code : patch.codes()) {
+			const u32 mask = code.size() == 32 ? 0xffffffffu : code.size() == 16 ? 0xffffu : 0xffu;
+			const u32 v = code.size() == 32 ? gdxsv_ReadMem32(code.address())
+						  : code.size() == 16 ? gdxsv_ReadMem16(code.address())
+											  : gdxsv_ReadMem8(code.address());
+			if (v == (code.changed() & mask)) {
+				changed++;
+			} else if (v == (code.original() & mask)) {
+				original++;
+				patch_reverted = true;
+			} else {
+				other++;
+				patch_reverted = true;
+			}
+		}
+		if (patch_reverted) {
+			reverted += (reverted.empty() ? "" : "|") + patch.name();
+		}
+	}
+	return "changed=" + std::to_string(changed) + " original=" + std::to_string(original) + " other=" +
+		   std::to_string(other) + (reverted.empty() ? "" : " reverted=" + reverted);
 }
 
 Gdxsv gdxsv;

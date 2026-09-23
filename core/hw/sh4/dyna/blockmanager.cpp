@@ -52,6 +52,10 @@ static DynarecCodeEntryPtr DYNACALL bm_GetCode(u32 addr)
 	return rv;
 }
 
+bool gdxsvRngTraceEnabled;
+std::vector<u32> gdxsvRngTraceGame;
+std::vector<u32> gdxsvRngTraceEffect;
+
 // addr must be a virtual address
 // This returns an executable address
 DynarecCodeEntryPtr DYNACALL bm_GetCodeByVAddr(u32 addr)
@@ -61,6 +65,12 @@ DynarecCodeEntryPtr DYNACALL bm_GetCodeByVAddr(u32 addr)
 		Sh4cntx.pc += 4;
 		Sh4cntx.cycle_counter -= 1000000;
 		addr = Sh4cntx.pc;
+	}
+	if (gdxsvRngTraceEnabled) {
+		if ((addr & 0x1fffffff) == 0x0c05284e)
+			gdxsvRngTraceGame.push_back(Sh4cntx.pr);
+		else if ((addr & 0x1fffffff) == 0x0c052820)
+			gdxsvRngTraceEffect.push_back(Sh4cntx.pr);
 	}
 
 	if (!mmu_enabled())

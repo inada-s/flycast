@@ -1,11 +1,14 @@
 #include "gdxsv_backend_rollback.h"
 
+#include <nowide/cstdio.hpp>
+
 #include <algorithm>
 #include <array>
 #include <cmath>
 #include <deque>
 #include <future>
 #include <map>
+#include <sstream>
 #include <string>
 #include <vector>
 
@@ -20,6 +23,7 @@
 #include "input/gamepad_device.h"
 #include "libs.h"
 #include "log/InMemoryListener.h"
+#include "hw/sh4/dyna/blockmanager.h"
 #include "network/ggpo.h"
 #include "network/net_platform.h"
 #include "oslib/http_client.h"
@@ -411,6 +415,12 @@ bool GdxsvBackendRollback::StartLocalTest(const char* param) {
 	}
 
 	Prepare(matching, 20010 + me);
+	local_test_ms_.clear();
+	std::istringstream ms_list(config::loadStr("gdxsv", "rbk_ms", ""));
+	for (std::string id; std::getline(ms_list, id, ',');) {
+		local_test_ms_.push_back(static_cast<u8>(std::stoi(id)));
+	}
+	fake_timesync_interval_ = config::loadInt("gdxsv", "rbk_fake_timesync", 0);
 	state_ = State::StartLocalTest;
 	is_local_test_ = true;
 	gdxsv.maxlag_ = 0;
@@ -475,6 +485,11 @@ void GdxsvBackendRollback::Close() {
 	config::LimitFPS.load();
 	config::AudioBufferSize.load();
 	RestorePatch();
+	if (sync_log_ != nullptr) {
+		std::fclose(sync_log_);
+		sync_log_ = nullptr;
+		gdxsvRngTraceEnabled = false;
+	}
 	osd_network_stat_ = false;
 	error_fast_return_ = false;
 	SaveReplay();
@@ -567,6 +582,7 @@ u32 GdxsvBackendRollback::OnSockRead(u32 addr, u32 size) {
 
 	int frame = 0;
 	ggpo::getCurrentFrame(&frame);
+	WriteSyncLog(frame, matching_.player_count());
 
 	const int disk = gdxsv.Disk();
 	const int InetBuf = disk == 1 ? 0x0c310244 : 0x0c3ab984;
@@ -729,6 +745,12 @@ u32 GdxsvBackendRollback::OnSockRead(u32 addr, u32 size) {
 		}
 
 		if (msg.Type() == McsMessage::KeyMsg1) {
+			// gdxsv:rbk_fake_timesync=K (local test): peer 0 behaves as if GGPO asked it to slow down
+			// every K frames, i.e. it runs extra vblanks that deliver no input, like a peer that is ahead.
+			if (is_local_test_ && fake_timesync_interval_ > 0 && matching_.peer_id() == 0 && !ggpo::isInRollback() &&
+				frame % fake_timesync_interval_ == 0 && ggpo::timeSyncFrames == 0) {
+				ggpo::timeSyncFrames = 1;
+			}
 			const int tsFrames = ggpo::timeSyncFrames;
 			if (!ggpo::isInRollback() && 0 < gdxsv_ReadMem16(DataStopCounter) && tsFrames > 0 && frame % 10 == 0) {
 				ggpo::timeSyncFrames.fetch_sub(1);
@@ -1021,6 +1043,111 @@ void GdxsvBackendRollback::SaveReplay() const {
 			ERROR_LOG(COMMON, "SaveReplay: upload Failed staus: %d", rc);
 		}
 	}).detach();
+}
+
+void gdxsv_rng_trace_frame_end(int frame) {
+	// GGPO saves the state at every frame boundary, so the RNG calls since the previous save are
+	// exactly GGPO frame frame-1. A rollback discards pending calls (load_game_state) and the
+	// resimulated frames are written again; the last line of a frame is the settled one.
+	static FILE* fp = nullptr;
+	if (!gdxsvRngTraceEnabled) {
+		return;
+	}
+	if (fp == nullptr) {
+		fp = nowide::fopen("rng_trace.txt", "w");
+		if (fp == nullptr) {
+			gdxsvRngTraceEnabled = false;
+			return;
+		}
+		std::fputs("# frame g:<game RNG return addresses> e:<effect RNG return addresses>\n", fp);
+	}
+	std::fprintf(fp, "%d g:", frame - 1);
+	for (u32 pr : gdxsvRngTraceGame) std::fprintf(fp, "%x,", pr & 0x1fffffff);
+	std::fputs(" e:", fp);
+	for (u32 pr : gdxsvRngTraceEffect) std::fprintf(fp, "%x,", pr & 0x1fffffff);
+	std::fputc('\n', fp);
+	gdxsvRngTraceGame.clear();
+	gdxsvRngTraceEffect.clear();
+	if (frame % 60 == 0) {
+		std::fflush(fp);
+	}
+}
+
+bool gdxsv_rbk_hold_input() {
+	return gdxsv.Disk() == 2 && !config::loadStr("gdxsv", "rbk_ms", "").empty() &&
+		   !(gdxsv_ReadMem8(0x0c3d16d4) == 2 && gdxsv_ReadMem8(0x0c3d16d5) == 7);
+}
+
+void GdxsvBackendRollback::OnVBlank() {
+	// gdxsv:rbk_ms: hold the per-slot MS ids until the battle starts, as the game's MS select
+	// writes them late. Vblanks are in emulated time, so every peer (and every resimulation)
+	// writes at the same points.
+	if (local_test_ms_.empty() || gdxsv.Disk() != 2) {
+		return;
+	}
+	const bool in_battle = gdxsv_ReadMem8(0x0c3d16d4) == 2 && gdxsv_ReadMem8(0x0c3d16d5) == 7;
+	static bool was_in_battle = false;
+	if (in_battle != was_in_battle) {
+		was_in_battle = in_battle;
+		char buf[128] = {0};
+		for (int i = 0; i < 16; ++i) {
+			snprintf(buf + i * 3, 4, "%02x ", gdxsv_ReadMem8(0x0c3d19d4 + 0x108 + i));
+		}
+		NOTICE_LOG(COMMON, "rbk_ms: in_battle=%d S[108..117]=%s PW ms=%d,%d,%d,%d", in_battle, buf,
+				   gdxsv_ReadMem8(0x0c3d1cd4 + 0x1f02), gdxsv_ReadMem8(0x0c3d1cd4 + 0x2000 + 0x1f02),
+				   gdxsv_ReadMem8(0x0c3d1cd4 + 0x4000 + 0x1f02), gdxsv_ReadMem8(0x0c3d1cd4 + 0x6000 + 0x1f02));
+	}
+	if (in_battle) {
+		return;
+	}
+	for (int k = 0; k < static_cast<int>(local_test_ms_.size()) && k < 4; ++k) {
+		gdxsv_WriteMem8(0x0c3d19d4 + 0x108 + 2 * k, local_test_ms_[k]);
+		gdxsv_WriteMem8(0x0c3d19d4 + 0x109 + 2 * k, local_test_ms_[k]);
+	}
+}
+
+void GdxsvBackendRollback::WriteSyncLog(int frame, int player_count) {
+	if (frame == sync_log_last_frame_ || !ggpo::active()) {
+		return;
+	}
+	sync_log_last_frame_ = frame;
+	if (sync_log_ == nullptr) {
+		if (!config::loadBool("gdxsv", "sync_log", false)) {
+			return;
+		}
+		sync_log_ = nowide::fopen("sync_log.txt", "w");
+		if (sync_log_ == nullptr) {
+			return;
+		}
+		std::fprintf(sync_log_, "# frame rollback rng rng2 [hp x y z]*%d  (RNG callers: rng_trace.txt)\n", player_count);
+		gdxsvRngTraceGame.clear();
+		gdxsvRngTraceEffect.clear();
+		gdxsvRngTraceEnabled = true;
+	}
+
+	// Disk 2 only: game RNG 0c3abf40 (u16), effect RNG 0c3abf42 (u16), player work 0c3d1cd4 + i*0x2000.
+	if (gdxsv.Disk() != 2) {
+		return;
+	}
+	std::fprintf(sync_log_, "%d %d %04x %04x", frame, ggpo::isInRollback() ? 1 : 0, gdxsv_ReadMem16(0x0c3abf40),
+				 gdxsv_ReadMem16(0x0c3abf42));
+	for (int i = 0; i < player_count; ++i) {
+		const u32 pw = 0x0c3d1cd4 + i * 0x2000;
+		std::fprintf(sync_log_, " %d %08x %08x %08x", gdxsv_ReadMem16(pw + 0x182), gdxsv_ReadMem32(pw + 0x20),
+					 gdxsv_ReadMem32(pw + 0x24), gdxsv_ReadMem32(pw + 0x28));
+	}
+	std::fputc('\n', sync_log_);
+
+	// A write_once patch is never rewritten, so note when guest loads put original values back.
+	const auto patch_status = gdxsv.OnlinePatchStatus();
+	if (patch_status != sync_log_patch_status_) {
+		sync_log_patch_status_ = patch_status;
+		std::fprintf(sync_log_, "# patch %d %s\n", frame, patch_status.c_str());
+		NOTICE_LOG(COMMON, "patch status frame=%d %s", frame, patch_status.c_str());
+	}
+	if (frame % 60 == 0) {
+		std::fflush(sync_log_);  // local tests are often killed rather than closed
+	}
 }
 
 void GdxsvBackendRollback::ApplyPatch(bool first_time) {
