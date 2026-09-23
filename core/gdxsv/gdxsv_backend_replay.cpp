@@ -13,6 +13,7 @@
 #include <thread>
 
 #include "SDL_events.h"
+#include "cfg/cfg.h"
 #include "cfg/option.h"
 #include "audio/audiostream.h"
 #include "emulator.h"
@@ -455,6 +456,42 @@ void GdxsvBackendReplay::BeginLoadingHud() {
 	ctrl_loading_wait_frames_ = 0;
 }
 
+static void ReplaceReplayPatches(proto::BattleLogFile& log, const std::string& path) {
+	if (path.empty()) return;
+	log.clear_patches();
+	if (path != "none") {
+		FILE* f = nowide::fopen(path.c_str(), "r");
+		if (f == nullptr) {
+			ERROR_LOG(COMMON, "ReplayPatches: cannot open %s", path.c_str());
+			return;
+		}
+		char line[512];
+		proto::GamePatch* cur = nullptr;
+		while (std::fgets(line, sizeof(line), f) != nullptr) {
+			std::string l(line);
+			while (!l.empty() && std::isspace(static_cast<unsigned char>(l.back()))) l.pop_back();
+			if (l.empty()) continue;
+			if (l[0] == '#') {
+				cur = log.add_patches();
+				cur->set_game_disk(log.game_disk());
+				cur->set_name(l.substr(l.find_first_not_of("# ")));
+				continue;
+			}
+			unsigned int size, addr, orig, changed;
+			if (cur != nullptr && std::sscanf(l.c_str(), "%u , %x , %x , %x", &size, &addr, &orig, &changed) == 4) {
+				auto* c = cur->add_codes();
+				c->set_size(size);
+				c->set_address(addr);
+				c->set_original(orig);
+				c->set_changed(changed);
+			}
+		}
+		std::fclose(f);
+	}
+	for (const auto& p : log.patches()) NOTICE_LOG(COMMON, "ReplayPatches: %s (%d codes)", p.name().c_str(), p.codes_size());
+	NOTICE_LOG(COMMON, "ReplayPatches: %s -> %d patches", path.c_str(), log.patches_size());
+}
+
 // Restore disc-2 MS-selection roles after loading another round's savestate.
 // start_msg_randoms contains the post-draw RNG state; its high byte is the
 // random value used by 0x0c04816c to choose the map selector.
@@ -747,8 +784,11 @@ void GdxsvBackendReplay::OnNextFrameInternal() {
 	auto need_cancel = [&]() -> bool {
 		return ctrl_commands_.contains(ReplayCtrlCommand::SaveFirstFrame) || state_ == State::End;
 	};
+	// Reverse-engineering runs: gdxsv:ReplaySeekStates=no skips the seek savestates (10 MB per 60 frames, a
+	// long headless replay ran out of memory); seeking back is then unavailable.
+	static const bool seek_states = config::loadStr("gdxsv", "ReplaySeekStates", "yes") != "no";
 	auto regular_save_state = [&]() {
-		if ((IsInGame() || IsInBriefing()) && gdxsv_save_state.LastSavedFrame() + save_interval <= key_msg_count_ && recv_buf_.empty() && !takeover_) {
+		if (seek_states && (IsInGame() || IsInBriefing()) && gdxsv_save_state.LastSavedFrame() + save_interval <= key_msg_count_ && recv_buf_.empty() && !takeover_) {
 			gdxsv_save_state.SaveState(key_msg_count_);
 		}
 	};
@@ -1928,6 +1968,10 @@ bool GdxsvBackendReplay::Start() {
 		PrintDisconnectionSummary();
 	}
 
+	// Reverse-engineering runs: gdxsv:ReplayPatches=<file> replaces the patches recorded in the replay with the
+	// ones in <file> (patches/dc2.txt format: "# name" starts a patch, then "size, addr, original, changed" hex lines);
+	// gdxsv:ReplayPatches=none plays the replay with no online patch. Unset (default) = the replay's own patches.
+	ReplaceReplayPatches(log_file_, config::loadStr("gdxsv", "ReplayPatches", ""));
 	NOTICE_LOG(COMMON, "battle_code = %s", log_file_.battle_code().c_str());
 	NOTICE_LOG(COMMON, "users = %d", log_file_.users_size());
 	NOTICE_LOG(COMMON, "patch_size = %d", log_file_.patches_size());
@@ -2261,7 +2305,15 @@ void GdxsvBackendReplay::ProcessMcsMessage(const McsMessage& msg) {
 		const int k_rnd0 = gdxsv.Disk() == 1 ? 0x0c310800 : 0x0c3abf40;
 		const auto random_data = gdxsv_ReadMem16(k_rnd0);
 		if (start_msg_count_ - 1 < log_file_.start_msg_randoms_size()) {
-			verify(random_data == (log_file_.start_msg_randoms(start_msg_count_ - 1) & 0xffffu));
+			const u16 rec = log_file_.start_msg_randoms(start_msg_count_ - 1) & 0xffffu;
+			// Reverse-engineering runs with gdxsv:ReplayPatches set: other patches move the RNG, so start every round
+			// from the recorded seed (each round replays from the recorded input index and seed) instead of aborting.
+			if (random_data != rec && !config::loadStr("gdxsv", "ReplayPatches", "").empty()) {
+				NOTICE_LOG(COMMON, "ReplayPatches: round %d rnd %04x -> recorded %04x", start_msg_count_, random_data, rec);
+				gdxsv_WriteMem16(k_rnd0, rec);
+			} else {
+				verify(random_data == rec);
+			}
 		} else if (save_converted_log_) {
 			log_file_.add_start_msg_randoms(random_data);
 		}
