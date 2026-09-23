@@ -54,8 +54,18 @@ static DynarecCodeEntryPtr DYNACALL bm_GetCode(u32 addr)
 
 // addr must be a virtual address
 // This returns an executable address
+bool gdxsvRngTraceEnabled;
+std::vector<u32> gdxsvRngTraceGame;
+std::vector<u32> gdxsvRngTraceEffect;
+
 DynarecCodeEntryPtr DYNACALL bm_GetCodeByVAddr(u32 addr)
 {
+	if (gdxsvRngTraceEnabled) {
+		if ((addr & 0x1fffffff) == 0x0c05284e)
+			gdxsvRngTraceGame.push_back(Sh4cntx.pr);
+		else if ((addr & 0x1fffffff) == 0x0c052820)
+			gdxsvRngTraceEffect.push_back(Sh4cntx.pr);
+	}
 	// Hack: skip bsr render_current_frame during rollback
 	if (addr == settings.gdxsv.skipRenderingAddr) {
 		Sh4cntx.pc += 4;

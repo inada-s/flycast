@@ -59,6 +59,10 @@ class Gdxsv {
 	bool StartLiveSpectate(const char* battle_code, int pov);
 	void StopReplay();
 	bool StartRollbackTest(const char* param);
+	// ai-analysis: gdxsv:rbk_patch_file=<patches/dc2.txt> applies a reveng patch sheet in rbk_test as LBS delivers it.
+	bool LoadPatchSheet(const std::string& path);
+	// ai-analysis: online-patch codes holding changed / original / other values (sync log).
+	std::string OnlinePatchStatus() const;
 	void WritePatch();
 	int Disk() const { return disk_; }
 	bool WidescreenPatchEnabled() const { return enabled_ && widescreen_patch_enabled_; }

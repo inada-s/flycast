@@ -6,6 +6,7 @@
 #include <deque>
 #include <future>
 #include <map>
+#include <nowide/cstdio.hpp>
 #include <string>
 #include <vector>
 
@@ -14,6 +15,7 @@
 #include "gdxsv.h"
 #include "gdxsv_round_counters.h"
 #include "gdxsv_emu_hooks.h"
+#include "hw/sh4/dyna/blockmanager.h"
 #include "gdxsv.pb.h"
 #include "imgui/imgui.h"
 #include "imgui/imgui_internal.h"
@@ -135,6 +137,44 @@ int ax_pause_after() {
 int ax_fake_timesync() {
 	static int n = (int)config::loadInt("gdxsv", "ax_fake_timesync", 0);
 	return n;
+}
+
+// gdxsv:ax_sync_log=<path> (Disk 2): one line per KeyMsg poll of a ggpo frame: "frame rollback mode rng rng2 [hp x y z]*n"
+// (mode = game mode bytes 0c3d16d4/5, 0207 = battle).
+// A rolled-back frame is written again; its last line is the settled one to compare across peers
+// (reveng tools/p2p_sync_test.py). "# patch" lines note online-patch codes that no longer hold their value.
+// <path>.rng: game / effect RNG return addresses per ggpo frame (gdxsv_rng_trace_frame_end).
+void ax_sync_log(int frame, int player_count) {
+	static FILE* fp = []() -> FILE* {
+		const auto path = config::loadStr("gdxsv", "ax_sync_log", "");
+		if (path.empty()) return nullptr;
+		FILE* f = nowide::fopen(path.c_str(), "w");
+		if (f != nullptr) {
+			std::fputs("# frame rollback rng rng2 [hp x y z]*players\n", f);
+			gdxsvRngTraceGame.clear();
+			gdxsvRngTraceEffect.clear();
+			gdxsvRngTraceEnabled = true;
+		}
+		return f;
+	}();
+	static int last_frame = -1;
+	static std::string last_status;
+	if (fp == nullptr || frame == last_frame || !ggpo::active() || gdxsv.Disk() != 2) return;
+	last_frame = frame;
+	std::fprintf(fp, "%d %d %02x%02x %04x %04x", frame, ggpo::isInRollback() ? 1 : 0, gdxsv_ReadMem8(0x0c3d16d4),
+				 gdxsv_ReadMem8(0x0c3d16d5), gdxsv_ReadMem16(0x0c3abf40), gdxsv_ReadMem16(0x0c3abf42));
+	for (int i = 0; i < player_count; ++i) {
+		const u32 pw = 0x0c3d1cd4 + i * 0x2000;
+		std::fprintf(fp, " %d %08x %08x %08x", gdxsv_ReadMem16(pw + 0x182), gdxsv_ReadMem32(pw + 0x20), gdxsv_ReadMem32(pw + 0x24),
+					 gdxsv_ReadMem32(pw + 0x28));
+	}
+	std::fputc('\n', fp);
+	const auto status = gdxsv.OnlinePatchStatus();
+	if (status != last_status) {
+		last_status = status;
+		std::fprintf(fp, "# patch %d %s\n", frame, status.c_str());
+	}
+	if (frame % 60 == 0) std::fflush(fp);  // rig peers are killed, not closed
 }
 
 // how many "frames ahead" the faked timesync reports (GGPO's own event sets the same field)
@@ -667,6 +707,7 @@ u32 GdxsvBackendRollback::OnSockRead(u32 addr, u32 size) {
 
 	int frame = 0;
 	ggpo::getCurrentFrame(&frame);
+	ax_sync_log(frame, matching_.player_count());
 
 	const int disk = gdxsv.Disk();
 	const int InetBuf = disk == 1 ? 0x0c310244 : 0x0c3ab984;
@@ -1995,3 +2036,26 @@ void drawNetworkStat(const proto::P2PMatching& matching) {
 	ImGui::PopFont();
 }
 }  // namespace
+
+// ai-analysis (gdxsv:ax_sync_log): called by GGPO's save_game_state. The RNG calls since the previous save are
+// exactly ggpo frame frame-1; load_game_state drops pending calls, resimulated frames are written again (last wins).
+void gdxsv_rng_trace_frame_end(int frame) {
+	static FILE* fp = nullptr;
+	if (!gdxsvRngTraceEnabled) return;
+	if (fp == nullptr) {
+		fp = nowide::fopen((config::loadStr("gdxsv", "ax_sync_log", "") + ".rng").c_str(), "w");
+		if (fp == nullptr) {
+			gdxsvRngTraceEnabled = false;
+			return;
+		}
+		std::fputs("# frame g:<game RNG return addresses> e:<effect RNG return addresses>\n", fp);
+	}
+	std::fprintf(fp, "%d g:", frame - 1);
+	for (u32 pr : gdxsvRngTraceGame) std::fprintf(fp, "%x,", pr & 0x1fffffff);
+	std::fputs(" e:", fp);
+	for (u32 pr : gdxsvRngTraceEffect) std::fprintf(fp, "%x,", pr & 0x1fffffff);
+	std::fputc('\n', fp);
+	gdxsvRngTraceGame.clear();
+	gdxsvRngTraceEffect.clear();
+	if (frame % 60 == 0) std::fflush(fp);
+}

@@ -6,6 +6,7 @@
 #include "stdclass.h"
 
 #include <memory>
+#include <vector>
 
 typedef void (*DynarecCodeEntryPtr)();
 struct RuntimeBlockInfo;
@@ -112,3 +113,9 @@ inline static u32 bm_getRamOffset(void *p) {
 }
 
 #endif
+
+// ai-analysis (gdxsv:ax_sync_log): return addresses (PR) of calls into the Disk 2 game RNG (0c05284e) and
+// effect RNG (0c052820), collected while gdxsvRngTraceEnabled.
+extern bool gdxsvRngTraceEnabled;
+extern std::vector<u32> gdxsvRngTraceGame;
+extern std::vector<u32> gdxsvRngTraceEffect;

@@ -88,6 +88,7 @@ static void getLocalInput(MapleInputState inputState[4])
 
 #ifdef USE_GGPO
 #include "ggponet.h"
+#include "hw/sh4/dyna/blockmanager.h"
 #include "emulator.h"
 #include "ui/gui.h"
 #include "ui/gui_util.h"
@@ -374,6 +375,9 @@ static bool advance_frame(int)
 static bool load_game_state(unsigned char *buffer, int len)
 {
 	INFO_LOG(NETWORK, "load_game_state");
+	// ai-analysis (gdxsv:ax_sync_log): RNG calls of the discarded frames must not leak into the resimulation
+	gdxsvRngTraceGame.clear();
+	gdxsvRngTraceEffect.clear();
 	ggpo::getCurrentFrame(&seekToFrame);
 
 	rend_start_rollback();
@@ -418,6 +422,7 @@ static bool save_game_state(unsigned char **buffer, int *len, int *checksum, int
 {
 	verify(!emu.getSh4Executor()->IsCpuRunning());
 	lastSavedFrame = frame;
+	gdxsv_rng_trace_frame_end(frame);
 	// TODO this is way too much memory
 	size_t allocSize = settings.platform.isNaomi() ? 20_MB : 10_MB;
 	*buffer = (unsigned char *)malloc(allocSize);

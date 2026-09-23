@@ -83,3 +83,6 @@ int gdxsv_exit_code();
 // GPU or audio device to release, and the normal SDL teardown path can crash
 // on the way out, which would mask the test's real result.
 [[noreturn]] void gdxsv_headless_exit(int code);
+
+// ai-analysis (gdxsv:ax_sync_log): GGPO frame boundary, writes the RNG callers of the finished frame.
+void gdxsv_rng_trace_frame_end(int frame);
