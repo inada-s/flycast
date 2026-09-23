@@ -28,7 +28,7 @@ struct Block
 	u32 addr;	// physical block start
 	u32 endpc;	// physical, one past the last instruction
 	u32 exitpc;	// physical, the branch instruction that ends the block
-	u32 pad;
+	u32 first;	// FrameCount at the first recorded entry (valid when count != 0)
 	u64 count;
 };
 

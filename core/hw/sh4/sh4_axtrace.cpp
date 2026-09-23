@@ -200,7 +200,8 @@ void DYNACALL enter(Block *b)
 		prev = nullptr;
 		return;
 	}
-	b->count++;
+	if (b->count++ == 0)
+		b->first = FrameCount;
 	if (prev != nullptr)
 		bumpEdge(prev->exitpc, b->addr);
 	prev = b;
@@ -254,7 +255,7 @@ int save(const char *path)
 	{
 		if (b.count == 0)
 			continue;
-		std::fprintf(f, "B %08x %08x %llu\n", b.addr, b.endpc, (unsigned long long)b.count);
+		std::fprintf(f, "B %08x %08x %llu %u\n", b.addr, b.endpc, (unsigned long long)b.count, b.first);
 		n++;
 	}
 	for (const Edge& e : edges)
