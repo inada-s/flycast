@@ -7,7 +7,7 @@
 // does) gets nothing, so scripted runs should call flycast.trace.save(path) themselves.
 //
 // What it records, at every dynarec block ENTRY (x64 recompiler only):
-//   count[block]++            -> log line "B <blockstart> <endpc> <count>"
+//   count[block]++            -> log line "B <blockstart> <endpc> <count> <first FrameCount> <first vblank> <code hash> <code changes>"
 //   edge[prev.exitpc, block]  -> log line "E <branchpc> <blockstart> <count>"
 // Addresses are physical guest addresses (0x0c......), the same space the analysis db uses.
 // <endpc> is one past the last instruction of the block; <branchpc> is the address of the branch
@@ -29,7 +29,10 @@ struct Block
 	u32 endpc;	// physical, one past the last instruction
 	u32 exitpc;	// physical, the branch instruction that ends the block
 	u32 first;	// FrameCount at the first recorded entry (valid when count != 0)
+	u32 firstv;	// vblank() count at the first recorded entry (s388: FrameCount stays 1 for ~250 vblanks at boot)
 	u64 count;
+	u32 code;		// s388: FNV-1a of the code bytes at the first compile
+	u32 codeChanges;	// recompiles of the same addr+size whose code hash differed from `code`
 };
 
 // true when switched on by env (fixed at first call)
@@ -45,6 +48,8 @@ void DYNACALL enter(Block *b);
 void start(const char *label);
 void stop();
 void mark(const char *text);
+// s388: called once per vblank (spg); the clock for Block::firstv and "# vmark" lines
+void vblank();
 void clear();
 // writes the log (format v1, what ax.py ingest reads); returns the number of B+E lines, -1 on error
 int save(const char *path);
