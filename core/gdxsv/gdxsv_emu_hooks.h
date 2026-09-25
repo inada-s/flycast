@@ -73,6 +73,10 @@ bool gdxsv_is_using_memwatch();
 // null renderer. Meant for automated runs on machines without a display.
 bool gdxsv_headless();
 
+// ai-analysis: gdxsv:ax_rand_hold_a=1 -> random test input (gdxsv:rand_input) taps only A outside a
+// Disk 2 battle, like the 2026-09-23 reference rig that caught the #30 round-start desync.
+bool gdxsv_ax_rand_hold_a();
+
 // Exit status the process should end with. gdxsv sets it from local test
 // results so a harness can tell a finished match from a broken one.
 void gdxsv_set_exit_code(int code);

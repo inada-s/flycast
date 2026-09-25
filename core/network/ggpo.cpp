@@ -863,6 +863,8 @@ bool nextFrame()
 		if ((frame + localPlayerNum) % 5 == 0) {
 			kcode[0] = ~(randSource() & randInputMask);
 		}
+		if (gdxsv_ax_rand_hold_a())
+			kcode[0] |= ~(u32)DC_BTN_A;
 	}
 
 	// may call save_game_state
