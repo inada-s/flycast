@@ -21,6 +21,8 @@ static bool rec;
 static const char *exitLog;
 static std::string runLabel;
 static std::vector<std::string> marks;
+static std::vector<std::string> vmarks;
+static u32 vblanks;
 
 static std::deque<Block> blocks;			// stable addresses: the codegen holds pointers into this
 static std::unordered_map<u64, Block *> byKey;	// (vaddr << 32) | sh4_code_size -> record
@@ -100,18 +102,39 @@ static u32 exitOffset(u32 vaddr, u32 size)
 	return size >= 2 ? size - 2 : 0;
 }
 
+// s388: FNV-1a over the block's code bytes as compiled (little-endian), so ax.py can tell code the
+// Ghidra image does not hold (boot code overwritten later, overlays) without racing RAM dumps
+static u32 codeHash(u32 vaddr, u32 size)
+{
+	u32 h = 0x811c9dc5u;
+	for (u32 i = 0; i + 1 < size; i += 2)
+	{
+		u16 op = IReadMem16(vaddr + i);
+		h = (h ^ (op & 0xff)) * 0x01000193u;
+		h = (h ^ (op >> 8)) * 0x01000193u;
+	}
+	return h;
+}
+
 Block *registerBlock(const RuntimeBlockInfo *rbi)
 {
 	u64 key = ((u64)rbi->vaddr << 32) | rbi->sh4_code_size;
+	u32 h = codeHash(rbi->vaddr, rbi->sh4_code_size);
 	auto it = byKey.find(key);
 	if (it != byKey.end())
+	{
+		if (it->second->code != h)
+			it->second->codeChanges++;
 		return it->second;
+	}
 	blocks.push_back(Block());
 	Block *b = &blocks.back();
 	b->addr = rbi->addr;
 	b->endpc = rbi->addr + rbi->sh4_code_size;
 	b->exitpc = rbi->addr + exitOffset(rbi->vaddr, rbi->sh4_code_size);
 	b->count = 0;
+	b->code = h;
+	b->codeChanges = 0;
 	byKey[key] = b;
 	return b;
 }
@@ -201,7 +224,10 @@ void DYNACALL enter(Block *b)
 		return;
 	}
 	if (b->count++ == 0)
+	{
 		b->first = FrameCount;
+		b->firstv = vblanks;
+	}
 	if (prev != nullptr)
 		bumpEdge(prev->exitpc, b->addr);
 	prev = b;
@@ -225,6 +251,13 @@ void mark(const char *text)
 	char line[256];
 	std::snprintf(line, sizeof(line), "%u %s", FrameCount, text != nullptr ? text : "");
 	marks.push_back(line);
+	std::snprintf(line, sizeof(line), "%u %s", vblanks, text != nullptr ? text : "");
+	vmarks.push_back(line);
+}
+
+void vblank()
+{
+	vblanks++;
 }
 
 void clear()
@@ -236,6 +269,7 @@ void clear()
 	nedges = 0;
 	edgesDropped = 0;
 	marks.clear();
+	vmarks.clear();
 	prev = nullptr;
 }
 
@@ -250,12 +284,15 @@ int save(const char *path)
 			runLabel.c_str(), FrameCount, (unsigned long long)edgesDropped);
 	for (const std::string& m : marks)
 		std::fprintf(f, "# mark %s\n", m.c_str());
+	for (const std::string& m : vmarks)
+		std::fprintf(f, "# vmark %s\n", m.c_str());
 	int n = 0;
 	for (const Block& b : blocks)
 	{
 		if (b.count == 0)
 			continue;
-		std::fprintf(f, "B %08x %08x %llu %u\n", b.addr, b.endpc, (unsigned long long)b.count, b.first);
+		std::fprintf(f, "B %08x %08x %llu %u %u %08x %u\n", b.addr, b.endpc, (unsigned long long)b.count, b.first, b.firstv,
+				b.code, b.codeChanges);
 		n++;
 	}
 	for (const Edge& e : edges)
