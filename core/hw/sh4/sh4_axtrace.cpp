@@ -131,7 +131,9 @@ Block *registerBlock(const RuntimeBlockInfo *rbi)
 	Block *b = &blocks.back();
 	b->addr = rbi->addr;
 	b->endpc = rbi->addr + rbi->sh4_code_size;
-	b->exitpc = rbi->addr + exitOffset(rbi->vaddr, rbi->sh4_code_size);
+	u32 exitOff = exitOffset(rbi->vaddr, rbi->sh4_code_size);
+	b->exitpc = rbi->addr + exitOff;
+	b->exitop = IReadMem16(rbi->vaddr + exitOff);
 	b->count = 0;
 	b->code = h;
 	b->codeChanges = 0;
@@ -291,8 +293,8 @@ int save(const char *path)
 	{
 		if (b.count == 0)
 			continue;
-		std::fprintf(f, "B %08x %08x %llu %u %u %08x %u\n", b.addr, b.endpc, (unsigned long long)b.count, b.first, b.firstv,
-				b.code, b.codeChanges);
+		std::fprintf(f, "B %08x %08x %llu %u %u %08x %u %08x %04x\n", b.addr, b.endpc, (unsigned long long)b.count,
+				b.first, b.firstv, b.code, b.codeChanges, b.exitpc, b.exitop);
 		n++;
 	}
 	for (const Edge& e : edges)
