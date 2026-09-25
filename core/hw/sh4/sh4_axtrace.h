@@ -7,7 +7,7 @@
 // does) gets nothing, so scripted runs should call flycast.trace.save(path) themselves.
 //
 // What it records, at every dynarec block ENTRY (x64 recompiler only):
-//   count[block]++            -> log line "B <blockstart> <endpc> <count> <first FrameCount> <first vblank> <code hash> <code changes>"
+//   count[block]++            -> log line "B <blockstart> <endpc> <count> <first FrameCount> <first vblank> <code hash> <code changes> <exitpc> <exit opcode>"
 //   edge[prev.exitpc, block]  -> log line "E <branchpc> <blockstart> <count>"
 // Addresses are physical guest addresses (0x0c......), the same space the analysis db uses.
 // <endpc> is one past the last instruction of the block; <branchpc> is the address of the branch
@@ -33,6 +33,7 @@ struct Block
 	u64 count;
 	u32 code;		// s388: FNV-1a of the code bytes at the first compile
 	u32 codeChanges;	// recompiles of the same addr+size whose code hash differed from `code`
+	u16 exitop;		// s388: opcode at exitpc as compiled (classifies edges out of code the image lacks)
 };
 
 // true when switched on by env (fixed at first call)
