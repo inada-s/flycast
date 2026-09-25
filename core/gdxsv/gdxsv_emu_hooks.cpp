@@ -695,6 +695,11 @@ bool gdxsv_headless() {
 	return config::loadBool("gdxsv", "headless", false);
 }
 
+bool gdxsv_ax_rand_hold_a() {
+	static const bool on = config::loadBool("gdxsv", "ax_rand_hold_a", false);
+	return on && gdxsv.Disk() == 2 && !(gdxsv_ReadMem8(0x0c3d16d4) == 2 && gdxsv_ReadMem8(0x0c3d16d5) == 7);
+}
+
 static int gdxsv_exit_code_ = 0;
 
 void gdxsv_set_exit_code(int code) {
