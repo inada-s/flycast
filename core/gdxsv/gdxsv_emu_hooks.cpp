@@ -207,9 +207,9 @@ void gdxsv_emu_loadstate(int slot) {
 
 		if (!replay.empty() && slot == 99) {
 			auto replay_pov = config::loadInt("gdxsv", "ReplayPOV", 1);
-			// 4-player replay from the command line (gdxsv:ReplayFourScreen=yes):
-			// host it, or fall back to a single screen.
-			if (gdxsv_multi_pov_four_screen_requested() && !gdxsv_headless()) {
+			// Command-line four-screen playback is a one-shot request, not a
+			// saved preference or an override of the browser's replay buttons.
+			if (gdxsv_multi_pov_take_four_screen_request() && !gdxsv_headless()) {
 				std::vector<uint8_t> hosted;
 				if (gdxsv_multi_pov_begin_host_session(replay, hosted)) {
 					if (gdxsv.StartReplayBuffer(hosted, 0)) {

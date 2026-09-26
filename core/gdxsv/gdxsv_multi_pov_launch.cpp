@@ -7,9 +7,9 @@
 #include <vector>
 
 #include "cfg/cfg.h"
-#include "cfg/option.h"
 #include "gdxsv.pb.h"
 #include "gdxsv_multi_pov.h"
+#include "gdxsv_multi_pov_window.h"
 #include "log/LogManager.h"
 #include <nowide/cstdio.hpp>
 
@@ -150,9 +150,14 @@ void gdxsv_multi_pov_compute_grid(const GdxsvMultiPovRect& group, GdxsvMultiPovR
 	out[3] = {group.x + left_w, group.y + top_h, right_w, bottom_h};
 }
 
-bool gdxsv_multi_pov_four_screen_requested() {
-	if (0 < ScreenArg()) return false;
-	return config::GdxReplayFourScreen.get();
+bool gdxsv_multi_pov_take_four_screen_request() {
+	if (!config::isTransient("gdxsv", "ReplayFourScreen") ||
+		!config::loadBool("gdxsv", "ReplayFourScreen", false))
+		return false;
+	// Consume before trying to host: later slot-99 loads (including browser
+	// button clicks) must not launch this command-line request again.
+	config::setTransient("gdxsv", "ReplayFourScreen", "no");
+	return ScreenArg() == 0;
 }
 
 int gdxsv_multi_pov_guest_pov() {
@@ -169,6 +174,11 @@ std::string gdxsv_multi_pov_log_file_name() {
 
 bool gdxsv_multi_pov_begin_host_session(const std::string& replay_source, std::vector<uint8_t>& replay_out) {
 	g_spawned_guests = 0;
+
+	if (!gdxsv_multi_pov_window_available()) {
+		WARN_LOG(COMMON, "multi-pov: four-screen playback is unavailable without a supported desktop window");
+		return false;
+	}
 
 	if (!LoadReplaySource(replay_source, replay_out)) return false;
 	if (!IsFourPlayerBattle(replay_out)) return false;

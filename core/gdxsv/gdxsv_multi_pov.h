@@ -107,8 +107,9 @@ void gdxsv_multi_pov_compute_grid(const GdxsvMultiPovRect& group, GdxsvMultiPovR
 
 // ---- orchestration ----------------------------------------------------
 
-// The user ticked "4-player replay" (never true in a guest).
-bool gdxsv_multi_pov_four_screen_requested();
+// Consume an explicit command-line ReplayFourScreen request once. Saved
+// emu.cfg values are ignored, and guests never become hosts.
+bool gdxsv_multi_pov_take_four_screen_request();
 
 // Host: reads `replay_source` (path or URL), publishes it and spawns the
 // guests. `replay_out` holds the bytes for the host's own playback. False
