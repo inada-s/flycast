@@ -113,51 +113,27 @@ TEST(GdxsvReplayUi, RoundTimeUsesRecordingTimingOrTheExistingFallback) {
 	EXPECT_DOUBLE_EQ(0.01668335002, UiState::FromLog(log).inputSeconds);
 }
 
-TEST(GdxsvReplayUi, TakeoverCountdownShowsAlignmentOnMismatchUnlessSkipped) {
-	UiState ui;
-	ui.takeoverTargetInput = 1;
-	ui.takeoverAligning = true;
-	EXPECT_TRUE(ui.NeedsTakeoverAlignment(0));
-	EXPECT_TRUE(ui.NeedsTakeoverAlignment(1));
-
-	ui.takeoverAligning = false;
-	ui.takeoverCountdown = 60;
-	EXPECT_TRUE(ui.NeedsTakeoverAlignment(0));
-	EXPECT_FALSE(ui.NeedsTakeoverAlignment(1));
-
-	ui.takeoverSkipInputMatching = true;
-	EXPECT_FALSE(ui.NeedsTakeoverAlignment(0));
-	EXPECT_FALSE(ui.NeedsTakeoverAlignment(1));
-	EXPECT_FALSE(ui.NeedsTakeoverAlignment(2));
-
-	ui.takeoverCountdown = 0;
-	ui.takeoverSkipInputMatching = false;
-	EXPECT_FALSE(ui.NeedsTakeoverAlignment(0));
-}
-
-TEST(GdxsvReplayUi, TakeoverSkipChoiceIsPublishedWithoutChangingOlderSnapshots) {
+TEST(GdxsvReplayUi, TakeoverCountdownIsPublishedWithoutChangingOlderSnapshots) {
 	GdxsvReplayUiSnapshot snapshot;
 	UiState ui;
-	ui.takeoverAligning = true;
+	ui.takeoverCountdown = 60;
 	ui.takeoverTargetInput = 1;
 	snapshot.Publish(ui);
-	const auto matching = snapshot.Read();
+	const auto initial = snapshot.Read();
 
-	ui.takeoverAligning = false;
-	ui.takeoverCountdown = 60;
-	ui.takeoverSkipInputMatching = true;
+	ui.takeoverCountdown = 30;
 	snapshot.Publish(ui);
-	const auto skipped = snapshot.Read();
-	EXPECT_TRUE(matching.NeedsTakeoverAlignment(0));
-	EXPECT_FALSE(matching.takeoverSkipInputMatching);
-	EXPECT_FALSE(skipped.NeedsTakeoverAlignment(0));
-	EXPECT_TRUE(skipped.takeoverSkipInputMatching);
-	EXPECT_EQ(60, skipped.takeoverCountdown);
+	const auto current = snapshot.Read();
+	EXPECT_EQ(60, initial.takeoverCountdown);
+	EXPECT_EQ(1, initial.takeoverTargetInput);
+	EXPECT_EQ(30, current.takeoverCountdown);
+	EXPECT_EQ(1, current.takeoverTargetInput);
 
 	snapshot.Publish({});
-	EXPECT_FALSE(snapshot.Read().takeoverSkipInputMatching);
 	EXPECT_EQ(0, snapshot.Read().takeoverCountdown);
-	EXPECT_TRUE(skipped.takeoverSkipInputMatching);
+	EXPECT_EQ(0, snapshot.Read().takeoverTargetInput);
+	EXPECT_EQ(30, current.takeoverCountdown);
+	EXPECT_EQ(1, current.takeoverTargetInput);
 }
 
 TEST(GdxsvReplayUi, OnlyTheLatestLiveTimelineEndpointRequestsFollowLive) {

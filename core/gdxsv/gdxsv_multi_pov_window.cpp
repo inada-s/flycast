@@ -1,8 +1,13 @@
 // Platform-independent part of the 4-player replay grid.
 #include "gdxsv_multi_pov_window.h"
 
+#include <optional>
+
 #include "log/LogManager.h"
 #include "types.h"
+#ifdef USE_SDL
+#include "sdl/sdl.h"
+#endif
 
 // Host: last published layout, so the generation only moves when it changed.
 static uint32_t g_generation = 0;
@@ -17,10 +22,32 @@ static bool g_guest_topmost = false;
 
 // Host: the first tick turns the full-size window into a quadrant.
 static bool g_host_placed = false;
+static std::optional<GdxsvMultiPovWindowState> g_host_window_restore;
 
 // Host: full-screen grid, and the quadrant to restore when leaving it.
 static bool g_fullscreen = false;
 static GdxsvMultiPovRect g_fullscreen_restore;
+
+static void SaveHostWindow() {
+	if (!g_host_window_restore) {
+		g_host_window_restore = gdxsv_multi_pov_window_get_state();
+#ifdef USE_SDL
+		sdl_preserve_window_state(true);
+#endif
+	}
+}
+
+static bool UnmaximizeHostWindow() {
+	if (gdxsv_multi_pov_window_is_maximized()) {
+		gdxsv_multi_pov_window_unmaximize();
+		if (gdxsv_multi_pov_window_is_maximized()) return false;
+	}
+	// Capture the normal rectangle before the first quadrant resize. Later
+	// grid maximizes/fullscreen toggles must not replace it with a quadrant.
+	if (!g_host_placed)
+		g_host_window_restore->frame = gdxsv_multi_pov_window_get_frame();
+	return true;
+}
 
 static bool FitsWithin(const GdxsvMultiPovRect& inner, const GdxsvMultiPovRect& outer) {
 	if (outer.w <= 0 || outer.h <= 0) return true;
@@ -41,6 +68,7 @@ static GdxsvMultiPovRect HostGridArea() {
 }
 
 static void TickHost() {
+	SaveHostWindow();
 	GdxsvMultiPovHostWindow hw;
 
 	if (g_fullscreen) {
@@ -53,13 +81,14 @@ static void TickHost() {
 		hw.group = area;
 		hw.maximized = false;
 		hw.fullscreen = true;
-	} else if (gdxsv_multi_pov_window_is_maximized()) {
+	} else if (gdxsv_multi_pov_window_is_maximized() ||
+			   (!g_host_placed && g_host_window_restore->mode != GdxsvMultiPovWindowMode::Windowed)) {
 		// The grid tiles the work area; the host leaves the maximized state
-		// for its quadrant.
+		// for its quadrant. Keep this path if leaving that state takes a tick.
 		const GdxsvMultiPovRect area = HostGridArea();
 		GdxsvMultiPovRect quadrants[kGdxsvMultiPovScreens];
 		gdxsv_multi_pov_compute_grid(area, quadrants);
-		gdxsv_multi_pov_window_unmaximize();
+		if (!UnmaximizeHostWindow()) return;
 		gdxsv_multi_pov_window_set_frame(quadrants[0]);
 		hw.group = area;
 		hw.maximized = true;
@@ -80,9 +109,9 @@ static void TickHost() {
 				gdxsv_multi_pov_window_set_frame(quadrants[0]);
 				NOTICE_LOG(COMMON, "multi-pov: grid laid out over the work area %dx%d", area.w, area.h);
 			}
-			g_host_placed = true;
 		}
 	}
+	g_host_placed = true;
 	hw.rect = gdxsv_multi_pov_window_get_frame();
 
 	if (hw.group != g_last_group || hw.maximized != g_last_maximized || hw.fullscreen != g_last_fullscreen) {
@@ -135,11 +164,12 @@ bool gdxsv_multi_pov_toggle_fullscreen() {
 	// Guests have no controls of their own.
 	if (role == GdxsvMultiPovRole::Guest) return true;
 
+	SaveHostWindow();
 	if (g_fullscreen) {
 		LeaveFullscreen();
 		NOTICE_LOG(COMMON, "multi-pov: grid left full screen");
 	} else {
-		if (gdxsv_multi_pov_window_is_maximized()) gdxsv_multi_pov_window_unmaximize();
+		if (!UnmaximizeHostWindow()) return true;
 		g_fullscreen_restore = gdxsv_multi_pov_window_get_frame();
 		gdxsv_multi_pov_window_set_borderless(true);
 		gdxsv_multi_pov_window_set_topmost(true);
@@ -154,9 +184,15 @@ void gdxsv_multi_pov_window_tick() {
 	if (!gdxsv_multi_pov_window_available()) return;
 
 	if (role == GdxsvMultiPovRole::None) {
-		// Session over: give a full-screen host its window back, and lay the
-		// next session's grid out afresh.
+		// Session over: undo the temporary grid layout on the UI thread.
 		if (g_fullscreen) LeaveFullscreen();
+		if (g_host_window_restore) {
+			gdxsv_multi_pov_window_restore_state(*g_host_window_restore);
+			g_host_window_restore.reset();
+#ifdef USE_SDL
+			sdl_preserve_window_state(false);
+#endif
+		}
 		g_host_placed = false;
 		return;
 	}

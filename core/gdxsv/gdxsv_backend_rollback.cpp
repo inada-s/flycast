@@ -27,6 +27,8 @@
 #include "ui/gui_util.h"
 #include "rend/transform_matrix.h"
 
+extern ImFont *boldFont;
+
 namespace {
 u8 DummyGameParam[] = {0x00, 0x00, 0x01, 0x00, 0x03, 0x00, 0x02, 0x00, 0x05, 0x00, 0x04, 0x00, 0x00, 0x00, 0x00, 0x00, 0x83,
 					   0x76, 0x83, 0x8c, 0x83, 0x43, 0x83, 0x84, 0x81, 0x5b, 0x82, 0x50, 0x00, 0x00, 0x00, 0x00, 0x07};
@@ -1280,9 +1282,6 @@ void textCentered(std::string text) {
 	ImGui::Text(text.c_str());
 }
 
-const ImVec4 kNetworkStatBarColor(0.557f, 0.268f, 0.965f, 1.f);
-const ImVec4 kNetworkStatWarningColor(0.6f, 0.2f, 0.2f, 1.f);
-
 enum class ConnectionHealth {
 	Excellent,
 	Good,
@@ -1528,10 +1527,7 @@ void drawSegmentedMeter(int segment_count, int fill_count, const ImVec4& fill_co
 	ImGui::Dummy(ImVec2(width, line_height));
 }
 
-void drawLagMeter(ConnectionHealth health) {
-	ImGui::TextUnformatted("Lag");
-	ImGui::SameLine();
-	const int fill_count = health == ConnectionHealth::Poor ? 5 : static_cast<int>(health);
+ImVec4 networkHealthColor(ConnectionHealth health) {
 	ImVec4 fill_color = ImGui::GetStyleColorVec4(ImGuiCol_Text);
 	fill_color.w = 0.75f;
 	if (health == ConnectionHealth::Medium)
@@ -1540,7 +1536,14 @@ void drawLagMeter(ConnectionHealth health) {
 		fill_color = ImVec4(1.f, 0.5f, 0.f, 1.f);
 	else if (health == ConnectionHealth::Poor)
 		fill_color = ImVec4(1.f, 0.15f, 0.12f, 1.f);
-	drawSegmentedMeter(5, fill_count, fill_color);
+	return fill_color;
+}
+
+void drawLagMeter(ConnectionHealth health) {
+	ImGui::TextUnformatted("Lag");
+	ImGui::SameLine();
+	const int fill_count = health == ConnectionHealth::Poor ? 5 : static_cast<int>(health);
+	drawSegmentedMeter(5, fill_count, networkHealthColor(health));
 }
 
 void drawFramePacingMeter(int local_frames_behind, float requested_width = -1.f) {
@@ -1557,20 +1560,12 @@ void drawFramePacingMeter(int local_frames_behind, float requested_width = -1.f)
 	const float y = pos.y + height * 0.5f;
 	const int frame_offset = std::clamp(local_frames_behind, -8, 8);
 	const float marker = center - (track_right - track_left) * frame_offset / 16.f;
-	const float warning = std::clamp((std::abs(frame_offset) - 3.f) / 5.f, 0.f, 1.f);
-	const ImVec4 pacing_color(
-		kNetworkStatBarColor.x + (kNetworkStatWarningColor.x - kNetworkStatBarColor.x) * warning,
-		kNetworkStatBarColor.y + (kNetworkStatWarningColor.y - kNetworkStatBarColor.y) * warning,
-		kNetworkStatBarColor.z + (kNetworkStatWarningColor.z - kNetworkStatBarColor.z) * warning,
-		1.f);
+	const ImVec4 pacing_color = networkHealthColor(pacingHealth(local_frames_behind));
 	ImDrawList *draw_list = ImGui::GetWindowDrawList();
 	const ImU32 text_color = ImGui::GetColorU32(ImGuiCol_Text);
 	const ImU32 track_color = ImGui::GetColorU32(ImGuiCol_TextDisabled);
-	const ImU32 frame_color = ImGui::GetColorU32(ImGuiCol_FrameBg);
 	const ImU32 pacing_color_u32 = ImGui::GetColorU32(pacing_color);
 
-	draw_list->AddRectFilled(ImVec2(meter_left, pos.y), ImVec2(meter_right, pos.y + height), frame_color,
-						 std::min(ImGui::GetStyle().FrameRounding, height * 0.5f));
 	draw_list->AddLine(ImVec2(track_left, y), ImVec2(track_right, y), track_color,
 					   std::max(1.f, height * 0.075f));
 	draw_list->AddLine(ImVec2(center, y), ImVec2(marker, y), pacing_color_u32,
@@ -1581,8 +1576,14 @@ void drawFramePacingMeter(int local_frames_behind, float requested_width = -1.f)
 	if (slow_subject != nullptr) {
 		const float half_space_width = ImGui::CalcTextSize("  ").x * 0.5f;
 		const float subject_width = ImGui::CalcTextSize(slow_subject).x;
-		draw_list->AddText(ImVec2(center - half_space_width - subject_width, pos.y), text_color, slow_subject);
-		draw_list->AddText(ImVec2(center + half_space_width, pos.y), text_color, "Slow");
+		const ImVec2 subject_pos(center - half_space_width - subject_width, pos.y);
+		const ImVec2 slow_pos(center + half_space_width, pos.y);
+		const ImVec2 shadow_offset(1.f, 1.f);
+		const ImU32 shadow_color = ImGui::GetColorU32(ImVec4(0.2f, 0.2f, 0.2f, 0.7f));
+		draw_list->AddText(subject_pos + shadow_offset, shadow_color, slow_subject);
+		draw_list->AddText(slow_pos + shadow_offset, shadow_color, "Slow");
+		draw_list->AddText(subject_pos, text_color, slow_subject);
+		draw_list->AddText(slow_pos, text_color, "Slow");
 	}
 	ImGui::Dummy(ImVec2(width, height));
 }
@@ -1705,20 +1706,80 @@ void drawNetworkDiagnostics(int player, const ggpo::NetworkStats& stats, bool co
 	draw_pacing_row();
 }
 
-void drawDetailedPlayerNetworkStats(int player, const proto::P2PMatching& matching,
-									const ggpo::NetworkStats& stats, bool connected) {
-	ImGui::Spacing();
-	ImGui::Separator();
-	ImGui::Spacing();
-	ImGui::Text("%dP:%s", player + 1, matching.users(player).user_id().c_str());
-	std::string ping = connected
-		? std::to_string(stats.network.ping) + (stats.network.is_relay ? "(R)" : "") : "--";
-	ImGui::SameLine(ImGui::GetWindowContentRegionMax().x - ImGui::CalcTextSize(ping.c_str()).x);
-	ImGui::PushStyleColor(ImGuiCol_Text, msColor(connected ? stats.network.ping : 999).Value);
-	ImGui::Text("%s", ping.c_str());
-	ImGui::PopStyleColor();
-	textCentered(matching.users(player).pilot_name());
-	drawNetworkDiagnostics(player, stats, connected);
+void drawNetworkPlayerName(const std::string& text, bool bold) {
+	const ImVec2 pos = ImGui::GetCursorScreenPos();
+	const float width = ImGui::GetContentRegionAvail().x;
+	const float row_pitch = ImGui::GetTextLineHeight() + ImGui::GetStyle().ItemSpacing.y;
+	const float name_size = ImGui::GetStyle().FontSizeBase * 1.1f;
+	ImFont* font = bold ? boldFont : ImGui::GetFont();
+	ImGui::PushFont(font, name_size);
+	const float row_height = ImGui::GetTextLineHeight();
+	ImVec2 text_size = ImGui::CalcTextSize(text.c_str(), nullptr, false);
+	// Keep long names on one centered line without changing the panel width.
+	if (text_size.x > width && width > 0.f) {
+		ImGui::PopFont();
+		ImGui::PushFont(font, name_size * width / text_size.x);
+		text_size = ImGui::CalcTextSize(text.c_str(), nullptr, false);
+	}
+	ImGui::GetWindowDrawList()->AddText(
+		ImVec2(pos.x + (width - text_size.x) * 0.5f, pos.y + (row_height - text_size.y) * 0.5f),
+		ImGui::GetColorU32(ImGuiCol_Text), text.c_str());
+	ImGui::PopFont();
+	// Spend a little of the existing line spacing on larger names, keeping
+	// the same row positions in both views and the same overall panel height.
+	ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing,
+		ImVec2(ImGui::GetStyle().ItemSpacing.x, std::max(0.f, row_pitch - row_height)));
+	ImGui::Dummy(ImVec2(width, row_height));
+	ImGui::PopStyleVar();
+}
+
+void drawNetworkPlayerHeading(int player, const proto::BattleLogUser& user,
+							  const ggpo::NetworkStats& stats, bool connected, bool show_details) {
+	const ImVec2 pos = ImGui::GetCursorScreenPos();
+	const float width = ImGui::GetContentRegionAvail().x;
+	// Keep the player position and ID in the separator, with both names below.
+	const float height = 1.f + ImGui::GetStyle().ItemSpacing.y * 2.f;
+	ImGui::PushFont(nullptr, ImGui::GetStyle().FontSizeBase * 0.85f);
+	const std::string label = std::to_string(player + 1) + "P " + user.user_id();
+	const float gap = ImGui::GetFontSize() * 0.5f;
+	const float line_y = pos.y + height * 0.5f;
+	float line_right = pos.x + width;
+	ImDrawList* draw_list = ImGui::GetWindowDrawList();
+	if (show_details) {
+		const std::string ping = connected
+			? std::to_string(stats.network.ping) + (stats.network.is_relay ? "(R)" : "") : "--";
+		const ImVec2 ping_size = ImGui::CalcTextSize(ping.c_str());
+		const float ping_x = pos.x + width - ping_size.x;
+		draw_list->AddText(ImVec2(ping_x, pos.y + (height - ping_size.y) * 0.5f),
+			ImGui::GetColorU32(msColor(connected ? stats.network.ping : 999).Value), ping.c_str());
+		line_right = ping_x - gap;
+	}
+	// Center within the space left by the detailed view's right-aligned ping.
+	ImVec2 label_size = ImGui::CalcTextSize(label.c_str());
+	const float label_width = std::max(1.f, line_right - pos.x - gap * 2.f);
+	if (label_size.x > label_width) {
+		const float font_size = ImGui::GetStyle().FontSizeBase * label_width / label_size.x;
+		ImGui::PopFont();
+		ImGui::PushFont(nullptr, font_size);
+		label_size = ImGui::CalcTextSize(label.c_str());
+	}
+	const float label_x = pos.x + (line_right - pos.x - label_size.x) * 0.5f;
+	const ImU32 line_color = ImGui::GetColorU32(ImGuiCol_Separator);
+	// One logical point; OSD coordinates are already in framebuffer pixels.
+	const float line_thickness = settings.display.pointScale;
+	if (pos.x < label_x - gap)
+		draw_list->AddLine(ImVec2(pos.x, line_y), ImVec2(label_x - gap, line_y), line_color, line_thickness);
+	if (label_x + label_size.x + gap < line_right)
+		draw_list->AddLine(ImVec2(label_x + label_size.x + gap, line_y), ImVec2(line_right, line_y), line_color, line_thickness);
+	ImVec4 label_color = ImGui::GetStyleColorVec4(ImGuiCol_Text);
+	label_color.w *= 0.65f;
+	draw_list->AddText(ImVec2(label_x, pos.y + (height - label_size.y) * 0.5f),
+		ImGui::GetColorU32(label_color), label.c_str());
+	ImGui::PopFont();
+	ImGui::Dummy(ImVec2(width, height));
+
+	drawNetworkPlayerName(user.user_name(), true);
+	drawNetworkPlayerName(user.pilot_name(), false);
 }
 
 void drawNetworkStat(const proto::P2PMatching& matching) {
@@ -1789,14 +1850,18 @@ void drawNetworkStat(const proto::P2PMatching& matching) {
 	ImGui::PushStyleColor(ImGuiCol_PlotHistogram, ImVec4(0.557f, 0.268f, 0.965f, 1.f));
 	const ImVec2 content_pos = ImGui::GetCursorScreenPos();
 	const ImVec2 panel_pos = ImGui::GetWindowPos();
-	const ImVec2 title_size = ImGui::CalcTextSize("NETWORK STATS");
-	ImGui::GetWindowDrawList()->AddRectFilled(
+	constexpr const char* title = "NETWORK STATS";
+	ImGui::PushFont(boldFont, 0.f);
+	const ImVec2 title_size = ImGui::CalcTextSize(title);
+	ImDrawList* draw_list = ImGui::GetWindowDrawList();
+	draw_list->AddRectFilled(
 		panel_pos, panel_pos + ImVec2(window_width, title_height),
 		ImGui::GetColorU32(ImVec4(0.122f, 0.122f, 0.122f, 0.16f)));
-	ImGui::GetWindowDrawList()->AddText(
-		ImVec2(panel_pos.x + (window_width - title_size.x) * 0.5f,
-			   panel_pos.y + std::max(0.f, (title_height - title_size.y) * 0.5f)),
-		ImGui::GetColorU32(ImVec4(0.925f, 0.941f, 1.f, 0.24f)), "NETWORK STATS");
+	const ImVec2 title_pos(panel_pos.x + (window_width - title_size.x) * 0.5f,
+						   panel_pos.y + std::max(0.f, (title_height - title_size.y) * 0.5f) + 1.f);
+	draw_list->AddText(title_pos,
+		ImGui::GetColorU32(ImVec4(0.925f, 0.941f, 1.f, 0.26f)), title);
+	ImGui::PopFont();
 	ImGui::SetCursorScreenPos(
 		ImVec2(content_pos.x, panel_pos.y + title_height + title_body_spacing + ImGui::GetStyle().WindowPadding.y));
 
@@ -1817,7 +1882,7 @@ void drawNetworkStat(const proto::P2PMatching& matching) {
 	ImGui::PopStyleColor();
 
 	ImGui::Text("Roll: %d", stats[me].extra.total_rollbacked_frames);
-	const auto wait = "Wait:" + std::to_string(stats[me].extra.total_timesync);
+	const auto wait = "Wait: " + std::to_string(stats[me].extra.total_timesync);
 	ImGui::SameLine(ImGui::GetWindowContentRegionMax().x - ImGui::CalcTextSize(wait.c_str()).x);
 	ImGui::Text("%s", wait.c_str());
 
@@ -1835,23 +1900,24 @@ void drawNetworkStat(const proto::P2PMatching& matching) {
 	ImGui::SameLine();
 	drawSegmentedMeter(6, predicted_frames, predicted_color);
 
-	if (show_details) {
-		for (int i = 0; i < matching.users_size(); ++i) {
-			if (i == me) continue;
-			drawDetailedPlayerNetworkStats(i, matching, stats[i], is_connected[i]);
-		}
-	} else {
-		for (int i = 0; i < matching.users_size(); ++i) {
-			if (i == me) continue;
-			ImGui::Spacing();
-			ImGui::Separator();
-			ImGui::Spacing();
-			textCentered(std::to_string(i + 1) + "P:" + matching.users(i).user_id());
-			textCentered(matching.users(i).user_name());
+	for (int i = 0; i < matching.users_size(); ++i) {
+		if (i == me) continue;
+		drawNetworkPlayerHeading(i, matching.users(i), stats[i], is_connected[i], show_details);
+		if (show_details) {
+			drawNetworkDiagnostics(i, stats[i], is_connected[i]);
+		} else {
 			ImGui::Text("Ping");
 			if (is_connected[i] && stats[i].network.is_relay) {
 				ImGui::SameLine();
-				ImGui::Text("(Relay)");
+				const float line_height = ImGui::GetTextLineHeight();
+				const ImVec2 relay_pos = ImGui::GetCursorScreenPos();
+				ImGui::PushFont(nullptr, ImGui::GetStyle().FontSizeBase * 0.85f);
+				const ImVec2 relay_size = ImGui::CalcTextSize("(Relay)");
+				ImGui::GetWindowDrawList()->AddText(
+					ImVec2(relay_pos.x, relay_pos.y + (line_height - relay_size.y) * 0.5f),
+					ImGui::GetColorU32(ImGuiCol_Text), "(Relay)");
+				ImGui::PopFont();
+				ImGui::Dummy(ImVec2(relay_size.x, line_height));
 			}
 			std::string ping = is_connected[i] ? std::to_string(stats[i].network.ping) : "--";
 			ImGui::SameLine(ImGui::GetWindowContentRegionMax().x - ImGui::CalcTextSize(ping.c_str()).x);

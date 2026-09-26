@@ -12,6 +12,31 @@ static SDL_Window* Window() { return gdxsv_headless() ? nullptr : sdl_get_window
 
 bool gdxsv_multi_pov_window_available() { return Window() != nullptr; }
 
+GdxsvMultiPovWindowState gdxsv_multi_pov_window_get_state() {
+	GdxsvMultiPovWindowState state;
+	SDL_Window* w = Window();
+	if (w == nullptr) return state;
+	state.frame = gdxsv_multi_pov_window_get_frame();
+	const Uint32 flags = SDL_GetWindowFlags(w);
+	if ((flags & SDL_WINDOW_FULLSCREEN) != 0)
+		state.mode = GdxsvMultiPovWindowMode::Fullscreen;
+	else if ((flags & SDL_WINDOW_MAXIMIZED) != 0)
+		state.mode = GdxsvMultiPovWindowMode::Maximized;
+	return state;
+}
+
+void gdxsv_multi_pov_window_restore_state(const GdxsvMultiPovWindowState& state) {
+	SDL_Window* w = Window();
+	if (w == nullptr) return;
+	if (gdxsv_multi_pov_window_is_maximized()) gdxsv_multi_pov_window_unmaximize();
+	gdxsv_multi_pov_window_set_frame(state.frame);
+	if (state.mode == GdxsvMultiPovWindowMode::Maximized)
+		SDL_MaximizeWindow(w);
+	else if (state.mode == GdxsvMultiPovWindowMode::Fullscreen &&
+		SDL_SetWindowFullscreen(w, SDL_WINDOW_FULLSCREEN_DESKTOP) != 0)
+		WARN_LOG(COMMON, "multi-pov: cannot restore full screen: %s", SDL_GetError());
+}
+
 GdxsvMultiPovRect gdxsv_multi_pov_window_get_frame() {
 	GdxsvMultiPovRect out;
 	SDL_Window* w = Window();
@@ -38,12 +63,17 @@ void gdxsv_multi_pov_window_set_frame(const GdxsvMultiPovRect& rect) {
 
 bool gdxsv_multi_pov_window_is_maximized() {
 	SDL_Window* w = Window();
-	return w != nullptr && (SDL_GetWindowFlags(w) & SDL_WINDOW_MAXIMIZED) != 0;
+	return w != nullptr && (SDL_GetWindowFlags(w) & (SDL_WINDOW_MAXIMIZED | SDL_WINDOW_FULLSCREEN)) != 0;
 }
 
 void gdxsv_multi_pov_window_unmaximize() {
 	SDL_Window* w = Window();
-	if (w != nullptr) SDL_RestoreWindow(w);
+	if (w == nullptr) return;
+	if (SDL_SetWindowFullscreen(w, 0) != 0) {
+		WARN_LOG(COMMON, "multi-pov: cannot leave full screen: %s", SDL_GetError());
+		return;
+	}
+	SDL_RestoreWindow(w);
 }
 
 GdxsvMultiPovRect gdxsv_multi_pov_window_work_area() {
@@ -105,4 +135,3 @@ void gdxsv_multi_pov_window_set_borderless(bool borderless) {
 	SDL_Window* w = Window();
 	if (w != nullptr) SDL_SetWindowBordered(w, borderless ? SDL_FALSE : SDL_TRUE);
 }
-

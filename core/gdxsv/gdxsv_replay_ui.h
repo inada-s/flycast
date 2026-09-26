@@ -52,8 +52,6 @@ struct GdxsvReplayUiState {
 	bool pauseMenuOpen = false;
 	bool loading = false;
 	bool takeover = false;
-	bool takeoverAligning = false;
-	bool takeoverSkipInputMatching = false;
 	int takeoverCountdown = 0;
 	uint16_t takeoverTargetInput = 0;
 	bool liveMode = false;
@@ -63,11 +61,6 @@ struct GdxsvReplayUiState {
 	bool IsLiveSeekTarget(int frame) const {
 		// An older round's right edge is not the latest broadcast position.
 		return liveMode && inputCount > 0 && timelineEnd == inputCount && frame == inputCount;
-	}
-
-	bool NeedsTakeoverAlignment(uint16_t currentInput) const {
-		return takeoverAligning || (takeoverCountdown > 0 && !takeoverSkipInputMatching &&
-			currentInput != takeoverTargetInput);
 	}
 
 	int FrameAtProgress(float progress) const {

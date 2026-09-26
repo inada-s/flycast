@@ -74,11 +74,9 @@ class GdxsvBackendReplay {
 	void PrepareRoundStartReplayState();
 	void RebuildKeyDisplay() const;
 	void BeginLoadingHud();
-	void BeginTakeoverAlignment(u16 target_input);
-	void CancelPendingTakeover();
+	void BeginTakeoverCountdown(u16 target_input);
 	void RenderPauseMenu(const UiState& ui);
-	void RenderTakeoverAlignment(const UiState& ui, u16 current_input);
-	void RenderTakeoverCountdown(const UiState& ui);
+	void RenderTakeoverCountdown(const UiState& ui, u16 current_input);
 	void UpdateControlBarVisibility(const UiState& ui);
 
 	// 4-player replay: the host publishes its playback state every frame and
@@ -133,8 +131,6 @@ class GdxsvBackendReplay {
 			FollowLive,
 			ResumePlayback,
 			ExitReplay,
-			CancelTakeover,
-			SkipTakeoverAlignment,
 			TakeoverInput,
 		};
 
@@ -333,8 +329,6 @@ class GdxsvBackendReplay {
 	bool takeover_ = false;
 	int takeover_saved_frame_ = -1;
 	int takeover_countdown_ = 0;
-	bool takeover_aligning_ = false;
-	bool takeover_skip_input_matching_ = false;
 	u16 takeover_target_input_ = 0;
 	std::deque<u16> takeover_input_buf_;
 };

@@ -13,11 +13,30 @@
 // desktop windows).
 bool gdxsv_multi_pov_window_available();
 
+enum class GdxsvMultiPovWindowMode {
+	Windowed,
+	Maximized,
+	Fullscreen,
+	NativeFullscreen, // macOS green button / Globe+F, without SDL fullscreen's menu restrictions.
+};
+
+struct GdxsvMultiPovWindowState {
+	GdxsvMultiPovRect frame;
+	GdxsvMultiPovWindowMode mode = GdxsvMultiPovWindowMode::Windowed;
+};
+
+// Snapshot the current presentation. Before tiling, the host replaces frame
+// with the normal window rectangle revealed by leaving maximized/fullscreen.
+// Restore that rectangle before re-entering the saved mode.
+GdxsvMultiPovWindowState gdxsv_multi_pov_window_get_state();
+void gdxsv_multi_pov_window_restore_state(const GdxsvMultiPovWindowState& state);
+
 GdxsvMultiPovRect gdxsv_multi_pov_window_get_frame();
 
 // Moves and resizes without raising or focusing the window.
 void gdxsv_multi_pov_window_set_frame(const GdxsvMultiPovRect& rect);
 
+// Includes native fullscreen: both modes must be left before tiling.
 bool gdxsv_multi_pov_window_is_maximized();
 void gdxsv_multi_pov_window_unmaximize();
 

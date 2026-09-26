@@ -9,6 +9,7 @@
 
 #include "gdxsv_emu_hooks.h"
 #include "log/LogManager.h"
+#include "sdl/sdl.h"
 #include "types.h"
 
 // Defined in core/sdl/sdl.cpp.
@@ -26,6 +27,30 @@ static RECT ClientToWindowRect(HWND hwnd, const GdxsvMultiPovRect& client) {
 }
 
 bool gdxsv_multi_pov_window_available() { return Hwnd() != nullptr; }
+
+GdxsvMultiPovWindowState gdxsv_multi_pov_window_get_state() {
+	GdxsvMultiPovWindowState state;
+	HWND hwnd = Hwnd();
+	if (hwnd == nullptr) return state;
+	state.frame = gdxsv_multi_pov_window_get_frame();
+	if ((SDL_GetWindowFlags(sdl_get_window()) & SDL_WINDOW_FULLSCREEN) != 0)
+		state.mode = GdxsvMultiPovWindowMode::Fullscreen;
+	else if (IsZoomed(hwnd))
+		state.mode = GdxsvMultiPovWindowMode::Maximized;
+	return state;
+}
+
+void gdxsv_multi_pov_window_restore_state(const GdxsvMultiPovWindowState& state) {
+	HWND hwnd = Hwnd();
+	if (hwnd == nullptr) return;
+	if (gdxsv_multi_pov_window_is_maximized()) gdxsv_multi_pov_window_unmaximize();
+	gdxsv_multi_pov_window_set_frame(state.frame);
+	if (state.mode == GdxsvMultiPovWindowMode::Maximized)
+		ShowWindow(hwnd, SW_MAXIMIZE);
+	else if (state.mode == GdxsvMultiPovWindowMode::Fullscreen &&
+		SDL_SetWindowFullscreen(sdl_get_window(), SDL_WINDOW_FULLSCREEN_DESKTOP) != 0)
+		WARN_LOG(COMMON, "multi-pov: cannot restore full screen: %s", SDL_GetError());
+}
 
 GdxsvMultiPovRect gdxsv_multi_pov_window_get_frame() {
 	GdxsvMultiPovRect out;
@@ -52,12 +77,17 @@ void gdxsv_multi_pov_window_set_frame(const GdxsvMultiPovRect& rect) {
 
 bool gdxsv_multi_pov_window_is_maximized() {
 	HWND hwnd = Hwnd();
-	return hwnd != nullptr && IsZoomed(hwnd);
+	return hwnd != nullptr && (IsZoomed(hwnd) ||
+		(SDL_GetWindowFlags(sdl_get_window()) & SDL_WINDOW_FULLSCREEN) != 0);
 }
 
 void gdxsv_multi_pov_window_unmaximize() {
 	HWND hwnd = Hwnd();
 	if (hwnd == nullptr) return;
+	if (SDL_SetWindowFullscreen(sdl_get_window(), 0) != 0) {
+		WARN_LOG(COMMON, "multi-pov: cannot leave full screen: %s", SDL_GetError());
+		return;
+	}
 	// SW_RESTORE keeps the window on the display it was maximized on.
 	ShowWindow(hwnd, SW_RESTORE);
 }
@@ -133,4 +163,3 @@ void gdxsv_multi_pov_window_set_borderless(bool borderless) {
 	SetWindowPos(hwnd, nullptr, 0, 0, 0, 0,
 				 SWP_NOMOVE | SWP_NOSIZE | SWP_NOZORDER | SWP_NOACTIVATE | SWP_FRAMECHANGED);
 }
-

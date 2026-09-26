@@ -39,6 +39,7 @@
 #include <cmath>
 #include <cstdlib>
 #include <cstdio>
+#include <optional>
 
 static SDL_Window* window = NULL;
 static u32 windowFlags;
@@ -51,11 +52,23 @@ static std::shared_ptr<SDLKeyboardDevice> sdl_keyboard;
 static bool window_fullscreen;
 static bool window_maximized;
 static SDL_Rect windowPos { SDL_WINDOWPOS_UNDEFINED, SDL_WINDOWPOS_UNDEFINED, WINDOW_WIDTH, WINDOW_HEIGHT };
+struct SavedWindowState {
+	SDL_Rect position;
+	bool fullscreen;
+	bool maximized;
+};
+static std::optional<SavedWindowState> preservedWindowState;
 static bool gameRunning;
 static bool mouseCaptured;
 static std::string clipboardText;
 static std::string barcode;
 static u64 lastBarcodeTime;
+
+static bool isWindowFullscreen()
+{
+	// Native window controls and the replay grid can change SDL's flags directly.
+	return window != nullptr && (SDL_GetWindowFlags(window) & SDL_WINDOW_FULLSCREEN) != 0;
+}
 
 static KeyboardLayout detectKeyboardLayout();
 static bool handleBarcodeScanner(const SDL_Event& event);
@@ -177,7 +190,7 @@ static void emuEventCallback(Event event, void *)
 	case Event::Resume:
 		gameRunning = true;
 		captureMouse(mouseCaptured);
-		if (window_fullscreen && !mouseCaptured && !settings.gdxsv.replayModeActive)
+		if (isWindowFullscreen() && !mouseCaptured && !settings.gdxsv.replayModeActive)
 			SDL_ShowCursor(SDL_DISABLE);
 		resumeHaptic();
 		break;
@@ -402,19 +415,19 @@ void input_sdl_handle()
 						// gdxsv: 4-player replay handles full screen as a grid
 						if (gdxsv_emu_toggle_fullscreen())
 							break;
-						if (window_fullscreen)
+						if (isWindowFullscreen())
 						{
 							SDL_SetWindowFullscreen(window, 0);
-							if (!gameRunning || !mouseCaptured)
+							if (!isWindowFullscreen() && (!gameRunning || !mouseCaptured))
 								SDL_ShowCursor(SDL_ENABLE);
 						}
 						else
 						{
 							SDL_SetWindowFullscreen(window, SDL_WINDOW_FULLSCREEN_DESKTOP);
-							if (gameRunning && !settings.gdxsv.replayModeActive)
+							if (isWindowFullscreen() && gameRunning && !settings.gdxsv.replayModeActive)
 								SDL_ShowCursor(SDL_DISABLE);
 						}
-						window_fullscreen = !window_fullscreen;
+						window_fullscreen = isWindowFullscreen();
 						break;
 					}
 					// Route other keyboard events to master in multiboard mode
@@ -487,12 +500,12 @@ void input_sdl_handle()
 				}
 				else if (event.window.event == SDL_WINDOWEVENT_FOCUS_GAINED)
 				{
-					if (window_fullscreen && gameRunning && !settings.gdxsv.replayModeActive)
+					if (isWindowFullscreen() && gameRunning && !settings.gdxsv.replayModeActive)
 						SDL_ShowCursor(SDL_DISABLE);
 				}
 				else if (event.window.event == SDL_WINDOWEVENT_FOCUS_LOST)
 				{
-					if (window_fullscreen)
+					if (isWindowFullscreen())
 						SDL_ShowCursor(SDL_ENABLE);
 				}
 				break;
@@ -743,7 +756,7 @@ bool sdl_update_display_metrics(SDL_Window *window, u32 windowFlags)
 static inline void get_window_state()
 {
 	u32 flags = SDL_GetWindowFlags(window);
-	window_fullscreen = flags & SDL_WINDOW_FULLSCREEN_DESKTOP;
+	window_fullscreen = isWindowFullscreen();
 	window_maximized = flags & SDL_WINDOW_MAXIMIZED;
     if (!window_fullscreen && !window_maximized){
         SDL_GetWindowSize(window, &windowPos.w, &windowPos.h);
@@ -752,6 +765,17 @@ static inline void get_window_state()
         SDL_GetWindowPosition(window, &windowPos.x, &windowPos.y);
     }
 
+}
+
+void sdl_preserve_window_state(bool preserve)
+{
+	if (!preserve)
+		preservedWindowState.reset();
+	else if (window != nullptr && !preservedWindowState)
+	{
+		get_window_state();
+		preservedWindowState = SavedWindowState{windowPos, window_fullscreen, window_maximized};
+	}
 }
 
 #if defined(_WIN32) && !defined(TARGET_UWP)
@@ -1076,13 +1100,17 @@ void sdl_window_destroy()
 	// A 4-player replay guest is placed by the grid; don't save its geometry.
 	if (window != nullptr && !settings.naomi.slave && settings.naomi.drivingSimSlave == 0 && !gdxsv_is_multi_pov_guest())
 	{
-		get_window_state();
-		config::saveInt("window", "left", windowPos.x);
-		config::saveInt("window", "top", windowPos.y);
-		config::saveInt("window", "width", windowPos.w);
-		config::saveInt("window", "height", windowPos.h);
-		config::saveBool("window", "maximized", window_maximized);
-		config::saveBool("window", "fullscreen", window_fullscreen);
+		// Quitting during a replay grid must not persist its temporary quadrant.
+		// Use the pre-grid settings without starting a fullscreen animation on exit.
+		if (!preservedWindowState)
+			get_window_state();
+		const auto state = preservedWindowState.value_or(SavedWindowState{windowPos, window_fullscreen, window_maximized});
+		config::saveInt("window", "left", state.position.x);
+		config::saveInt("window", "top", state.position.y);
+		config::saveInt("window", "width", state.position.w);
+		config::saveInt("window", "height", state.position.h);
+		config::saveBool("window", "maximized", state.maximized);
+		config::saveBool("window", "fullscreen", state.fullscreen);
 	}
 #endif
 	termRenderApi();

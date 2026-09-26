@@ -48,13 +48,40 @@ static NSRect ToCocoa(const GdxsvMultiPovRect& r) {
 	return NSMakeRect(r.x, PrimaryHeight() - (r.y + r.h), r.w, r.h);
 }
 
-// Leaving full screen: AppKit restores the pre-full-screen frame at the end of
-// the exit, so the host keeps re-applying its quadrant until it holds.
-static bool g_leaving_fullscreen = false;
-static int g_settled_ticks = 0;
-static constexpr int kSettleTicks = 30;
-
 bool gdxsv_multi_pov_window_available() { return CocoaWindow() != nil; }
+
+GdxsvMultiPovWindowState gdxsv_multi_pov_window_get_state() {
+	GdxsvMultiPovWindowState state;
+	NSWindow* win = CocoaWindow();
+	if (win == nil) return state;
+	state.frame = gdxsv_multi_pov_window_get_frame();
+	if ((SDL_GetWindowFlags(sdl_get_window()) & SDL_WINDOW_FULLSCREEN) != 0)
+		state.mode = GdxsvMultiPovWindowMode::Fullscreen;
+	else if ((win.styleMask & NSWindowStyleMaskFullScreen) != 0)
+		state.mode = GdxsvMultiPovWindowMode::NativeFullscreen;
+	else if (win.isZoomed)
+		state.mode = GdxsvMultiPovWindowMode::Maximized;
+	return state;
+}
+
+void gdxsv_multi_pov_window_restore_state(const GdxsvMultiPovWindowState& state) {
+	NSWindow* win = CocoaWindow();
+	if (win == nil) return;
+	if (gdxsv_multi_pov_window_is_maximized()) gdxsv_multi_pov_window_unmaximize();
+	// Position on the original display before restoring its window mode.
+	gdxsv_multi_pov_window_set_frame(state.frame);
+	if (state.mode == GdxsvMultiPovWindowMode::Maximized && !win.isZoomed)
+		[win zoom:nil];
+	else if (state.mode == GdxsvMultiPovWindowMode::NativeFullscreen) {
+		// SDL fullscreen suppresses the native menu action and menu-bar reveal.
+		// Keep its flags clear when restoring a native macOS fullscreen window.
+		if ((win.styleMask & NSWindowStyleMaskFullScreen) == 0)
+			[win toggleFullScreen:nil];
+	}
+	else if (state.mode == GdxsvMultiPovWindowMode::Fullscreen &&
+		SDL_SetWindowFullscreen(sdl_get_window(), SDL_WINDOW_FULLSCREEN_DESKTOP) != 0)
+		WARN_LOG(COMMON, "multi-pov: cannot restore full screen: %s", SDL_GetError());
+}
 
 GdxsvMultiPovRect gdxsv_multi_pov_window_get_frame() {
 	NSWindow* win = CocoaWindow();
@@ -69,14 +96,6 @@ void gdxsv_multi_pov_window_set_frame(const GdxsvMultiPovRect& rect) {
 	// setFrame: moves without ordering the window front.
 	const NSRect content = ToCocoa(rect);
 	[win setFrame:[win frameRectForContentRect:content] display:YES];
-
-	if (g_leaving_fullscreen && (win.styleMask & NSWindowStyleMaskFullScreen) == 0) {
-		if (FromCocoa([win contentRectForFrameRect:win.frame]) == rect) {
-			if (++g_settled_ticks >= kSettleTicks) g_leaving_fullscreen = false;
-		} else {
-			g_settled_ticks = 0;
-		}
-	}
 }
 
 bool gdxsv_multi_pov_window_is_maximized() {
@@ -84,7 +103,7 @@ bool gdxsv_multi_pov_window_is_maximized() {
 	if (win == nil) return false;
 	// Zoom and full screen both tile the grid.
 	if ((win.styleMask & NSWindowStyleMaskFullScreen) != 0) return true;
-	if (g_leaving_fullscreen) return true;
+	if ((SDL_GetWindowFlags(sdl_get_window()) & SDL_WINDOW_FULLSCREEN) != 0) return true;
 	return win.isZoomed;
 }
 
@@ -92,14 +111,15 @@ void gdxsv_multi_pov_window_unmaximize() {
 	NSWindow* win = CocoaWindow();
 	if (win == nil) return;
 
-	if ((win.styleMask & NSWindowStyleMaskFullScreen) != 0) {
-		// Animated; asked once, or a second toggle would go back in.
-		if (!g_leaving_fullscreen) [win toggleFullScreen:nil];
-		g_leaving_fullscreen = true;
-		g_settled_ticks = 0;
+	// Adopt fullscreen entered through the green button before leaving via
+	// SDL. SDL waits for the animation, so AppKit cannot overwrite our frame.
+	SDL_Window* w = sdl_get_window();
+	const bool native_fullscreen = (win.styleMask & NSWindowStyleMaskFullScreen) != 0;
+	if ((native_fullscreen && SDL_SetWindowFullscreen(w, SDL_WINDOW_FULLSCREEN_DESKTOP) != 0) ||
+		SDL_SetWindowFullscreen(w, 0) != 0) {
+		WARN_LOG(COMMON, "multi-pov: cannot leave full screen: %s", SDL_GetError());
 		return;
 	}
-	if (g_leaving_fullscreen) return;
 	if (win.isZoomed) [win zoom:nil];
 }
 
@@ -157,4 +177,3 @@ void gdxsv_multi_pov_window_set_borderless(bool borderless) {
 						NSWindowStyleMaskResizable;
 	}
 }
-

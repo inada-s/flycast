@@ -128,13 +128,13 @@ class GdxsvReplayInputTest : public ::testing::Test {
 #endif
 	}
 
-	void PrepareTakeoverAlignment(bool retry, u16 target) {
+	void PrepareTakeoverCountdown(bool retry, u16 target) {
 		SetOffline();
 		// Model the states left by TakeOver and RetryTakeover without loading
 		// emulator save states. Retry deliberately keeps takeover_ true.
 		replay_.takeover_ = retry;
 		replay_.pause_menu_opend_ = true;
-		replay_.BeginTakeoverAlignment(target);
+		replay_.BeginTakeoverCountdown(target);
 		replay_.ctrl_commands_.clear();
 	}
 
@@ -143,23 +143,19 @@ class GdxsvReplayInputTest : public ::testing::Test {
 		replay_.ProcessUiCommands();
 	}
 
-	void SkipTakeoverAlignment() {
-		replay_.ui_commands_.emplace_back(GdxsvBackendReplay::ReplayCtrlCommand::SkipTakeoverAlignment);
-		replay_.ProcessUiCommands();
-	}
-
-	void CancelTakeover() {
-		replay_.ui_commands_.emplace_back(GdxsvBackendReplay::ReplayCtrlCommand::CancelTakeover);
-		replay_.ProcessUiCommands();
-	}
-
 	void ResetReplay() { replay_.Reset(); }
 	void SetReplayState(GdxsvBackendReplay::State state) { replay_.state_ = state; }
 	void SetLive() { replay_.live_mode_ = true; }
 	void CloseTakeoverMenu() { replay_.pause_menu_opend_ = false; }
+	void RenderTakeoverMenu(u32 buttons) {
+		kcode[0] = ~buttons;
+		ImGui::NewFrame();
+		replay_.RenderPauseMenu(PublishedUi());
+		ImGui::EndFrame();
+		replay_.ProcessUiCommands();
+	}
 	bool IsTakingOver() const { return replay_.takeover_; }
-	bool IsAligningTakeover() const { return replay_.takeover_aligning_; }
-	bool IsSkippingTakeoverAlignment() const { return replay_.takeover_skip_input_matching_; }
+	u16 TakeoverTargetInput() const { return replay_.takeover_target_input_; }
 	int TakeoverCountdown() const { return replay_.takeover_countdown_; }
 	const std::deque<u16>& TakeoverInputs() const { return replay_.takeover_input_buf_; }
 	size_t PendingControlCommands() { return replay_.ctrl_commands_.size(); }
@@ -838,221 +834,157 @@ TEST_F(GdxsvReplayInputTest, TakeoverForceUsesControllerInputOnlyForThePovPlayer
 	ExpectBatch(expected);
 }
 
-TEST_F(GdxsvReplayInputTest, TakeoverAlignmentStartsAndCompletesOnFirstAndRepeatedAttempts) {
-	const u16 target = McsKeyCode::A;
+TEST_F(GdxsvReplayInputTest, TakeoverCountdownStartsImmediatelyOnFirstAndRepeatedAttempts) {
+	const u16 target = McsKeyCode::A | McsKeyCode::LEFT;
+	const u16 inputs[] = {0, McsKeyCode::B, McsKeyCode::A | McsKeyCode::X, target};
 	for (int attempt = 0; attempt < 3; ++attempt) {
 		SCOPED_TRACE(attempt);
-		PrepareTakeoverAlignment(attempt > 0, target);
-
-		SendTakeoverInput(0);
-		EXPECT_TRUE(IsAligningTakeover());
-		EXPECT_EQ(0, TakeoverCountdown());
-		EXPECT_TRUE(TakeoverInputs().empty());
-		EXPECT_EQ(0u, PendingControlCommands());
-
-		SendTakeoverInput(target);
-		ASSERT_FALSE(IsAligningTakeover());
-		ASSERT_EQ(60, TakeoverCountdown());
-		EXPECT_EQ(attempt > 0, IsTakingOver());
-		EXPECT_TRUE(TakeoverInputs().empty());
-
-		for (int frame = 1; frame < 60; ++frame) {
-			SendTakeoverInput(target);
-			EXPECT_EQ(60 - frame, TakeoverCountdown());
-			EXPECT_EQ(static_cast<size_t>(frame), TakeoverInputs().size());
-			EXPECT_EQ(0u, PendingControlCommands());
-		}
-		SendTakeoverInput(target);
-		EXPECT_EQ(0, TakeoverCountdown());
-		EXPECT_FALSE(IsAligningTakeover());
-		EXPECT_EQ(std::deque<u16>(60, target), TakeoverInputs());
-		EXPECT_TRUE(StartTakeoverQueued());
-		EXPECT_EQ(1u, PendingControlCommands());
-
-		// Late UI samples must not add inputs or queue another start after
-		// the countdown has finished, even before the start command executes.
-		SendTakeoverInput(target);
-		SendTakeoverInput(0);
-		EXPECT_FALSE(IsAligningTakeover());
-		EXPECT_EQ(0, TakeoverCountdown());
-		EXPECT_EQ(std::deque<u16>(60, target), TakeoverInputs());
-		EXPECT_EQ(1u, PendingControlCommands());
-		EXPECT_EQ(attempt > 0, IsTakingOver());
-	}
-}
-
-TEST_F(GdxsvReplayInputTest, TakeoverCountdownMismatchRequiresMatchingAgainOnFirstAndRetry) {
-	for (bool retry : {false, true}) {
-		SCOPED_TRACE(retry);
-		PrepareTakeoverAlignment(retry, McsKeyCode::A);
-		SendTakeoverInput(McsKeyCode::A);
-		ASSERT_EQ(60, TakeoverCountdown());
-		SendTakeoverInput(McsKeyCode::A);
-		ASSERT_EQ(59, TakeoverCountdown());
-		ASSERT_EQ(1u, TakeoverInputs().size());
-
-		SendTakeoverInput(0);
-		EXPECT_TRUE(IsAligningTakeover());
-		EXPECT_EQ(0, TakeoverCountdown());
-		EXPECT_TRUE(TakeoverInputs().empty());
-		EXPECT_EQ(0u, PendingControlCommands());
-
-		SendTakeoverInput(McsKeyCode::A);
-		EXPECT_FALSE(IsAligningTakeover());
+		PrepareTakeoverCountdown(attempt > 0, target);
 		EXPECT_EQ(60, TakeoverCountdown());
-		EXPECT_TRUE(TakeoverInputs().empty());
-		EXPECT_EQ(retry, IsTakingOver());
-	}
-}
-
-TEST_F(GdxsvReplayInputTest, TakeoverInputIsIgnoredAfterTheMenuCloses) {
-	for (bool retry : {false, true}) {
-		SCOPED_TRACE(retry);
-		PrepareTakeoverAlignment(retry, McsKeyCode::A);
-		CloseTakeoverMenu();
-		SendTakeoverInput(McsKeyCode::A);
-		EXPECT_TRUE(IsAligningTakeover());
-		EXPECT_EQ(0, TakeoverCountdown());
-		EXPECT_TRUE(TakeoverInputs().empty());
-		EXPECT_EQ(0u, PendingControlCommands());
-	}
-}
-
-TEST_F(GdxsvReplayInputTest, SkipTakeoverCountsChangingInputsOnFirstAndRepeatedAttempts) {
-	for (int attempt = 0; attempt < 3; ++attempt) {
-		SCOPED_TRACE(attempt);
-		PrepareTakeoverAlignment(attempt > 0, McsKeyCode::A);
-		SkipTakeoverAlignment();
-		ASSERT_TRUE(IsSkippingTakeoverAlignment());
-		ASSERT_FALSE(IsAligningTakeover());
-		ASSERT_EQ(60, TakeoverCountdown());
-		EXPECT_TRUE(TakeoverInputs().empty());
+		EXPECT_EQ(target, TakeoverTargetInput());
 		EXPECT_EQ(attempt > 0, IsTakingOver());
+		EXPECT_TRUE(TakeoverInputs().empty());
 
+		// Missing, extra and matching inputs all advance the same countdown.
 		std::deque<u16> expected;
 		for (int frame = 1; frame <= 60; ++frame) {
-			const u16 input = frame % 2 ? McsKeyCode::B : 0;
+			const u16 input = inputs[(frame - 1) % 4];
 			expected.push_back(input);
 			SendTakeoverInput(input);
-			// Duplicate clicks must not restart or clear the countdown.
-			SkipTakeoverAlignment();
-			EXPECT_FALSE(IsAligningTakeover());
 			EXPECT_EQ(60 - frame, TakeoverCountdown());
 			EXPECT_EQ(expected, TakeoverInputs());
 			EXPECT_EQ(frame == 60 ? 1u : 0u, PendingControlCommands());
 		}
 		EXPECT_TRUE(StartTakeoverQueued());
-		SendTakeoverInput(McsKeyCode::A);
+
+		// Late UI samples cannot add inputs or queue another start.
+		SendTakeoverInput(target);
 		SendTakeoverInput(0);
+		EXPECT_EQ(0, TakeoverCountdown());
 		EXPECT_EQ(expected, TakeoverInputs());
-		EXPECT_EQ(0, TakeoverCountdown());
 		EXPECT_EQ(1u, PendingControlCommands());
+		EXPECT_EQ(attempt > 0, IsTakingOver());
 	}
 }
 
-TEST_F(GdxsvReplayInputTest, SkipTakeoverAcceptsInputThatAlreadyStartedTheCountdown) {
-	for (bool retry : {false, true}) {
-		SCOPED_TRACE(retry);
-		PrepareTakeoverAlignment(retry, McsKeyCode::A);
-		// The UI queues its input sample before the clicked Skip command.
-		SendTakeoverInput(McsKeyCode::A);
-		ASSERT_EQ(60, TakeoverCountdown());
-		SkipTakeoverAlignment();
-		ASSERT_TRUE(IsSkippingTakeoverAlignment());
+TEST_F(GdxsvReplayInputTest, TakeoverCountdownDoesNotRequireAnyButtons) {
+	PrepareTakeoverCountdown(false, McsKeyCode::A | McsKeyCode::LEFT);
+	for (int frame = 0; frame < 60; ++frame)
 		SendTakeoverInput(0);
-		EXPECT_FALSE(IsAligningTakeover());
-		EXPECT_EQ(59, TakeoverCountdown());
-		EXPECT_EQ(std::deque<u16>{0}, TakeoverInputs());
-	}
-}
-
-TEST_F(GdxsvReplayInputTest, NewTakeoverAttemptRequiresMatchingAfterSkip) {
-	PrepareTakeoverAlignment(false, McsKeyCode::A);
-	for (int attempt = 0; attempt < 3; ++attempt) {
-		SCOPED_TRACE(attempt);
-		SkipTakeoverAlignment();
-		SendTakeoverInput(0);
-		ASSERT_TRUE(IsSkippingTakeoverAlignment());
-		ASSERT_EQ(59, TakeoverCountdown());
-
-		PrepareTakeoverAlignment(true, McsKeyCode::B);
-		EXPECT_FALSE(IsSkippingTakeoverAlignment());
-		EXPECT_TRUE(TakeoverInputs().empty());
-		SendTakeoverInput(0);
-		EXPECT_TRUE(IsAligningTakeover());
-		EXPECT_EQ(0, TakeoverCountdown());
-		SendTakeoverInput(McsKeyCode::B);
-		EXPECT_EQ(60, TakeoverCountdown());
-		SendTakeoverInput(0);
-		EXPECT_TRUE(IsAligningTakeover());
-		EXPECT_EQ(0, TakeoverCountdown());
-		EXPECT_EQ(0u, PendingControlCommands());
-	}
-}
-
-TEST_F(GdxsvReplayInputTest, SkipTakeoverIsIgnoredAfterTheMenuCloses) {
-	for (bool retry : {false, true}) {
-		SCOPED_TRACE(retry);
-		PrepareTakeoverAlignment(retry, McsKeyCode::A);
-		CloseTakeoverMenu();
-		SkipTakeoverAlignment();
-		EXPECT_FALSE(IsSkippingTakeoverAlignment());
-		EXPECT_TRUE(IsAligningTakeover());
-		EXPECT_EQ(0, TakeoverCountdown());
-		EXPECT_TRUE(TakeoverInputs().empty());
-		EXPECT_EQ(0u, PendingControlCommands());
-	}
-}
-
-TEST_F(GdxsvReplayInputTest, SkipTakeoverIsIgnoredAfterTheMatchingCountdownFinishes) {
-	PrepareTakeoverAlignment(false, McsKeyCode::A);
-	for (int frame = 0; frame <= 60; ++frame)
-		SendTakeoverInput(McsKeyCode::A);
-	ASSERT_TRUE(StartTakeoverQueued());
-	SkipTakeoverAlignment();
-	EXPECT_FALSE(IsSkippingTakeoverAlignment());
-	EXPECT_FALSE(IsAligningTakeover());
 	EXPECT_EQ(0, TakeoverCountdown());
-	EXPECT_EQ(std::deque<u16>(60, McsKeyCode::A), TakeoverInputs());
+	EXPECT_EQ(std::deque<u16>(60, 0), TakeoverInputs());
+	EXPECT_TRUE(StartTakeoverQueued());
+}
+
+TEST_F(GdxsvReplayInputTest, TakeoverCountdownIgnoresRecordedAndHeldStartOnFirstAndRetry) {
+	for (bool retry : {false, true}) {
+		for (u16 target : {u16(0), u16(McsKeyCode::A)}) {
+			PrepareTakeoverCountdown(retry, target | McsKeyCode::START);
+			EXPECT_EQ(target, TakeoverTargetInput());
+			EXPECT_EQ(60, TakeoverCountdown());
+			for (int frame = 1; frame <= 60; ++frame) {
+				SendTakeoverInput(target | (frame % 2 ? McsKeyCode::START : 0));
+				EXPECT_EQ(60 - frame, TakeoverCountdown());
+				EXPECT_EQ(std::deque<u16>(frame, target), TakeoverInputs());
+			}
+			EXPECT_TRUE(StartTakeoverQueued());
+			EXPECT_EQ(1u, PendingControlCommands());
+		}
+	}
+}
+
+TEST_F(GdxsvReplayInputTest, HeldStartDuringCountdownDoesNotRetryUntilReleased) {
+	PrepareFrameControl();
+	const auto previous_context = ImGui::GetCurrentContext();
+	const auto context = ImGui::CreateContext();
+	const auto previous_input = mapleInputState[0];
+	const u32 previous_kcode = kcode[0];
+	ImGui::GetIO().DisplaySize = ImVec2(640, 480);
+	ImGui::GetIO().Fonts->Build();
+	config::ThreadedRendering = true;
+#ifdef _WIN32
+	config::JoystickPolling = false;
+#endif
+	PrepareTakeoverCountdown(true, McsKeyCode::A);
+	CloseTakeoverMenu();
+	mapleInputState[0] = {};
+	RunMainUiInput(0);
+	RunMainUiInput(DC_BTN_START);
+	PrepareTakeoverCountdown(true, McsKeyCode::A);
+	RenderTakeoverMenu(DC_BTN_START);
+	EXPECT_EQ(59, TakeoverCountdown());
+	RenderTakeoverMenu(0);
+	EXPECT_EQ(58, TakeoverCountdown());
+	RenderTakeoverMenu(DC_BTN_START);
+	EXPECT_EQ(57, TakeoverCountdown());
+	for (int frame = 0; frame < 57; ++frame)
+		SendTakeoverInput(McsKeyCode::START);
+	EXPECT_TRUE(StartTakeoverQueued());
+	EXPECT_EQ(std::deque<u16>(60, 0), TakeoverInputs());
+	CloseTakeoverMenu();
+	mapleInputState[0] = {};
+	RunMainUiInput(DC_BTN_START | DC_BTN_A);
 	EXPECT_EQ(1u, PendingControlCommands());
+	// Only START needs releasing; gameplay buttons can remain held.
+	RunMainUiInput(DC_BTN_A);
+	EXPECT_EQ(1u, PendingControlCommands());
+	RunMainUiInput(DC_BTN_START | DC_BTN_A);
+	EXPECT_EQ(2u, PendingControlCommands());
+	mapleInputState[0] = previous_input;
+	kcode[0] = previous_kcode;
+	ImGui::DestroyContext(context);
+	ImGui::SetCurrentContext(previous_context);
 }
 
-TEST_F(GdxsvReplayInputTest, CancelAndResetClearSkippedTakeover) {
-	PrepareTakeoverAlignment(false, McsKeyCode::A);
-	SkipTakeoverAlignment();
-	SendTakeoverInput(0);
-	CancelTakeover();
-	SkipTakeoverAlignment();
-	EXPECT_FALSE(IsSkippingTakeoverAlignment());
-	EXPECT_FALSE(IsAligningTakeover());
-	EXPECT_EQ(0, TakeoverCountdown());
-	EXPECT_TRUE(TakeoverInputs().empty());
-	EXPECT_EQ(0u, PendingControlCommands());
+TEST_F(GdxsvReplayInputTest, NewTakeoverAttemptRestartsCountdownAndClearsOldInputs) {
+	PrepareTakeoverCountdown(false, McsKeyCode::A);
+	SendTakeoverInput(McsKeyCode::B);
+	ASSERT_EQ(59, TakeoverCountdown());
+	ASSERT_FALSE(TakeoverInputs().empty());
 
-	PrepareTakeoverAlignment(false, McsKeyCode::B);
-	SkipTakeoverAlignment();
+	PrepareTakeoverCountdown(true, McsKeyCode::LEFT);
+	EXPECT_EQ(60, TakeoverCountdown());
+	EXPECT_EQ(McsKeyCode::LEFT, TakeoverTargetInput());
+	EXPECT_TRUE(TakeoverInputs().empty());
 	SendTakeoverInput(0);
+	EXPECT_EQ(59, TakeoverCountdown());
+	EXPECT_EQ(std::deque<u16>{0}, TakeoverInputs());
+	EXPECT_EQ(0u, PendingControlCommands());
+}
+
+TEST_F(GdxsvReplayInputTest, TakeoverInputIsIgnoredAfterTheMenuCloses) {
+	for (bool retry : {false, true}) {
+		SCOPED_TRACE(retry);
+		PrepareTakeoverCountdown(retry, McsKeyCode::A);
+		CloseTakeoverMenu();
+		SendTakeoverInput(McsKeyCode::A);
+		EXPECT_EQ(60, TakeoverCountdown());
+		EXPECT_TRUE(TakeoverInputs().empty());
+		EXPECT_EQ(0u, PendingControlCommands());
+	}
+}
+
+TEST_F(GdxsvReplayInputTest, ResetClearsTakeoverCountdown) {
+	PrepareTakeoverCountdown(false, McsKeyCode::A);
+	SendTakeoverInput(McsKeyCode::B);
 	ResetReplay();
-	SkipTakeoverAlignment();
-	EXPECT_FALSE(IsSkippingTakeoverAlignment());
-	EXPECT_FALSE(IsAligningTakeover());
+	SendTakeoverInput(McsKeyCode::B);
 	EXPECT_EQ(0, TakeoverCountdown());
+	EXPECT_EQ(0, TakeoverTargetInput());
 	EXPECT_TRUE(TakeoverInputs().empty());
 	EXPECT_EQ(0u, PendingControlCommands());
 }
 
-TEST_F(GdxsvReplayInputTest, SkipTakeoverIsIgnoredInLiveOrInactiveReplay) {
+TEST_F(GdxsvReplayInputTest, TakeoverInputIsIgnoredInLiveOrInactiveReplay) {
 	using State = GdxsvBackendReplay::State;
 	for (State state : {State::McsInBattle, State::None, State::End}) {
 		SCOPED_TRACE(static_cast<int>(state));
-		PrepareTakeoverAlignment(false, McsKeyCode::A);
+		PrepareTakeoverCountdown(false, McsKeyCode::A);
 		SetReplayState(state);
 		if (state == State::McsInBattle)
 			SetLive();
-		SkipTakeoverAlignment();
-		EXPECT_FALSE(IsSkippingTakeoverAlignment());
-		EXPECT_TRUE(IsAligningTakeover());
-		EXPECT_EQ(0, TakeoverCountdown());
+		SendTakeoverInput(0);
+		EXPECT_EQ(60, TakeoverCountdown());
 		EXPECT_TRUE(TakeoverInputs().empty());
 		EXPECT_EQ(0u, PendingControlCommands());
 	}
