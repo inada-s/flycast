@@ -250,21 +250,18 @@ void GdxsvSpectatorDownlink::ThreadMain(std::string lbs_host, int lbs_port, std:
 		std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now().time_since_epoch())
 			.count();
 
+	// LBS never splits a patch, so a patch chunk can be several KB.
+	std::vector<char> buf(65536);
 	while (running_) {
 		for (int received = 0; running_ && received < 64; ++received) {
-			// Must fit the largest datagram LBS sends. Input pushes are ~1KB,
-			// but the bootstrap header measured ~1.8KB for 2 players and grows
-			// with player count. Too small and recvfrom truncates silently,
-			// ParseFromArray fails, and the header is lost.
-			char buf[8192];
 			sockaddr_storage sender{};
 			socklen_t addrlen = sizeof(sender);
-			int n = client.RecvFrom(buf, sizeof(buf), &sender, &addrlen);
+			int n = client.RecvFrom(buf.data(), static_cast<int>(buf.size()), &sender, &addrlen);
 			if (n <= 0) break;
 			if (!is_same_addr(reinterpret_cast<const sockaddr *>(&sender), remote.net_addr())) continue;
 
 			proto::Packet pkt;
-			if (!pkt.ParseFromArray(buf, n)) continue;
+			if (!pkt.ParseFromArray(buf.data(), n)) continue;
 			if (pkt.type() == proto::MessageType::SpectatorSubscribeChallengeType) {
 				const auto &challenge = pkt.spectator_subscribe_challenge_data();
 				if (challenge.battle_code() != battle_code || challenge.cookie().size() != kSubscribeCookieBytes) continue;
