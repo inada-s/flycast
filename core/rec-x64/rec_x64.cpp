@@ -180,7 +180,7 @@ public:
 					mov(dword[rax], op.rs2._imm);
 				}
 
-				if (memwatch::enabled())
+				if (memwatch::enabled() || memwatch::readEnabled())
 				{
 					mov(rax, (uintptr_t)&memwatch::fallbackPc);
 					mov(dword[rax], block->vaddr + op.guest_offs);
@@ -192,6 +192,12 @@ public:
 					GenCall(OpDesc[op.rs3._imm]->oph);
 				else
 					GenCall(interpreter_fallback);
+				if (memwatch::enabled() || memwatch::readEnabled())
+				{
+					// handler hits outside a fallback have no guest instruction: log NoPc, not a stale pc
+					mov(rax, (uintptr_t)&memwatch::fallbackPc);
+					mov(dword[rax], memwatch::NoPc);
+				}
 
 				break;
 

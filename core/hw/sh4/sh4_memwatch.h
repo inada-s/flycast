@@ -9,6 +9,8 @@
 // format with newValue = the value read and old = 0; env FLYCAST_MEMREADWATCH=1 enables it with no range.
 // Works with the interpreter and the x64 dynarec: when enabled, the dynarec compiles every guest write as a call
 // that carries the guest pc, so no write is inlined. When disabled nothing here runs.
+// Dynarec hits with no guest instruction behind them (a handler call outside an interpreter fallback) carry
+// pc = NoPc, logged as ffffffff (not + 2). The interpreter always logs its current pc.
 #pragma once
 #include "types.h"
 #include <vector>
@@ -54,6 +56,8 @@ u32 DYNACALL dynRead8(u32 addr, u32 pc, u32 pr);
 u32 DYNACALL dynRead16(u32 addr, u32 pc, u32 pr);
 u32 DYNACALL dynRead32(u32 addr, u32 pc, u32 pr);
 u64 DYNACALL dynRead64(u32 addr, u32 pc, u32 pr);
-// pc of the instruction a dynarec block is running through the interpreter fallback
+// Hit.pc of a dynarec handler hit with no guest instruction behind it
+constexpr u32 NoPc = 0xffffffff;
+// pc of the instruction a dynarec block is running through the interpreter fallback, else NoPc
 extern u32 fallbackPc;
 }

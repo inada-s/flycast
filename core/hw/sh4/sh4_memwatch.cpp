@@ -13,7 +13,7 @@
 
 namespace memwatch
 {
-u32 fallbackPc;
+u32 fallbackPc = NoPc;
 
 namespace {
 constexpr int MaxRanges = 32;
@@ -137,7 +137,7 @@ void record(u32 addr, u32 size, u64 newv, u32 pc, u32 pr)
 	std::lock_guard<std::mutex> lock(mutex);
 	if (logFile != nullptr)
 	{
-		std::fprintf(logFile, "%u %08x %08x %08x %u %llx %llx\n", FrameCount, pc + 2, pr, addr, size,
+		std::fprintf(logFile, "%u %08x %08x %08x %u %llx %llx\n", FrameCount, pc == NoPc ? NoPc : pc + 2, pr, addr, size,
 				(unsigned long long)oldv, (unsigned long long)newv);
 		std::fflush(logFile);
 	}
@@ -152,7 +152,7 @@ void recordRead(u32 addr, u32 size, u64 v, u32 pc, u32 pr)
 	std::lock_guard<std::mutex> lock(mutex);
 	if (rlogFile != nullptr)
 	{
-		std::fprintf(rlogFile, "%u %08x %08x %08x %u 0 %llx\n", FrameCount, pc + 2, pr, addr, size,
+		std::fprintf(rlogFile, "%u %08x %08x %08x %u 0 %llx\n", FrameCount, pc == NoPc ? NoPc : pc + 2, pr, addr, size,
 				(unsigned long long)v);
 		std::fflush(rlogFile);
 	}
@@ -162,7 +162,8 @@ void recordRead(u32 addr, u32 size, u64 v, u32 pc, u32 pr)
 		hits.push_back({ FrameCount, pc, pr, addr, size, 0, v, true });
 }
 
-// Interpreter: Sh4cntx.pc is the instruction + 2. Dynarec: only the interpreter fallback ops get here.
+// Interpreter: Sh4cntx.pc is the instruction + 2. Dynarec: compiled memops go through dyn*; a handler hit is an
+// interpreter fallback op (fallbackPc set around the call) or has no guest instruction (fallbackPc = NoPc).
 inline u32 handlerPc() {
 	return config::DynarecEnabled ? fallbackPc : Sh4cntx.pc - 2;
 }
