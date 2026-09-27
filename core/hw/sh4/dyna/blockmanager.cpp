@@ -56,6 +56,7 @@ static DynarecCodeEntryPtr DYNACALL bm_GetCode(u32 addr)
 // object draw callbacks inside it update state that game logic reads. Only the disk's output-only functions
 // (settings.gdxsv.renderOnlyFuncs) return at their entry, from the render call until it returns.
 static u32 gdxsvRenderReturn;
+namespace ggpo { int gdxsvPerfSkipMode(); extern u32 gdxsvPerfSkipHits; } // core/network/ggpo.cpp, perf probe only
 
 static bool gdxsvIsRenderOnlyFunc(u32 addr)
 {
@@ -69,7 +70,16 @@ static bool gdxsvIsRenderOnlyFunc(u32 addr)
 // This returns an executable address
 DynarecCodeEntryPtr DYNACALL bm_GetCodeByVAddr(u32 addr)
 {
-	if (settings.gdxsv.skipRenderingAddr == 0) {
+	if (ggpo::gdxsvPerfSkipMode() == 1) {
+		// perf probe only (ai-automation#23): the pre-#382 full skip, known to desync
+		if (addr == settings.gdxsv.skipRenderingAddr) {
+			Sh4cntx.pc += 4;
+			Sh4cntx.cycle_counter -= 1000000;
+			addr = Sh4cntx.pc;
+			ggpo::gdxsvPerfSkipHits++;
+		}
+	}
+	else if (settings.gdxsv.skipRenderingAddr == 0) {
 		if (gdxsvRenderReturn != 0)
 			gdxsvRenderReturn = 0;
 	}
@@ -80,6 +90,7 @@ DynarecCodeEntryPtr DYNACALL bm_GetCodeByVAddr(u32 addr)
 		if (gdxsvIsRenderOnlyFunc(addr)) {
 			Sh4cntx.pc = Sh4cntx.pr;
 			addr = Sh4cntx.pc;
+			ggpo::gdxsvPerfSkipHits++;
 		}
 		if (addr == gdxsvRenderReturn)
 			gdxsvRenderReturn = 0;

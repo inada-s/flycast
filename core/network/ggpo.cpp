@@ -214,6 +214,22 @@ static void logSavedState(int frame, const unsigned char *buffer, int len)
 }
 static int seekToFrame = -1;
 static int totalRollbackFrames;
+
+// gdxsv perf probe (measurement only, ai-automation#23). GDXSV_PERFLOG=<file>: one line per displayed frame.
+// GDXSV_SKIPMODE=old: the full render skip removed by flycast#382 (bsr skipped, 1000000 cycles charged).
+static FILE *perfLog;
+static int perfResimFrames, perfStallLoops;
+static s64 perfResimUs, perfLoadUs, perfEmuUs;
+u32 gdxsvPerfSkipHits; // bsr skips (old) or render-only function returns (partial), counted in blockmanager.cpp
+int gdxsvPerfSkipMode()
+{
+	static const int mode = (getenv("GDXSV_SKIPMODE") != nullptr && strcmp(getenv("GDXSV_SKIPMODE"), "old") == 0) ? 1 : 0;
+	return mode;
+}
+static s64 perfNowUs()
+{
+	return std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::steady_clock::now().time_since_epoch()).count();
+}
 static int totalTimeSync;
 static int timesyncOccurred;
 
@@ -338,6 +354,7 @@ static bool on_event(GGPOEvent *info)
 static bool advance_frame(int)
 {
 	INFO_LOG(NETWORK, "advance_frame");
+	const s64 perfT0 = perfNowUs();
 	int frame;
 	getCurrentFrame(&frame);
 
@@ -346,13 +363,18 @@ static bool advance_frame(int)
 	rend_enable_renderer(false);
 	inRollback = true;
 
+	const s64 perfE0 = perfNowUs();
 	const int skips = skippedFrames[frame];
 	for (int i = 0; i < skips; i++) {
 		emu.run();
 	}
 
-	settings.gdxsv.skipRenderingAddr = config::GdxSkipRenderingHack ? settings.gdxsv.skipRenderingBaseAddr : 0;
+	if (gdxsvPerfSkipMode() == 1)
+		settings.gdxsv.skipRenderingAddr = (config::GdxSkipRenderingHack && frame + 1 < seekToFrame) ? settings.gdxsv.skipRenderingBaseAddr : 0;
+	else
+		settings.gdxsv.skipRenderingAddr = config::GdxSkipRenderingHack ? settings.gdxsv.skipRenderingBaseAddr : 0;
 	emu.run();
+	perfEmuUs += perfNowUs() - perfE0;
 	ggpo_advance_frame(ggpoSession);
 
 	settings.aica.muteAudio = false;
@@ -362,6 +384,8 @@ static bool advance_frame(int)
 	_endOfFrame = false;
 
 	totalRollbackFrames++;
+	perfResimFrames++;
+	perfResimUs += perfNowUs() - perfT0;
 	return true;
 }
 
@@ -375,6 +399,7 @@ static bool advance_frame(int)
 static bool load_game_state(unsigned char *buffer, int len)
 {
 	INFO_LOG(NETWORK, "load_game_state");
+	const s64 perfT0 = perfNowUs();
 	ggpo::getCurrentFrame(&seekToFrame);
 
 	rend_start_rollback();
@@ -406,6 +431,7 @@ static bool load_game_state(unsigned char *buffer, int len)
 	rend_allow_rollback();	// ggpo might load another state right after this one
 	memwatch::reset();
 	memwatch::protect();
+	perfLoadUs += perfNowUs() - perfT0;
 	return true;
 }
 
@@ -820,6 +846,18 @@ bool nextFrame()
 		usPerFrameAvg = std::accumulate(usPerFrame.begin(), usPerFrame.end(), 0) / usPerFrame.size();
 		fpsAvg = static_cast<float>(usPerFrame.size()) * 1000 * 1000 / std::accumulate(usPerFrame.begin(), usPerFrame.end(), 0);
 	}
+	if (perfLog == nullptr && getenv("GDXSV_PERFLOG") != nullptr)
+		perfLog = fopen(getenv("GDXSV_PERFLOG"), "w");
+	if (perfLog != nullptr && lastFrameTime != time_point<steady_clock>())
+	{
+		// interval_us resim_frames resim_us load_us stall_loops emu_us skip_hits (accumulated during the interval;
+		// resim_us = whole advance_frame incl. the state save, emu_us = its emu.run calls only)
+		fprintf(perfLog, "%lld %d %lld %lld %d %lld %u\n", (long long)duration_cast<microseconds>(now - lastFrameTime).count(),
+				perfResimFrames, (long long)perfResimUs, (long long)perfLoadUs, perfStallLoops, (long long)perfEmuUs, gdxsvPerfSkipHits);
+		perfResimFrames = perfStallLoops = 0;
+		perfResimUs = perfLoadUs = perfEmuUs = 0;
+		gdxsvPerfSkipHits = 0;
+	}
 	lastFrameTime = now;
 
 	std::lock_guard<std::recursive_mutex> lock(ggpoMutex);
@@ -938,6 +976,7 @@ bool nextFrame()
 		}
 		DEBUG_LOG(NETWORK, "ggpo_add_local_input prediction barrier reached");
 		loop_count++;
+		perfStallLoops++;
 		sleep_us(5 * 1000);
 		error = ggpo_idle(ggpoSession, 0);
 		if (error != GGPO_OK)
