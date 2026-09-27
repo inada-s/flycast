@@ -70,7 +70,7 @@ static bool gdxsvIsRenderOnlyFunc(u32 addr)
 // This returns an executable address
 DynarecCodeEntryPtr DYNACALL bm_GetCodeByVAddr(u32 addr)
 {
-	if (ggpo::gdxsvPerfSkipMode() == 1) {
+	if (ggpo::gdxsvPerfSkipMode() != 0) {
 		// perf probe only (ai-automation#23): the pre-#382 full skip, known to desync
 		if (addr == settings.gdxsv.skipRenderingAddr) {
 			Sh4cntx.pc += 4;

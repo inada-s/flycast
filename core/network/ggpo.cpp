@@ -216,14 +216,18 @@ static int seekToFrame = -1;
 static int totalRollbackFrames;
 
 // gdxsv perf probe (measurement only, ai-automation#23). GDXSV_PERFLOG=<file>: one line per displayed frame.
-// GDXSV_SKIPMODE=old: the full render skip removed by flycast#382 (bsr skipped, 1000000 cycles charged).
+// GDXSV_SKIPMODE=old: the full render skip removed by flycast#382 (bsr skipped, 1000000 cycles charged; last
+// resimulated frame fully rendered, as before #382). GDXSV_SKIPMODE=oldall: the same skip on the last frame too.
 static FILE *perfLog;
 static int perfResimFrames, perfStallLoops;
 static s64 perfResimUs, perfLoadUs, perfEmuUs;
 u32 gdxsvPerfSkipHits; // bsr skips (old) or render-only function returns (partial), counted in blockmanager.cpp
 int gdxsvPerfSkipMode()
 {
-	static const int mode = (getenv("GDXSV_SKIPMODE") != nullptr && strcmp(getenv("GDXSV_SKIPMODE"), "old") == 0) ? 1 : 0;
+	static const int mode = [] {
+		const char *m = getenv("GDXSV_SKIPMODE");
+		return m == nullptr ? 0 : strcmp(m, "old") == 0 ? 1 : strcmp(m, "oldall") == 0 ? 2 : 0;
+	}();
 	return mode;
 }
 static s64 perfNowUs()
