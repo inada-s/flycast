@@ -81,6 +81,10 @@ void GdxsvSlowdown::OnVBlank() {
 		if (in_battle_ && config::GdxProjectileView) Measure(entries_, load_);
 		return;
 	}
+	if (gdxsv.IsReplaySeeking()) {
+		stalling_ = false;
+		return;
+	}
 	in_battle_ = gdxsv.IsReplaying() && Measure(entries_, load_);
 	// Over the threshold every other vblank delivers no input.
 	stalling_ = in_battle_ && kThreshold <= load_.value && !stalling_;

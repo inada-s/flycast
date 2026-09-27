@@ -89,6 +89,8 @@ bool Gdxsv::IsSaveStateAllowed() const { return netmode_ == NetMode::Offline; }
 
 bool Gdxsv::IsReplaying() const { return netmode_ == NetMode::Replay; }
 
+bool Gdxsv::IsReplaySeeking() const { return IsReplaying() && replay_net_.Seeking(); }
+
 bool Gdxsv::Enabled() const { return enabled_; }
 
 void Gdxsv::DisplayOSD() {
