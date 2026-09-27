@@ -93,7 +93,9 @@ class Arm7Compiler : public Xbyak::CodeGenerator
 	static const u32 C_FLAG = 1 << 29;
 	static const u32 V_FLAG = 1 << 28;
 
-	Xbyak::util::Cpu cpu;
+	// cpuid is slow: probe the host once, not for every compiled block
+	static const Xbyak::util::Cpu& hostCpu() { static const Xbyak::util::Cpu c; return c; }
+	const Xbyak::util::Cpu& cpu = hostCpu();
 
 	Xbyak::Operand getOperand(const ArmOp::Operand& arg, Xbyak::Reg32 scratch_reg)
 	{

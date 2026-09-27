@@ -72,6 +72,9 @@ DynarecCodeEntryPtr DYNACALL bm_GetCodeByVAddr(u32 addr);
 RuntimeBlockInfoPtr bm_GetBlock(void* dynarec_code);
 RuntimeBlockInfoPtr bm_GetStaleBlock(void* dynarec_code);
 RuntimeBlockInfoPtr DYNACALL bm_GetBlock(u32 addr);
+bool bm_gdxsvLinkable(u32 addr);
+u32 *bm_gdxsvRenderReturnPtr();
+u64 *bm_gdxsvRenderOnlyMaskPtr();
 
 void bm_AddBlock(RuntimeBlockInfo* blk);
 void bm_DiscardBlock(RuntimeBlockInfo* block);
