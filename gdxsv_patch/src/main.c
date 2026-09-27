@@ -17,6 +17,8 @@ typedef unsigned long long u64;
 #define GDXWSFUNC __attribute__((section("gdx.func.ws"), no_reorder))
 #define GDXSTATSDATA __attribute__((section("gdx.data.stats")))
 #define GDXSTATSFUNC __attribute__((section("gdx.func.stats"), noinline))
+#define GDXWS1DATA __attribute__((section("gdx.data.ws1")))
+#define GDXWS1FUNC __attribute__((section("gdx.func.ws1"), noinline))
 
 #if DEBUG_PRINT
 #include "mini-printf.h"
@@ -1069,3 +1071,159 @@ int GDXSTATSFUNC gdx_stats_poll(u16 *command) {
     }
     return 0; // consume unsolicited, superseded or duplicate extension replies
 }
+
+// Disc-1 widescreen. The code matches Disc 2 byte for byte at every hooked
+// site, so these mirror the .ws helpers with Disc-1 addresses. They share
+// the .ws endpoint and HUD offset data, which the host writes per aspect.
+
+// Replacement for Disc-1 FUN_0c135e20 (Disc-2 FUN_0c1955b4).
+void GDXWS1FUNC gdx_widescreen1_transition_matte(void) {
+    u32 rgb = read32(0x0c3d305c);
+    u32 alpha = read32(0x0c3d3060);
+    u32 color = (alpha << 24) | rgb;
+
+    float global_x = *(volatile float *)(0x0c335104 + 16);
+    float global_y = *(volatile float *)(0x0c335104 + 20);
+    float left = gdx_add(global_x, gdx_widescreen_transition_left_x);
+    float right = gdx_add(global_x, gdx_widescreen_transition_right_x);
+    float top = global_y;
+    float bottom = gdx_add(global_y, 480.0f);
+
+    struct gdx_ws_vtx v[4];
+    v[0].x = left;  v[0].y = top;    v[0].z = 0.02f; v[0].color = color;
+    v[1].x = left;  v[1].y = bottom; v[1].z = 0.02f; v[1].color = color;
+    v[2].x = right; v[2].y = top;    v[2].z = 0.02f; v[2].color = color;
+    v[3].x = right; v[3].y = bottom; v[3].z = 0.02f; v[3].color = color;
+
+    ((void (*)(int)) 0x0c13ebb0)(0);             // prepare
+    ((void (*)(int, void *)) 0x0c13ee50)(4, v);  // submit(count, &vertices)
+}
+
+// Private general-fade submit of Disc-1 FUN_0c05ca00.
+void GDXWS1FUNC gdx_widescreen1_fade_submit(int count, struct gdx_ws_vtx *v) {
+    float global_x = *(volatile float *)0x0c335114;
+    float left = gdx_add(global_x, gdx_widescreen_transition_left_x);
+    float right = gdx_add(global_x, gdx_widescreen_transition_right_x);
+    v[0].x = v[1].x = left;
+    v[2].x = v[3].x = right;
+    ((void (*)(int, void *)) 0x0c13ee50)(count, v);
+}
+
+// Disc-1 HUD types: right 0 time, 1 radar, 2 armor and weapons; left
+// 6 team panel, 15 pilot plate; 18 information panel (twice the response).
+void GDXWS1FUNC gdx_widescreen1_hud_render(void *work_) {
+    u8 *work = (u8 *) work_;
+    int type = *(signed char *)(work + 3);
+    float offset;
+    if (type == 18) {
+        offset = gdx_widescreen_hud_half_left_offset;
+    } else if (type == 6 || type == 15) {
+        offset = gdx_widescreen_hud_left_offset;
+    } else {
+        offset = gdx_widescreen_hud_right_offset;
+    }
+
+    union { u32 bits; float value; } volatile *field = (void *)(work + 0x5c);
+    u32 saved = field->bits;
+    field->value = gdx_add(field->value, offset);
+
+    u32 *stock_table = (u32 *) 0x0c17ea78;
+    ((void (*)(void *)) stock_table[type])(work);
+
+    field->bits = saved;
+}
+
+GDXWS1DATA u32 gdx_widescreen1_hud_renderer_table[21] = {
+    (u32) gdx_widescreen1_hud_render, // 0: right
+    (u32) gdx_widescreen1_hud_render, // 1: right
+    (u32) gdx_widescreen1_hud_render, // 2: right
+    0x0c01c000, 0x0c01c000, 0x0c01dbf8,
+    (u32) gdx_widescreen1_hud_render, // 6: left
+    0x0c01e0e8, 0x0c01e0e8, 0x0c01e0e8, 0x0c01e838, 0x0c01e9b0, 0x0c01f344,
+    0x0c01f530, 0x0c01f6d0,
+    (u32) gdx_widescreen1_hud_render, // 15: left
+    0x0c01c000, 0x0c01c000,
+    (u32) gdx_widescreen1_hud_render, // 18: information panel
+    0x0c020b64, 0x0c020b64,
+};
+
+// Disc-1 twin of gdx_widescreen_result_black_postproject: entered from
+// FUN_0c15e940 at 0x0c15e9fc, returns to 0x0c15ea08.
+asm(
+    ".pushsection gdx.func.ws1,\"ax\",@progbits\n"
+    ".align 2\n"
+    ".global gdx_widescreen1_result_black_postproject\n"
+    ".type gdx_widescreen1_result_black_postproject, @function\n"
+    "gdx_widescreen1_result_black_postproject:\n"
+    "	fmul	fr7,fr5\n"
+    "	movt	r1\n"
+    "	mov.l	r1,@-r15\n"
+    "	sts	fpul,r1\n"
+    "	mov.l	r1,@-r15\n"
+    "	mov	r14,r1\n"
+    "	add	#-8,r1\n"
+    "	mov.l	@r1,r2\n"
+    "	mov.l	.L1x_positive,r1\n"
+    "	cmp/eq	r1,r2\n"
+    "	bt	.L1check_y\n"
+    "	mov.l	.L1x_negative,r1\n"
+    "	cmp/eq	r1,r2\n"
+    "	bf	.L1restore_state\n"
+    ".L1check_y:\n"
+    "	mov	r14,r1\n"
+    "	add	#-4,r1\n"
+    "	mov.l	@r1,r2\n"
+    "	mov.l	.L1y_positive,r1\n"
+    "	cmp/eq	r1,r2\n"
+    "	bt	.L1scale\n"
+    "	mov.l	.L1y_negative,r1\n"
+    "	cmp/eq	r1,r2\n"
+    "	bf	.L1restore_state\n"
+    ".L1scale:\n"
+    "	mov.l	gdx_widescreen1_result_black_center,r2\n"
+    "	lds	r2,fpul\n"
+    "	fsts	fpul,fr0\n"
+    "	fsub	fr0,fr5\n"
+    "	mov.l	gdx_widescreen1_result_black_scale,r2\n"
+    "	lds	r2,fpul\n"
+    "	fsts	fpul,fr1\n"
+    "	fmul	fr1,fr5\n"
+    "	fadd	fr0,fr5\n"
+    ".L1restore_state:\n"
+    "	mov.l	@r15+,r1\n"
+    "	lds	r1,fpul\n"
+    "	mov.l	@r15+,r1\n"
+    "	mov	#1,r2\n"
+    "	cmp/eq	r2,r1\n"
+    "	fmov.s	fr6,@-r6\n"
+    "	add	#0x40,r5\n"
+    "	fmov.s	fr4,@-r6\n"
+    "	fmul	fr14,fr10\n"
+    "	mov.l	r0,@r6\n"
+    "	mov.l	.L1return,r2\n"
+    "	jmp	@r2\n"
+    "	 nop\n"
+    "	.balign 4\n"
+    ".L1x_positive:\n"
+    "	.long	0x3e800001\n"
+    ".L1x_negative:\n"
+    "	.long	0xbe800001\n"
+    ".L1y_positive:\n"
+    "	.long	0x3e408313\n"
+    ".L1y_negative:\n"
+    "	.long	0xbe408313\n"
+    ".L1return:\n"
+    "	.long	0x0c15ea08\n"
+    "	.global gdx_widescreen1_result_black_center\n"
+    "	.type gdx_widescreen1_result_black_center, @object\n"
+    "gdx_widescreen1_result_black_center:\n"
+    "	.float	320.0\n"
+    "	.size gdx_widescreen1_result_black_center, 4\n"
+    "	.global gdx_widescreen1_result_black_scale\n"
+    "	.type gdx_widescreen1_result_black_scale, @object\n"
+    "gdx_widescreen1_result_black_scale:\n"
+    "	.float	1.0\n"
+    "	.size gdx_widescreen1_result_black_scale, 4\n"
+    "	.size gdx_widescreen1_result_black_postproject, .-gdx_widescreen1_result_black_postproject\n"
+    ".popsection\n"
+);

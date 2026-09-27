@@ -1,17 +1,19 @@
 SECTIONS
 {
-    /* Keep networking first; append widescreen, then statistics. */
+    /* Keep networking first; append widescreen, statistics, then Disc-1 widescreen. */
     . = 0x0C4E0200;
     gdx.data ALIGN(16) : {
         *(gdx.data)
         *(gdx.data.ws)
         *(gdx.data.stats)
+        *(gdx.data.ws1)
     }
     . = 0x0C4F0000;
     gdx.func ALIGN(16) : {
         *(gdx.func)
         *(gdx.func.ws)
         *(gdx.func.stats)
+        *(gdx.func.ws1)
         *(.rodata*)
     }
     /* gdxsv-1.8.11 savestates retain these hook and renderer-table addresses. */

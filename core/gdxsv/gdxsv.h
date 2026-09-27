@@ -63,7 +63,6 @@ class Gdxsv {
 	bool StartRollbackTest(const char* param);
 	void WritePatch();
 	int Disk() const { return disk_; }
-	bool WidescreenPatchEnabled() const { return enabled_ && widescreen_patch_enabled_; }
 	void InvalidateWidescreenPatch() { widescreen_viewport_width_ = 0; }
 	std::string UserId() const { return user_id_; }
 	MiniUPnP& UPnP() { return upnp_; }
@@ -75,7 +74,7 @@ class Gdxsv {
 	void ApplyOnlinePatch(bool first_time);
 	void WritePatchDisk1();
 	void WritePatchDisk2();
-	void WriteWidescreenPatchDisk2();
+	void WriteWidescreenPatch();
 
 	NetMode netmode_ = NetMode::Offline;
 	std::atomic<bool> enabled_;
