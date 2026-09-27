@@ -34,6 +34,7 @@ class Gdxsv {
 	bool IsOnline() const;
 	bool IsSaveStateAllowed() const;
 	bool IsReplaying() const;
+	bool IsReplaySeeking() const;
 	void DisplayOSD();
 	const char* NetModeString() const;
 	void Reset();

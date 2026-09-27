@@ -31,6 +31,7 @@ class GdxsvBackendReplay {
 	void OnNextFrame();
 	bool OnOpenMenu();
 	void DisplayOSD();
+	bool Seeking() const { return seeking_; }
 
 	bool StartFile(const char* path, int pov);
 	bool StartBuffer(const std::vector<u8>& buf, int pov);
