@@ -595,7 +595,7 @@ u32 GdxsvBackendRollback::OnSockRead(u32 addr, u32 size) {
 	const int skipFrameCount = ggpo::getSkippedFrames(frame);
 	if (!ggpo::isInRollback()) {
 		u16 flags = 0;
-		if (GdxsvProjectileView::InBattle()) {
+		if (GdxsvSlowdown::kEnabled && GdxsvProjectileView::InBattle()) {
 			flags |= ExInputSlowdownReady;
 			if (matching_.peer_id() == 0 && gdxsv.slowdown_.LocalSlow()) flags |= ExInputSlowdownOn;
 		}
