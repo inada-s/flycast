@@ -14,6 +14,9 @@
 // input; every peer stalls on that synced flag (gdxsv_backend_rollback.cpp).
 class GdxsvSlowdown {
    public:
+	// Disabled until the load model is better: no stalls in replay or rollback. The debug view still shows the load.
+	static constexpr bool kEnabled = false;
+
 	enum Category { Missile, Gun, Bazooka, Blast, Cracker, Beam, HeatRod, MsExplosion, HitSpark, NeedleMissile, Cannon, NumCategories };
 
 	void OnVBlank();
