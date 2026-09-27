@@ -11,12 +11,14 @@ constexpr int kDraw = -1;
 constexpr int kMaxRounds = 10;
 constexpr u32 kSessionPointer = 0x0c394524;
 constexpr u32 kDrawFlagAddress = 0x0c3d1950; // Disc 2
+constexpr u32 kDrawFlagAddressDisk1 = 0x0c3364c9; // Disc 1: winner 0x0c3364b6 + 0x13
 constexpr u32 kPlayerStride = 0x2c0;
 constexpr u32 kCountersOffset = 0x2b0;
 constexpr int kPlayerSlots = 4;
 
 inline int Outcome(u8 winner, u8 draw) {
-	// Disc-2 battle init clears winner (PC 0x0c05afb4), then draw (PC 0x0c05affc).
+	// Battle init clears winner, then draw: Disc 2 PC 0x0c05afb4 / 0x0c05affc,
+	// Disc 1 PC 0x0c021284 / 0x0c0212d2 (same frame).
 	// Both reset before gameplay; a zero winner ignores the leftover draw flag.
 	return winner == 0 ? 0 : draw != 0 ? kDraw : winner;
 }
