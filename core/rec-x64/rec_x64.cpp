@@ -115,6 +115,56 @@ constexpr u32 STACK_ALIGN = 0x28;	// 32-byte shadow space + 8 byte alignment
 constexpr u32 STACK_ALIGN = 8;
 #endif
 
+// Block linking: a block that ends in a static branch keeps the host code of its branch target (and of its
+// fall-through for conditional branches) and jumps there directly while cycles remain, instead of returning
+// to the main loop. The links are made lazily on the first exit and dropped (Relink) when the target block
+// is discarded.
+struct X64BlockInfo : RuntimeBlockInfo
+{
+	// 0: BranchBlock, 1: NextBlock. nullptr = not linked yet, NoLink = never link
+	void *linkCode[2] {};
+	static inline void * const NoLink = (void *)1;
+
+	u32 Relink() override
+	{
+		if (pBranchBlock == nullptr && linkCode[0] != NoLink)
+			linkCode[0] = nullptr;
+		if (pNextBlock == nullptr && linkCode[1] != NoLink)
+			linkCode[1] = nullptr;
+		return 0;
+	}
+};
+
+// Returns the host code to continue with, or nullptr to go back to the main loop
+static void * DYNACALL x64LinkBlock(X64BlockInfo *block, u32 which)
+{
+	if (mmu_enabled() || !Sh4cntx.CpuRunning)
+		return nullptr;
+	const u32 target = which == 0 ? block->BranchBlock : block->NextBlock;
+	if (!bm_gdxsvLinkable(target))
+	{
+		block->linkCode[which] = X64BlockInfo::NoLink;
+		return nullptr;
+	}
+	// Only link to a block that is already compiled; the main loop compiles it otherwise
+	RuntimeBlockInfoPtr next = bm_GetBlock(target);
+	if (!next || next->addr != (target & 0x1FFFFFFF) || next->temp_block)
+		return nullptr;
+	RuntimeBlockInfoPtr self = bm_GetBlock((void *)block->code);
+	if (!self || self.get() != block || block->temp_block)
+	{
+		block->linkCode[which] = X64BlockInfo::NoLink;
+		return nullptr;
+	}
+	if (which == 0)
+		block->pBranchBlock = next.get();
+	else
+		block->pNextBlock = next.get();
+	next->AddRef(self);
+	block->linkCode[which] = (void *)next->code;
+	return block->linkCode[which];
+}
+
 class BlockCompiler : public BaseXbyakRec<BlockCompiler, true>
 {
 public:
@@ -423,6 +473,62 @@ public:
 				}
 				break;
 
+#ifndef STRICT_MODE
+			case shop_ftrv:
+				// Same arithmetic as the canonical innerProduct<4>: double products summed in order, then
+				// rounded to float. Each double lane computes one result, so the results are bit-exact.
+				mov(rax, (uintptr_t)op.rs1.reg_ptr(sh4ctx));	// fn
+				mov(rcx, (uintptr_t)op.rs2.reg_ptr(sh4ctx));	// fm (xmtrx)
+				for (int j = 0; j < 4; j++)
+				{
+					cvtss2sd(xmm4, dword[rax + j * 4]);
+					unpcklpd(xmm4, xmm4);
+					Xbyak::Xmm lo = j == 0 ? xmm0 : xmm2;
+					Xbyak::Xmm hi = j == 0 ? xmm1 : xmm3;
+					cvtps2pd(lo, qword[rcx + j * 16]);
+					mulpd(lo, xmm4);
+					cvtps2pd(hi, qword[rcx + j * 16 + 8]);
+					mulpd(hi, xmm4);
+					if (j != 0)
+					{
+						addpd(xmm0, xmm2);
+						addpd(xmm1, xmm3);
+					}
+				}
+				cvtpd2ps(xmm0, xmm0);
+				cvtpd2ps(xmm1, xmm1);
+				movlhps(xmm0, xmm1);
+				mov(rax, (uintptr_t)op.rd.reg_ptr(sh4ctx));
+				movups(xword[rax], xmm0);
+				break;
+
+			case shop_fipr:
+				// Same arithmetic as the canonical innerProduct: ((p0 + p1) + p2) + p3 in double
+				mov(rax, (uintptr_t)op.rs1.reg_ptr(sh4ctx));
+				mov(rcx, (uintptr_t)op.rs2.reg_ptr(sh4ctx));
+				cvtps2pd(xmm0, qword[rax]);
+				cvtps2pd(xmm1, qword[rcx]);
+				mulpd(xmm0, xmm1);			// p0 p1
+				cvtps2pd(xmm2, qword[rax + 8]);
+				cvtps2pd(xmm3, qword[rcx + 8]);
+				mulpd(xmm2, xmm3);			// p2 p3
+				movapd(xmm1, xmm0);
+				unpckhpd(xmm1, xmm1);
+				addsd(xmm0, xmm1);
+				addsd(xmm0, xmm2);
+				unpckhpd(xmm2, xmm2);
+				addsd(xmm0, xmm2);
+				cvtsd2ss(xmm0, xmm0);
+				if (regalloc.IsAllocf(op.rd))
+					movss(regalloc.MapXRegister(op.rd), xmm0);
+				else
+				{
+					mov(rax, (uintptr_t)op.rd.reg_ptr(sh4ctx));
+					movss(dword[rax], xmm0);
+				}
+				break;
+#endif
+
 			case shop_fmac:
 				{
 					Xbyak::Xmm rs1 = regalloc.MapXRegister(op.rs1);
@@ -482,6 +588,7 @@ public:
 		case BET_StaticCall:
 			//next_pc = block->BranchBlock;
 			mov(dword[rax], block->BranchBlock);
+			genBlockLink(block, 0);
 			break;
 
 		case BET_Cond_0:
@@ -501,9 +608,12 @@ public:
 				cmp(dword[rdx], block->BlockType & 1);
 				Xbyak::Label branch_not_taken;
 
-				jne(branch_not_taken, T_SHORT);
+				jne(branch_not_taken, T_NEAR);
 				mov(dword[rax], block->BranchBlock);
+				genBlockLink(block, 0);
+				jmp(exit_block, T_NEAR);
 				L(branch_not_taken);
+				genBlockLink(block, 1);
 			}
 			break;
 
@@ -514,6 +624,7 @@ public:
 			mov(rdx, (size_t)&sh4ctx.jdyn);
 			mov(edx, dword[rdx]);
 			mov(dword[rax], edx);
+			genDynamicLink(block);
 			break;
 
 		case BET_DynamicIntr:
@@ -546,6 +657,84 @@ public:
 		block->host_code_size = getSize();
 
 		codeBuffer.advance(getSize());
+	}
+
+	// Jumps to the linked block while cycles remain; falls through (to the block exit) otherwise.
+	// sh4ctx.pc is already set to the target.
+	void genBlockLink(RuntimeBlockInfo *block, u32 which)
+	{
+		if (mmu_enabled())
+			return;
+		X64BlockInfo *xblock = static_cast<X64BlockInfo *>(block);
+		Xbyak::Label linked, unlinked, done;
+
+		mov(rax, (uintptr_t)&xblock->linkCode[which]);
+		mov(rax, qword[rax]);
+		cmp(rax, 1);	// X64BlockInfo::NoLink
+		je(done, T_NEAR);
+		test(rax, rax);
+		jz(unlinked, T_NEAR);
+
+		L(linked);
+		mov(rdx, (uintptr_t)&sh4ctx.cycle_counter);
+		cmp(dword[rdx], 0);
+		jle(done, T_NEAR);
+		add(rsp, STACK_ALIGN);
+		jmp(rax);
+
+		L(unlinked);
+		mov(call_regs64[0], (uintptr_t)xblock);
+		mov(call_regs[1], which);
+		GenCall(x64LinkBlock, true);
+		test(rax, rax);
+		jnz(linked, T_NEAR);
+
+		L(done);
+	}
+
+	// Dynamic branch (target pc in edx): look the target up in the fpcb table and jump there while cycles remain.
+	// bm_GetCodeByVAddr must still see the gdxsv render call site, its return address and, inside the render
+	// call, the output-only function entries, so those go back to the main loop.
+	void genDynamicLink(RuntimeBlockInfo *block)
+	{
+		if (mmu_enabled())
+			return;
+		Xbyak::Label notInRender, fast, done;
+
+		mov(rax, (uintptr_t)bm_gdxsvRenderReturnPtr());
+		cmp(dword[rax], 0);
+		je(notInRender);
+		// inside the render call: the target may be an output-only function entry
+		mov(eax, edx);
+		shr(eax, 1);
+		and_(eax, 4095);
+		mov(rcx, (uintptr_t)bm_gdxsvRenderOnlyMaskPtr());
+		bt(qword[rcx], rax);
+		jc(done, T_NEAR);
+		L(notInRender);
+		mov(rax, (uintptr_t)&settings.gdxsv.skipRenderingBaseAddr);
+		mov(ecx, dword[rax]);
+		test(ecx, ecx);
+		jz(fast);
+		cmp(edx, ecx);
+		je(done, T_NEAR);
+		add(ecx, 4);
+		cmp(edx, ecx);
+		je(done, T_NEAR);
+
+		L(fast);
+		mov(rax, (uintptr_t)&sh4ctx.cycle_counter);
+		cmp(dword[rax], 0);
+		jle(done, T_NEAR);
+		mov(eax, edx);
+		shr(eax, 1);
+		and_(eax, FPCB_MASK);
+		mov(rcx, (uintptr_t)&p_sh4rcb->fpcb[0]);
+		mov(rax, qword[rcx + rax * 8]);
+		add(rsp, STACK_ALIGN);
+		jmp(rax);
+
+		L(done);
 	}
 
 	void canonStart(const shil_opcode& op)
@@ -1290,7 +1479,9 @@ private:
 	std::vector<CC_PS> CC_pars;
 
 	X64RegAlloc regalloc;
-	Xbyak::util::Cpu cpu;
+	// cpuid is slow: probe the host once, not for every compiled block
+	static const Xbyak::util::Cpu& hostCpu() { static const Xbyak::util::Cpu c; return c; }
+	const Xbyak::util::Cpu& cpu = hostCpu();
 	size_t current_opid;
 	Xbyak::Label exit_block;
 };
@@ -1334,6 +1525,10 @@ public:
 		delete ccCompiler;
 		ccCompiler = nullptr;
 		virtmem::jit_set_exec(protStart, protSize, true);
+	}
+
+	RuntimeBlockInfo *allocateBlock() override {
+		return new X64BlockInfo();
 	}
 
 	void init(Sh4Context& sh4ctx, Sh4CodeBuffer& codeBuffer) override
