@@ -261,8 +261,6 @@ bool gdxsv_emu_menu_open() {
 	return true;
 }
 
-bool gdxsv_widescreen_hack_enabled() { return gdxsv.Disk() == 1 && gdxsv.WidescreenPatchEnabled(); }
-
 static void gui_header(const char* title) {
 	ImGui::PushStyleVar(ImGuiStyleVar_ButtonTextAlign, ScaledVec2(0.f, 0.5f));	// Left
 	ImGui::ButtonEx(title, ScaledVec2(-1, 0), ImGuiItemFlags_Disabled);

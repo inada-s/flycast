@@ -18,7 +18,6 @@
 */
 #define GLM_FORCE_SWIZZLE 1
 #include "transform_matrix.h"
-#include "gdxsv/gdxsv_emu_hooks.h"
 #include <glm/gtx/transform.hpp>
 
 static void getTAViewport(const rend_context& rendCtx, int& width, int& height) {
@@ -115,18 +114,8 @@ void TransformMatrix::CalcMatrices(const rend_context *renderingContext, int wid
 		else {
 			widescreenShift = 0;
 		}
-		// GDXSV: Push the extra region offscreen for widescreen hack
-		float startx = 0;
-		if (gdxsv_widescreen_hack_enabled() && config::ScreenStretching == 175)
-			startx = -1 * (float)w * (1 - 1.f / 1.75f) / 2.f;
 		glm::mat4 trans = glm::translate(glm::vec3(-1 + widescreenShift, -flipY, 0));
-		float x_coef = 2.0f / dcViewport.x;
-		float y_coef = 2.0f / dcViewport.y * flipY;
-		// GDXSV: Stretch the screen to make it wider than Framebuffer's size
-		if (gdxsv_widescreen_hack_enabled())
-			x_coef *= (config::ScreenStretching / 100.f);
-		normalMatrix = trans * glm::scale(glm::vec3(x_coef, y_coef, 1.f))
-			* glm::translate(glm::vec3(startx, 0, 0));
+		normalMatrix = trans * glm::scale(glm::vec3(2.0f / dcViewport.x, 2.0f / dcViewport.y * flipY, 1.f));
 	}
 	normalMatrix = glm::scale(glm::vec3(1, 1, 1 / config::ExtraDepthScale)) * normalMatrix;
 
@@ -333,9 +322,6 @@ float getOutputFramebufferAspectRatio()
 			aspectRatio = 4.f / 3.f;
 		}
 	}
-	// GDXSV: the widescreen hack stretches the rendered image itself
-	if (gdxsv_widescreen_hack_enabled())
-		return aspectRatio;
 	return aspectRatio * config::ScreenStretching / 100.f;
 }
 
