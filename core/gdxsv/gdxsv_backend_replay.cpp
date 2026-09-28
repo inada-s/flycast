@@ -477,17 +477,18 @@ void GdxsvBackendReplay::BeginLoadingHud() {
 	ctrl_loading_wait_frames_ = 0;
 }
 
-// Restore disc-2 MS-selection roles after loading another round's savestate.
+// Restore MS-selection roles after loading another round's savestate.
 // start_msg_randoms contains the post-draw RNG state; its high byte is the
-// random value used by 0x0c04816c to choose the map selector.
+// random value used by 0x0c04816c (disc 1: 0x0c05ad78) to choose the map selector.
 static void gdxsv_patch_map_selector(u16 round_seed, int player_count) {
-	if (gdxsv.Disk() != 2)
+	const int disk = gdxsv.Disk();
+	if (disk != 1 && disk != 2)
 		return;
-	if (gdxsv_ReadMem8(0x0c3913c7) == 0) // stage_flag 0: side7, no map selection
+	if (gdxsv_ReadMem8(disk == 1 ? 0x0c2f5c87 : 0x0c3913c7) == 0) // stage_flag 0: side7, no map selection
 		return;
-	constexpr u32 kSelWork = 0x0c3d0724u;
-	constexpr u32 kSelMask = kSelWork + 0x1c;	// one-hot map-selector mask
-	constexpr u32 kSelRoles = kSelWork + 0x10;	// per-player role, 0 = map selector
+	const u32 kSelWork = disk == 1 ? 0x0c3352a4u : 0x0c3d0724u;
+	const u32 kSelMask = kSelWork + 0x1c;	// one-hot map-selector mask
+	const u32 kSelRoles = kSelWork + 0x10;	// per-player role, 0 = map selector
 
 	const int selector = static_cast<u8>(round_seed >> 8) % player_count;
 	const u8 mask = static_cast<u8>(1u << selector);
@@ -731,8 +732,8 @@ void GdxsvBackendReplay::OnNextFrame() {
 		UpdateReplayFlow();
 		OnNextFrameInternal();
 	}
-	if (live_counter_reconstruction_ && !takeover_ && state_ == State::McsInBattle && gdxsv.Disk() == 2)
-		gdxsv_round_counters::Restore(log_file_);
+	if (live_counter_reconstruction_ && !takeover_ && state_ == State::McsInBattle && gdxsv.Disk() != 0)
+		gdxsv_round_counters::Restore(log_file_, -1, gdxsv.Disk());
 	PublishUiState();
 	// After the frame, so a seek that ran within it is published as landed.
 	PublishMultiPovPlayback();
@@ -1406,9 +1407,9 @@ void GdxsvBackendReplay::OnNextFrameInternal() {
 			if (0 < round && round - 1 < log_file_.start_msg_indexes_size() &&
 				round - 1 < log_file_.start_msg_randoms_size() && gdxsv_save_state.FirstSavedFrame() != -1 &&
 				gdxsv_save_state.LoadState(gdxsv_save_state.FirstSavedFrame())) {
-				if ((live_mode_ || live_counter_reconstruction_) && gdxsv.Disk() == 2) {
+				if ((live_mode_ || live_counter_reconstruction_) && gdxsv.Disk() != 0) {
 					live_counter_reconstruction_ = true;
-					const bool complete = gdxsv_round_counters::Restore(log_file_, round - 1);
+					const bool complete = gdxsv_round_counters::Restore(log_file_, round - 1, gdxsv.Disk());
 					NOTICE_LOG(COMMON, "Live round %d counters: %s", round, complete ? "restored" : "incomplete");
 				}
 				key_msg_count_ = log_file_.start_msg_indexes(round - 1);

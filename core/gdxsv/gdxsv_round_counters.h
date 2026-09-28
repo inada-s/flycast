@@ -9,7 +9,8 @@ namespace gdxsv_round_counters {
 // An explicit draw in the existing int32 win_team field. Zero remains unknown.
 constexpr int kDraw = -1;
 constexpr int kMaxRounds = 10;
-constexpr u32 kSessionPointer = 0x0c394524;
+constexpr u32 kSessionPointer = 0x0c394524; // Disc 2: session 0x0c392540 + 0x1fe4
+constexpr u32 kSessionPointerDisk1 = 0x0c2f8de4; // Disc 1: session 0x0c2f6e00 + 0x1fe4
 constexpr u32 kDrawFlagAddress = 0x0c3d1950; // Disc 2
 constexpr u32 kDrawFlagAddressDisk1 = 0x0c3364c9; // Disc 1: winner 0x0c3364b6 + 0x13
 constexpr u32 kPlayerStride = 0x2c0;
@@ -42,15 +43,15 @@ inline bool BeforeRound(const proto::BattleLogFile& log, int completed, int team
 	return true;
 }
 
-// Disc 2 only, on the emulation thread. Explicit completed rounds reseed a
-// jump; otherwise use the guest's own completed count, including hidden
+// Disc 1 and 2 (same layout), on the emulation thread. Explicit completed
+// rounds reseed a jump; otherwise use the guest's own completed count, including hidden
 // result-card accounting. Rebuilding instead of adding deltas also repairs
 // late legacy draw reconciliation and counters restored by backward seeks.
 // Incomplete history preserves W/L/draw until a later update can resolve it.
-inline bool Restore(const proto::BattleLogFile& log, int completed = -1) {
+inline bool Restore(const proto::BattleLogFile& log, int completed = -1, int disk = 2) {
 	if (completed < -1 || completed > kMaxRounds)
 		return false;
-	const u32 session = gdxsv_ReadMem32(kSessionPointer);
+	const u32 session = gdxsv_ReadMem32(disk == 1 ? kSessionPointerDisk1 : kSessionPointer);
 	// Require the full record span in main RAM before following the guest pointer.
 	if (session < 0x0c000000 || session > 0x0d000000 - (kPlayerSlots + 1) * kPlayerStride) {
 		// Diagnose explicit round jumps without flooding per-frame retries.
