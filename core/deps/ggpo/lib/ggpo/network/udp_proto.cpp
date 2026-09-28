@@ -404,7 +404,11 @@ UdpProtocol::OnMsg(UdpMsg *msg, int len)
       }
    }
 
-   _next_recv_seq = seq;
+   // Sync messages skip the filters above, so only let the current peer's stream move the sequence.
+   // A stray sync message from another session would otherwise make us drop the peer's packets.
+   if (msg->hdr.magic == _remote_magic_number) {
+      _next_recv_seq = seq;
+   }
    LogMsg("recv", msg);
    if (msg->hdr.type >= ARRAY_SIZE(table)) {
       OnInvalid(msg, len);
@@ -540,7 +544,9 @@ UdpProtocol::OnSyncRequest(UdpMsg *msg, int len)
 	   Log("udpproto%d | Verification mismatch: size received %d expected %d", _queue, msgVerifSize, (int)verification.size());
 	   reply->u.sync_reply.verification_failure = 1;
 	   SendMsg(reply);
-	   throw GGPOException("Verification mismatch", GGPO_ERRORCODE_VERIFICATION_ERROR);
+	   // Don't throw: a stray request from another session must not abort ours.
+	   // A real mismatch is still detected when the peer's failure reply reaches OnSyncReply.
+	   return false;
    }
    // FIXME
    if (_state.sync.roundtrips_remaining == NUM_SYNC_PACKETS && msg->hdr.sequence_number == 0) {
