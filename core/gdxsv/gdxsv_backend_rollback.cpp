@@ -285,20 +285,29 @@ void GdxsvBackendRollback::OnMainUiLoop() {
 		const auto timeout = 10000 <= std::chrono::duration_cast<std::chrono::milliseconds>(now - session_start_time).count();
 
 		if (start_network_.valid() && start_network_.wait_for(std::chrono::milliseconds(0)) == std::future_status::ready) {
-			if (ggpo::active()) {
-				start_network_ = std::future<bool>();
+			bool started = false;
+			try {
+				started = start_network_.get();
+			} catch (const std::exception& e) {
+				NOTICE_LOG(COMMON, "StartNetwork exception: %s", e.what());
+			}
+			start_network_ = std::future<bool>();
+			if (started && ggpo::active()) {
 				state_ = State::McsInBattle;
 				emu.start();
 			} else {
 				NOTICE_LOG(COMMON, "StartNetwork failure");
 				SetCloseReason("ggpo_start_failure");
 				error_fast_return_ = true;
+				// Stop the unsynchronized session before the emu thread can run a frame with it.
+				ggpo::stopSession();
 				emu.start();
 			}
 		} else if (timeout) {
 			NOTICE_LOG(COMMON, "StartNetwork timeout");
 			SetCloseReason("ggpo_start_timeout");
 			error_fast_return_ = true;
+			ggpo::stopSession();
 			emu.start();
 		}
 	}

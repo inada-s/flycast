@@ -397,6 +397,7 @@ static bool load_game_state(unsigned char *buffer, int len)
 		DEBUG_LOG(NETWORK, "Restored frame %d pages: %d ram, %d vram, %d eram, %d aica ram", f, (u32)pages.ram.size(),
 					(u32)pages.vram.size(), (u32)pages.elanram.size(), (u32)pages.aram.size());
 	}
+	lastSavedFrame = frame;
 	dc_deserialize(deser);
 	if (deser.size() != (u32)len)
 	{
@@ -538,7 +539,10 @@ static void free_buffer(void *buffer)
 		int frame;
 		deser >> frame;
 		deltaStates.erase(frame);
-		skippedFrames.erase(frame);
+		// During a rollback the freed state is one of the frames about to be re-simulated
+		// (frame > lastSavedFrame), whose skip count is still needed by advance_frame.
+		if (frame < lastSavedFrame)
+			skippedFrames.erase(frame);
 		free(buffer);
 	}
 }
@@ -720,6 +724,7 @@ void stopSession()
 		return;
 	ggpo_close_session(ggpoSession);
 	ggpoSession = nullptr;
+	skippedFrames.clear();
 	closeHashLog();
 	disconnect_flags = 0;
 	miniupnp.Term();
