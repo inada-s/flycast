@@ -250,9 +250,18 @@ void GdxsvBackendRollback::OnMainUiLoop() {
 			}
 		}
 
+		constexpr int kMaxDelay = 6;
+		const int delay = std::max<int>({2, config::GdxMinDelay.get(), static_cast<int>(max_rtt / 2.0 / 16.0 + 0.9999)});
 		if (ok) {
-			const int delay = std::max<int>({2, config::GdxMinDelay.get(), static_cast<int>(max_rtt / 2.0 / 16.0 + 0.9999)});
 			NOTICE_LOG(COMMON, "max_rtt=%.2f delay=%d", max_rtt, delay);
+		}
+
+		if (ok && kMaxDelay < delay) {
+			NOTICE_LOG(COMMON, "Delay too large");
+			SetCloseReason("delay_too_large");
+			error_fast_return_ = true;
+			emu.start();
+		} else if (ok) {
 			config::GGPOEnable.override(true);
 			config::GGPODelay.override(delay);
 			config::NetworkStats.override(false);
@@ -354,7 +363,7 @@ void GdxsvBackendRollback::OnMainUiLoop() {
 			// way back to the lobby); these reasons mean the netcode never got
 			// going or broke mid-match.
 			const std::string reason = report_.close_reason();
-			const bool broke = reason == "unreachable" || reason == "ggpo_start_failure"
+			const bool broke = reason == "unreachable" || reason == "delay_too_large" || reason == "ggpo_start_failure"
 							|| reason == "ggpo_start_timeout" || reason == "error_fast_return"
 							|| reason == "cl_error" || reason.empty();
 			NOTICE_LOG(COMMON, "RollbackNet local test %s: close_reason=%s", broke ? "failed" : "finished",
