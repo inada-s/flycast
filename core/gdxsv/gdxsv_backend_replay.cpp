@@ -731,8 +731,8 @@ void GdxsvBackendReplay::OnNextFrame() {
 		UpdateReplayFlow();
 		OnNextFrameInternal();
 	}
-	if (live_counter_reconstruction_ && !takeover_ && state_ == State::McsInBattle && gdxsv.Disk() == 2)
-		gdxsv_round_counters::Restore(log_file_);
+	if (live_counter_reconstruction_ && !takeover_ && state_ == State::McsInBattle && gdxsv.Disk() != 0)
+		gdxsv_round_counters::Restore(log_file_, -1, gdxsv.Disk());
 	PublishUiState();
 	// After the frame, so a seek that ran within it is published as landed.
 	PublishMultiPovPlayback();
@@ -1406,9 +1406,9 @@ void GdxsvBackendReplay::OnNextFrameInternal() {
 			if (0 < round && round - 1 < log_file_.start_msg_indexes_size() &&
 				round - 1 < log_file_.start_msg_randoms_size() && gdxsv_save_state.FirstSavedFrame() != -1 &&
 				gdxsv_save_state.LoadState(gdxsv_save_state.FirstSavedFrame())) {
-				if ((live_mode_ || live_counter_reconstruction_) && gdxsv.Disk() == 2) {
+				if ((live_mode_ || live_counter_reconstruction_) && gdxsv.Disk() != 0) {
 					live_counter_reconstruction_ = true;
-					const bool complete = gdxsv_round_counters::Restore(log_file_, round - 1);
+					const bool complete = gdxsv_round_counters::Restore(log_file_, round - 1, gdxsv.Disk());
 					NOTICE_LOG(COMMON, "Live round %d counters: %s", round, complete ? "restored" : "incomplete");
 				}
 				key_msg_count_ = log_file_.start_msg_indexes(round - 1);

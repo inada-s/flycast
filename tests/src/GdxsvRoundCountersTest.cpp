@@ -131,3 +131,14 @@ TEST_F(GdxsvRoundCountersTest, UsesGuestCompletedCountAfterAccountingAndBackward
 	EXPECT_FALSE(gdxsv_round_counters::Restore(log_, 11));
 	EXPECT_EQ(before, Read(0));
 }
+
+TEST_F(GdxsvRoundCountersTest, Disc1UsesItsOwnSessionPointer) {
+	const u32 session = 0x0c2f6e00;
+	gdxsv_WriteMem32(gdxsv_round_counters::kSessionPointerDisk1, session);
+	gdxsv_WriteMem8(session + 0x2c0 + 0x2ba, 1);
+	ASSERT_TRUE(gdxsv_round_counters::Restore(log_, 2, 1));
+	const u32 addr = session + 0x2c0 + 0x2b0;
+	EXPECT_EQ((std::array<u16, 4>{2, 1, 0, 1}),
+		(std::array<u16, 4>{gdxsv_ReadMem16(addr), gdxsv_ReadMem16(addr + 2), gdxsv_ReadMem16(addr + 4), gdxsv_ReadMem16(addr + 6)}));
+	EXPECT_EQ((std::array<u16, 4>{0, 0, 0, 0}), Read(0)); // Disc 2 records untouched.
+}
