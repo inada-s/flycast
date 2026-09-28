@@ -685,11 +685,11 @@ u32 GdxsvBackendRollback::OnSockRead(u32 addr, u32 size) {
 	}
 
 	// round_data
-	// Disc 2 timeouts set the local opponent as winner AND a separate draw
+	// Timeouts set the local opponent as winner AND a separate draw
 	// flag. Normalize before comparing so a draw is queued once, not every
 	// frame. Keep this in metadata; never change the game's winner byte.
 	const int outcome = gdxsv_round_counters::Outcome(gdxsv_ReadMem8(WinTeam),
-		disk == 2 ? gdxsv_ReadMem8(gdxsv_round_counters::kDrawFlagAddress) : 0);
+		gdxsv_ReadMem8(disk == 1 ? gdxsv_round_counters::kDrawFlagAddressDisk1 : gdxsv_round_counters::kDrawFlagAddress));
 	if (ggpo::active() && !round_data_.empty() && outcome != 0 && outcome != round_data_.back().win_team()) {
 		round_data_.back().set_win_team(outcome);
 		round_data_.back().clear_used_ms();
