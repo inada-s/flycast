@@ -71,11 +71,12 @@ u32 GdxsvBackendTcp::OnSockPoll() {
 			while (rx_msg_reader_.Read(lbs_msg_)) {
 				if (lbs_packet_filter_ && !lbs_packet_filter_(lbs_msg_))
 					continue;
-				// The disc-2 reader assumes exact reads and has a 768-byte body
-				// buffer. Keep staging complete messages, and reject oversize
-				// bodies before exposing their header to the guest. Host-only
-				// messages (e.g. protobuf patches) were handled by the filter.
-				if (gdxsv.Disk() == 2 && lbs_msg_.body.size() > 768) {
+				// The guest reader assumes exact reads and has a 768-byte body
+				// buffer (disc 2 0x0c3a9bdc, disc 1 0x0c30e49c). Keep staging
+				// complete messages, and reject oversize bodies before exposing
+				// their header to the guest. Host-only messages (e.g. protobuf
+				// patches) were handled by the filter.
+				if ((gdxsv.Disk() == 1 || gdxsv.Disk() == 2) && lbs_msg_.body.size() > 768) {
 					WARN_LOG(COMMON, "LBS: oversized guest reply command=%04x size=%zu",
 						lbs_msg_.command, lbs_msg_.body.size());
 					lbs_msg_.body.clear();
