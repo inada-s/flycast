@@ -39,6 +39,7 @@
 #include <algorithm>
 #include <chrono>
 #include <map>
+#include <set>
 
 // For macOS
 std::string os_PrecomposedString(std::string string);
@@ -109,6 +110,12 @@ std::shared_future<LocalReplayPage> local_replays_future;
 size_t local_replay_page = 0;
 std::string selected_replay_file;
 std::string broken_replay_path;
+std::set<std::string> local_favorites;
+bool local_favorites_loaded = false;
+bool local_favorites_only = false;
+std::future<bool> server_favorite_download;
+std::string server_favorite_download_name;
+std::string server_favorite_failed_name;
 
 std::vector<std::string> search_user_ids;
 std::vector<std::string> search_user_names;
@@ -494,7 +501,130 @@ bool is_timestamp_replay_filename(const std::string& name) {
 		name.find_first_not_of("0123456789") == 13;
 }
 
-LocalReplayPage read_local_replays(const std::string& replay_dir, size_t requested_page) {
+bool shows_filename(const ReplayEntry& entry) {
+	return !entry.filename.empty() && !is_timestamp_replay_filename(entry.filename);
+}
+
+std::string local_favorites_path(const std::string& replay_dir) {
+	return replay_dir + "/favorites.txt";
+}
+
+void load_local_favorites(const std::string& replay_dir) {
+	local_favorites.clear();
+	local_favorites_loaded = true;
+	FILE* fp = nowide::fopen(local_favorites_path(replay_dir).c_str(), "rb");
+	if (fp == nullptr)
+		return;
+	char line[1024];
+	while (std::fgets(line, sizeof(line), fp) != nullptr) {
+		std::string name(line);
+		while (!name.empty() && (name.back() == '\n' || name.back() == '\r'))
+			name.pop_back();
+		if (!name.empty())
+			local_favorites.insert(std::move(name));
+	}
+	std::fclose(fp);
+}
+
+void save_local_favorites(const std::string& replay_dir) {
+	FILE* fp = nowide::fopen(local_favorites_path(replay_dir).c_str(), "wb");
+	if (fp == nullptr) {
+		ERROR_LOG(COMMON, "Failed to save replay favorites");
+		return;
+	}
+	for (const auto& name : local_favorites)
+		std::fprintf(fp, "%s\n", name.c_str());
+	std::fclose(fp);
+}
+
+bool download_replay_file(const std::string& url, const std::string& replay_dir, const std::string& filename) {
+	std::vector<u8> data;
+	std::string content_type;
+	http::init();
+	const int rc = http::get(url, data, content_type);
+	if (rc != 200) {
+		ERROR_LOG(COMMON, "replay download failure rc=%d url=%s", rc, url.c_str());
+		return false;
+	}
+	proto::BattleLogFile log;
+	if (!log.ParseFromArray(data.data(), static_cast<int>(data.size()))) {
+		ERROR_LOG(COMMON, "downloaded replay is not readable: %s", url.c_str());
+		return false;
+	}
+	if (!file_exists(replay_dir) && !make_directory(replay_dir)) {
+		ERROR_LOG(COMMON, "Failed to create replay directory");
+		return false;
+	}
+	const auto path = replay_dir + "/" + filename;
+	FILE* fp = nowide::fopen(path.c_str(), "wb");
+	if (fp == nullptr) {
+		ERROR_LOG(COMMON, "replay save failure: %s", path.c_str());
+		return false;
+	}
+	const bool ok = std::fwrite(data.data(), 1, data.size(), fp) == data.size();
+	std::fclose(fp);
+	if (!ok)
+		nowide::remove(path.c_str());
+	return ok;
+}
+
+// Server replays become favorites by saving them next to the local recordings.
+void draw_server_favorite_button(const std::string& replay_url, const std::string& battle_code) {
+	const auto replay_dir = get_writable_data_path("replays");
+	if (!local_favorites_loaded)
+		load_local_favorites(replay_dir);
+	if (server_favorite_download.valid() && future_is_ready(server_favorite_download)) {
+		if (server_favorite_download.get()) {
+			local_favorites.insert(server_favorite_download_name);
+			save_local_favorites(replay_dir);
+			local_replays_future = {};
+		} else {
+			server_favorite_failed_name = server_favorite_download_name;
+		}
+	}
+	if (battle_code.empty() || battle_code.find_first_of("/\\:.") != std::string::npos)
+		return;
+
+	const std::string filename = battle_code + ".pb";
+	const bool downloading = server_favorite_download.valid();
+	const bool favorite = local_favorites.count(filename) != 0;
+	if (downloading && server_favorite_download_name == filename) {
+		ImGui::BeginDisabled();
+		ImGui::Button(ICON_FA_STAR "  Downloading...###favorite");
+		ImGui::EndDisabled();
+		return;
+	}
+	if (favorite)
+		ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(1.f, .8f, .2f, 1.f));
+	ImGui::BeginDisabled(downloading && !favorite);
+	if (ImGui::Button(favorite ? ICON_FA_STAR "  Remove from Favorites###favorite" : ICON_FA_STAR "  Add to Favorites###favorite")) {
+		if (favorite) {
+			local_favorites.erase(filename);
+			save_local_favorites(replay_dir);
+			local_replays_future = {};
+		} else if (file_exists(replay_dir + "/" + filename)) {
+			local_favorites.insert(filename);
+			save_local_favorites(replay_dir);
+			local_replays_future = {};
+		} else {
+			server_favorite_failed_name.clear();
+			server_favorite_download_name = filename;
+			server_favorite_download = std::async(std::launch::async, download_replay_file, replay_url, replay_dir, filename);
+		}
+	}
+	ImGui::EndDisabled();
+	if (favorite)
+		ImGui::PopStyleColor();
+	if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled))
+		ImGui::SetTooltip(favorite ? "The saved file stays in the Local tab." : "Save this replay to the Local tab as a favorite.");
+	if (server_favorite_failed_name == filename) {
+		ImGui::SameLine();
+		ImGui::TextUnformatted("Failed to download this replay.");
+	}
+}
+
+LocalReplayPage read_local_replays(const std::string& replay_dir, size_t requested_page,
+								   const std::set<std::string>& favorites, bool favorites_only) {
 	LocalReplayPage result;
 	std::vector<std::string> filenames;
 	DIR* dir = flycast::opendir(replay_dir.c_str());
@@ -507,11 +637,17 @@ LocalReplayPage read_local_replays(const std::string& replay_dir, size_t request
 #endif
 		if (get_file_extension(name) != "pb")
 			continue;
+		if (favorites_only && favorites.count(name) == 0)
+			continue;
 		filenames.push_back(std::move(name));
 	}
 	flycast::closedir(dir);
 	// Choose the page using filenames alone, before opening any recordings.
-	std::sort(filenames.begin(), filenames.end(), [](const std::string& a, const std::string& b) {
+	std::sort(filenames.begin(), filenames.end(), [&favorites](const std::string& a, const std::string& b) {
+		const bool a_favorite = favorites.count(a) != 0;
+		const bool b_favorite = favorites.count(b) != 0;
+		if (a_favorite != b_favorite)
+			return a_favorite;
 		const bool a_timestamp = is_timestamp_replay_filename(a);
 		const bool b_timestamp = is_timestamp_replay_filename(b);
 		if (a_timestamp != b_timestamp)
@@ -568,19 +704,19 @@ LocalReplayPage read_local_replays(const std::string& replay_dir, size_t request
 }
 
 // Shared by Local and Server.
-bool draw_replay_entry(const ReplayEntry& entry, int index, bool selected) {
+bool draw_replay_entry(const ReplayEntry& entry, int index, bool selected, bool favorite = false) {
 	char timebuf[128] = {};
 	if (const auto* local = std::localtime(&entry.start_unix))
 		std::strftime(timebuf, sizeof(timebuf), "%Y-%m-%d %H:%M:%S", local);
 	char head[256] = {};
-	snprintf(head, sizeof(head), u8"  %s  %s ― Result: %d：%d\n\n", ICON_FA_FILM, timebuf, entry.renpo_win, entry.zeon_win);
+	snprintf(head, sizeof(head), u8"  %s  %s ― Result: %d：%d\n\n", favorite ? ICON_FA_STAR : ICON_FA_FILM, timebuf, entry.renpo_win, entry.zeon_win);
 	std::string row = entry.readable ? head : "Unable to read replay\n\n";
 	for (int i = 0; i < entry.users.size(); ++i) {
 		row += entry.users[i].user_name();
 		if (i + 1 < entry.users.size())
 			row += entry.users[i + 1].team() != entry.users[i].team() ? " vs " : ", ";
 	}
-	const bool show_filename = !entry.filename.empty() && !is_timestamp_replay_filename(entry.filename);
+	const bool show_filename = shows_filename(entry);
 	if (show_filename)
 		row += "\n\n" + entry.filename;
 	ImGui::PushID(index);
@@ -602,8 +738,11 @@ void gdxsv_replay_local_tab() {
 	const auto replay_dir = get_writable_data_path("replays");
 	const bool new_page = !local_replays_future.valid();
 	if (new_page) {
+		if (!local_favorites_loaded)
+			load_local_favorites(replay_dir);
 		// Scan filenames and parse only the requested page off the UI thread.
-		local_replays_future = std::async(std::launch::async, read_local_replays, replay_dir, local_replay_page).share();
+		local_replays_future = std::async(std::launch::async, read_local_replays, replay_dir, local_replay_page,
+			local_favorites, local_favorites_only).share();
 	}
 	const bool loaded = future_is_ready(local_replays_future);
 	if (loaded)
@@ -611,6 +750,16 @@ void gdxsv_replay_local_tab() {
 	size_t requested_page = local_replay_page;
 	ImGui::BeginDisabled(!loaded);
 	if (ImGui::Button(ICON_FA_ARROW_ROTATE_RIGHT "  Reload")) {
+		local_replay_page = 0;
+		local_replays_future = {};
+		local_favorites_loaded = false;
+		selected_replay_file.clear();
+		pov_index = -1;
+		ImGui::EndDisabled();
+		return;
+	}
+	ImGui::SameLine();
+	if (ImGui::Checkbox(ICON_FA_STAR " Favorites only", &local_favorites_only)) {
 		local_replay_page = 0;
 		local_replays_future = {};
 		selected_replay_file.clear();
@@ -622,12 +771,17 @@ void gdxsv_replay_local_tab() {
 	ImGui::SameLine();
 #if defined(TARGET_MAC)
 	if (ImGui::Button(ICON_FA_FOLDER_OPEN "  Reveal in Finder")) {
+		if (!file_exists(replay_dir))
+			make_directory(replay_dir);
 		char temp[512];
 		snprintf(temp, sizeof(temp), "open \"%s\"", replay_dir.c_str());
 		system(temp);
 	}
 #elif defined(_WIN32) && !defined(TARGET_UWP)
 	if (ImGui::Button(ICON_FA_FOLDER_OPEN "  Open folder")) {
+		// Explorer falls back to Documents when the folder does not exist yet.
+		if (!file_exists(replay_dir))
+			make_directory(replay_dir);
 		const std::string lpParam = "/root, " + replay_dir;
 		SHELLEXECUTEINFOA sei{};
 		sei.cbSize = sizeof(sei);
@@ -652,21 +806,24 @@ void gdxsv_replay_local_tab() {
 	} else {
 		const auto& entries = local_replays_future.get().entries;
 		if (entries.empty())
-			ImGui::TextUnformatted("(No replay found)");
+			ImGui::TextUnformatted(local_favorites_only ? "(No favorite replay found)" : "(No replay found)");
 		ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ScaledVec2(0, 30));
 		// Custom rows include a filename and are taller. Each clipper must
-		// cover a uniform-height group; sorting keeps custom names together.
-		const int custom_count = static_cast<int>(std::partition_point(entries.begin(), entries.end(), [](const ReplayEntry& entry) {
-			return !is_timestamp_replay_filename(entry.filename);
-		}) - entries.begin());
+		// cover a uniform-height group; sorting keeps custom names together
+		// within the favorite and non-favorite sections.
+		const int count = static_cast<int>(entries.size());
 		int first = 0;
-		for (int last : {custom_count, static_cast<int>(entries.size())}) {
+		while (first < count) {
+			int last = first + 1;
+			while (last < count && shows_filename(entries[last]) == shows_filename(entries[first]))
+				++last;
 			ImGuiListClipper clipper;
 			clipper.Begin(last - first);
 			while (clipper.Step()) {
 				for (int i = first + clipper.DisplayStart; i < first + clipper.DisplayEnd; ++i) {
 					const auto& entry = entries[i];
-					if (draw_replay_entry(entry, i, entry.filename == selected_replay_file)) {
+					if (draw_replay_entry(entry, i, entry.filename == selected_replay_file,
+							local_favorites.count(entry.filename) != 0)) {
 						selected_replay_file = entry.filename;
 						pov_index = 0;
 					}
@@ -705,6 +862,18 @@ void gdxsv_replay_local_tab() {
 		});
 		if (selected != entries.end()) {
 			const auto& entry = *selected;
+			const bool favorite = local_favorites.count(entry.filename) != 0;
+			if (favorite)
+				ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(1.f, .8f, .2f, 1.f));
+			if (ImGui::Button(favorite ? ICON_FA_STAR "  Remove from Favorites###favorite" : ICON_FA_STAR "  Add to Favorites###favorite")) {
+				if (favorite)
+					local_favorites.erase(entry.filename);
+				else
+					local_favorites.insert(entry.filename);
+				save_local_favorites(replay_dir);
+			}
+			if (favorite)
+				ImGui::PopStyleColor();
 			if (entry.readable) {
 				gdxsv_replay_draw_info(entry.battle_code, entry.disk, static_cast<int>(entry.users.size()),
 					entry.close_reason, entry.start_unix, entry.end_unix, entry.users, entry.replay_url, false,
@@ -1538,6 +1707,7 @@ void gdxsv_replay_server_tab() {
 			std::string battle_code = entry.replay_url.substr(entry.replay_url.find_last_of("/") + 1);
 			battle_code = battle_code.substr(0, battle_code.find(".pb"));
 
+			draw_server_favorite_button(entry.replay_url, battle_code);
 			gdxsv_replay_draw_info(battle_code, entry.disk, (int)entry.users.size(), "", entry.start_unix, 0, entry.users,
 								   entry.replay_url, true, entry.play_count);
 			draw_round_detail(entry);
