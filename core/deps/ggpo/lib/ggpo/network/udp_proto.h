@@ -84,7 +84,7 @@ public:
    void OnMsg(UdpMsg *msg, int len);
    void Disconnect();
    void SendAppData(const void *data, int len, bool spectators);
-   void SendUnmanagedMsg(UdpMsg* msg, int len);
+   void SendUnmanagedMsg(UdpMsg* msg, int len, const sockaddr_storage &from);
   
    void GetNetworkStats(struct GGPONetworkStats *stats);
    bool GetEvent(UdpProtocol::Event &e);
