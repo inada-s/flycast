@@ -3,6 +3,7 @@
 #include <future>
 #include <mutex>
 #include <string>
+#include <vector>
 
 #include "gdxsv.pb.h"
 #include "network/net_platform.h"
@@ -143,6 +144,7 @@ class UdpPingPong {
 		int ping_count;
 		int pong_count;
 		float rtt;
+		std::vector<int> rtt_samples;
 	};
 
 #pragma pack(1)

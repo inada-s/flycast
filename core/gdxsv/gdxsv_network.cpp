@@ -1,5 +1,6 @@
 #include "gdxsv_network.h"
 
+#include <algorithm>
 #include <chrono>
 #include <cmath>
 #include <random>
@@ -951,9 +952,16 @@ void UdpPingPong::Start(uint32_t session_id, uint8_t peer_id, int port, int dura
 							  mask_ip_address(sockaddr_to_string(sender)).c_str());
 
 					// Pong may come from an address different from one which Ping sent, so update the pong_count based on candidate_idx
-					if (recv.candidate_idx < candidates_.size() && candidates_[recv.candidate_idx].peer_id == recv.from_peer_id) {
+					// Cap the samples so a peer flooding pongs cannot grow them without bound.
+					if (recv.candidate_idx < candidates_.size() && candidates_[recv.candidate_idx].peer_id == recv.from_peer_id &&
+						candidates_[recv.candidate_idx].rtt_samples.size() < 256) {
 						auto &c = candidates_[recv.candidate_idx];
-						c.rtt = float(c.pong_count * c.rtt + rtt) / float(c.pong_count + 1);
+						// Use the median so that a few delayed pongs (e.g. right after NAT traversal) don't inflate the input delay.
+						c.rtt_samples.push_back(rtt);
+						auto samples = c.rtt_samples;
+						auto mid = samples.begin() + (samples.size() - 1) / 2;
+						std::nth_element(samples.begin(), mid, samples.end());
+						c.rtt = static_cast<float>(*mid);
 						c.pong_count++;
 						rtt_matrix_[peer_id][recv.from_peer_id] = static_cast<uint8_t>(std::min(255, (int)std::ceil(c.rtt)));
 						for (int j = 0; j < N; j++) {
@@ -1097,8 +1105,15 @@ void UdpPingPong::PrintRttMatrix() {
 
 	NOTICE_LOG(COMMON, "CANDIDATES");
 	for (const auto& c : candidates_) {
-		NOTICE_LOG(COMMON, "[%s] Peer%d %s: ping=%d pong=%d rtt=%.2f addr=%s", 0 < c.pong_count ? "x" : " ", c.peer_id,
-			peer_to_user_[c.peer_id].c_str(), c.ping_count, c.pong_count, c.rtt, c.remote.masked_addr().c_str());
+		float mean = 0;
+		int max = 0;
+		for (int s : c.rtt_samples) {
+			mean += static_cast<float>(s) / static_cast<float>(c.rtt_samples.size());
+			max = std::max(max, s);
+		}
+		NOTICE_LOG(COMMON, "[%s] Peer%d %s: ping=%d pong=%d rtt=%.2f mean=%.2f max=%d addr=%s", 0 < c.pong_count ? "x" : " ",
+			c.peer_id, peer_to_user_[c.peer_id].c_str(), c.ping_count, c.pong_count, c.rtt, mean, max,
+			c.remote.masked_addr().c_str());
 	}
 }
 
@@ -1110,6 +1125,7 @@ void UdpPingPong::DebugUnreachable(uint8_t peer_id, uint8_t remote_peer_id) {
 		if (c.peer_id == remote_peer_id) {
 			c.pong_count = 0;
 			c.rtt = 0;
+			c.rtt_samples.clear();
 		}
 	}
 }
