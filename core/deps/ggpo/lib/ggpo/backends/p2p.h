@@ -76,6 +76,8 @@ protected:
    int                   _disconnect_timeout;
    int                   _disconnect_notify_start;
    bool                  _disconnect_without_rollback;
+   int                   _test_log;       /* GGPO_TEST_LOG: count relay forwards for tools/rbk_test */
+   int                   _relay_forwards;
 
    UdpMsg::connect_status _local_connect_status[UDP_MSG_MAX_PLAYERS];
 };

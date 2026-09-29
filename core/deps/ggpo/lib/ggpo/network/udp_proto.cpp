@@ -64,6 +64,8 @@ UdpProtocol::UdpProtocol() :
    _send_latency = GGPOPlatform::GetConfigInt("GGPO_NETWORK_DELAY");
    _jam_latency = GGPOPlatform::GetConfigInt("GGPO_NETWORK_JAM_DELAY");
    _oop_percent = GGPOPlatform::GetConfigInt("GGPO_OOP_PERCENT");
+   _test_log = GGPOPlatform::GetConfigInt("GGPO_TEST_LOG");
+   _relay_drops = 0;
 }
 
 UdpProtocol::~UdpProtocol()
@@ -1004,6 +1006,9 @@ void UdpProtocol::SendUnmanagedMsg(UdpMsg* msg, int len, const sockaddr_storage 
         // Never hand a relayed packet back to the peer it came from, or it bounces between the two forever.
         if (SameAddress(_peer_addr, from)) {
             Log("Relay SendUnmanagedMsg %d->%d dropped: would return to sender", msg->hdr.remote_endpoint, _queue);
+            if (_test_log && ++_relay_drops % 100 == 1) {
+               LogInfo("RBKTEST relay drop-return-to-sender n=%d", _relay_drops);
+            }
             return;
         }
         Log("Relay SendUnmanagedMsg %d->%d me:%d q:%d", msg->hdr.remote_endpoint, msg->hdr.relay_to_endpoint, _local_player_queue, _queue);
