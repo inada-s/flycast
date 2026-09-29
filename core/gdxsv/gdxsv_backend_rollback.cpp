@@ -299,8 +299,11 @@ void GdxsvBackendRollback::OnMainUiLoop() {
 				NOTICE_LOG(COMMON, "StartNetwork failure");
 				SetCloseReason("ggpo_start_failure");
 				error_fast_return_ = true;
-				// Stop the unsynchronized session before the emu thread can run a frame with it.
+				// Stop the unsynchronized session before the emu thread can run a frame with it. GGPOEnable goes
+				// too: with it still set, emu.start() would protect the memwatch pages again, and nothing would
+				// unprotect them once the session is gone, so the first guest write would crash.
 				ggpo::stopSession();
+				config::GGPOEnable.reset();
 				emu.start();
 			}
 		} else if (timeout) {
@@ -308,6 +311,7 @@ void GdxsvBackendRollback::OnMainUiLoop() {
 			SetCloseReason("ggpo_start_timeout");
 			error_fast_return_ = true;
 			ggpo::stopSession();
+			config::GGPOEnable.reset();
 			emu.start();
 		}
 	}
