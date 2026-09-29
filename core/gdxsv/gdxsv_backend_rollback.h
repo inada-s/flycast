@@ -97,6 +97,10 @@ class GdxsvBackendRollback {
 	int battle_end_frame_ = -1;
 	int disconnect_frame_ = 0;
 
+	// GGPO_TEST_LOG: log scene changes for tools/rbk_test.
+	bool test_log_ = false;
+	int last_scene_ = -1;
+
 	// Network stats copied on the emulation thread for the OSD. The UI thread must not call into GGPO: the emu
 	// thread can hold the GGPO lock for seconds (prediction barrier while a peer drops), freezing the window.
 	std::mutex net_stat_mutex_;

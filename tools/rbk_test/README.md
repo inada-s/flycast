@@ -1,0 +1,71 @@
+# Rollback netcode test suite
+
+Run this after touching the GGPO library (`core/deps/ggpo`), `core/network/ggpo.cpp`, or the rollback
+backend (`core/gdxsv/gdxsv_backend_rollback.*`). Each case runs four flycast instances as a local
+rollback match (`gdxsv:rbk_test=N/4`) with random input, and checks the logs and state hash logs.
+
+## Running
+
+```
+python tools/rbk_test/run_suite.py --rom D:\rom\gdx-disc2\gdx-disc2.gdi --old-release gdxsv-1.9.2 --older-release gdxsv-1.8.13
+python tools/rbk_test/run_suite.py --rom ... --cases C1,C2     # selected cases
+python tools/rbk_test/run_suite.py --rom ... --long            # include A2 (about 20 minutes)
+python tools/rbk_test/run_suite.py --list
+```
+
+- `--exe` defaults to `cmake-build-relwithdebinfo/flycast.exe`.
+- `--old-release` / `--older-release` download a release with the GitHub CLI (`gh`). Use the latest
+  release and one before it. Pass `--old-exe` / `--older-exe` to use local builds instead. Without
+  them, A3/A4 are skipped.
+- The pre-battle savestate (`gdx-disc2_99.state`) is taken from `work/state` and downloaded if missing.
+- Output goes to `tools/rbk_test/out/<case>/p1..p4/` (`flycast.log`, `data/hashlog.txt`). The copied
+  executables are deleted after each match. `out/summary.json` holds the results.
+- The whole default set takes about 30 minutes. Windowed cases (B2, B3, C1, C3) open four emulator
+  windows, and audio is muted. C1 is Windows only.
+- The exit code is 1 if any case fails. `INCONCLUSIVE` means the situation a case looks for did not
+  happen in that run (for example, no rollback crossed a timesync skip). Rerun it.
+
+Every match is checked for the following:
+- Every peer logs `RollbackNet local test finished`.
+- All peers have the same round winners (`WIN_TEAM`), and their last frames in the hash log differ by at most 2. Teardown timing can leave one peer a frame ahead.
+- No log contains `GGPO error`, `Exception`, `[GPF]`, `Assertion` or `Flycast has stopped`.
+
+A failed ROM load still exits with code 0, so the suite checks the logs, not the exit code.
+
+## Cases
+
+| ID | Case | Setup | Pass when |
+|---|---|---|---|
+| A1 | Basic match | headless, send delay 16/16/16/100 ms | common checks |
+| A2 | 20 rounds (`--long`) | `MAXREBATTLE=20` | common checks; used MS and StartMsg/LoadEndMsg join frames identical on all peers |
+| A3 | Mixed with the previous release | old ×2 + new ×2, run with peer 0 old and with peer 0 new | common checks |
+| A4 | Mixed with an older release | same as A3 | common checks |
+| B1 | Timesync skip replayed in a rollback | seeds 11..66, `GGPO_TEST_LOG=1` | every rollback whose re-simulated range contains a skip after the seek frame replays it |
+| B2 | Threaded rendering | windowed, delay 50/16/80/100, 3 rounds | common checks, no stall, rollbacks happened |
+| B3 | Threaded rendering off | windowed, `rend.ThreadedRendering=no` | common checks (the harness gets no rollbacks in this mode, old builds too) |
+| C1 | Peer drops mid-battle | windowed, stat OSD on; peer 4 killed 10 s into the battle, `Process.Responding` of the others sampled for 40 s | no sample not responding; peers 1-3 close the session |
+| C2 | GGPO session start times out | peer 4 killed 5 s into the ping test; 3 runs | peers 1-3 log `StartNetwork timeout` and close, no crash |
+| C3 | Re-battle cancel ends the match | `RAND_MASK=06F6`, `MAXREBATTLE=3`, `GGPO_TEST_LOG=1`; headless and windowed | all peers enter scene 4/3 on the same frame and are in CloseWait at 4/4; common checks |
+| D1 | Malformed packets | ~45 s of `fuzz.py` during the battle (oversized AppData/Input, truncated, unknown types, bogus relays) | common checks |
+| D2 | Relay in use | `TEST_RELAY=single` | p1 picks the relay (`Relay:1`), p2 forwards, common checks |
+| D3 | Relay loop | `TEST_RELAY=loop` | peers 1 and 2 cut the loop (a few `relay drop-return-to-sender` lines, not a flood), no crash; session start times out as expected |
+
+## Test-only switches (environment variables)
+
+These do nothing unless set.
+
+| Variable | Effect | Where |
+|---|---|---|
+| `GGPO_NETWORK_DELAY` | Send latency in ms (GGPO, existing) | any session |
+| `VITAL`, `MAXREBATTLE` | Team vitals and number of re-battles (existing) | local test |
+| `RAND_MASK` | Hex kcode mask for the random input. The default leaves out down/right, so the re-battle menu is never cancelled; `06F6` reaches it | local test |
+| `TEST_RELAY` | `single`: peer 0 reaches peer 3 through peer 1. `loop`: peer 1 also reaches peer 3 through peer 0 | local test |
+| `GGPO_TEST_LOG` | Logs `RBKTEST` lines: timesync skip record/replay, rollback loads, scene changes, relay forwards and loop drops | any session |
+
+## Not covered here
+
+Check these by hand against a real server:
+- Cancelling the re-battle menu with real input.
+- Start failure paths that need the server or real peers, such as `delay_too_large` or `unreachable`.
+- Relay through real NATs.
+- Spectators.

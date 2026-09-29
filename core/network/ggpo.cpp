@@ -215,6 +215,8 @@ static void logSavedState(int frame, const unsigned char *buffer, int len)
 static int seekToFrame = -1;
 static int totalRollbackFrames;
 static int totalTimeSync;
+// GGPO_TEST_LOG: log timesync skips and rollback loads for tools/rbk_test.
+static bool testLog;
 static int timesyncOccurred;
 
 #pragma pack(push, 1)
@@ -347,6 +349,8 @@ static bool advance_frame(int)
 	inRollback = true;
 
 	const int skips = skippedFrames[frame];
+	if (testLog && skips > 0)
+		NOTICE_LOG(NETWORK, "RBKTEST skip replay frame=%d skips=%d", frame, skips);
 	for (int i = 0; i < skips; i++) {
 		emu.run();
 	}
@@ -382,6 +386,8 @@ static bool load_game_state(unsigned char *buffer, int len)
 	Deserializer deser(buffer, len, true);
 	int frame;
 	deser >> frame;
+	if (testLog)
+		NOTICE_LOG(NETWORK, "RBKTEST load seek=%d from=%d", frame, seekToFrame);
 	memwatch::unprotect();
 	for (int f = lastSavedFrame - 1; f >= frame; f--)
 	{
@@ -592,6 +598,7 @@ void startSession(int localPort, int localPlayerNum)
 	cb.log_game_state  = log_game_state;
 	cb.on_message      = on_message;
 	openHashLog();
+	testLog = getenv("GGPO_TEST_LOG") != nullptr;
 	disconnect_flags = 0;
 	inputBlockCount.fill(0);
 
@@ -836,6 +843,8 @@ bool nextFrame()
 	if (skipInputOccurred) {
 		skipInputOccurred = false;
 		skippedFrames[frame]++;
+		if (testLog)
+			NOTICE_LOG(NETWORK, "RBKTEST skip record frame=%d", frame);
 		if (active()) {
 			emu.getSh4Executor()->Start();
 			return true;
@@ -1225,6 +1234,7 @@ void gdxsvStartSession(const char* sessionCode, int me,
 	cb.log_game_state  = log_game_state;
 	cb.on_message      = on_message;
 	openHashLog();
+	testLog = getenv("GGPO_TEST_LOG") != nullptr;
 	memset(playerHandles, 0, sizeof(playerHandles));
 	disconnect_flags = 0;
 	inputBlockCount.fill(0);

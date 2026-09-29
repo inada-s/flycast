@@ -135,6 +135,8 @@ void GdxsvBackendRollback::Reset() {
 	pending_spectator_round_results_.clear();
 	battle_end_frame_ = -1;
 	disconnect_frame_ = 0;
+	test_log_ = getenv("GGPO_TEST_LOG") != nullptr;
+	last_scene_ = -1;
 	{
 		std::lock_guard<std::mutex> lock(net_stat_mutex_);
 		net_stats_ = {};
@@ -191,6 +193,23 @@ void GdxsvBackendRollback::OnMainUiLoop() {
 			ping_pong_.PrintRttMatrix();
 		}
 		*/
+		// Local test only: rewrite the RTT matrix so the relay path gets used. TEST_RELAY=single makes peer 0 reach
+		// peer 3 through peer 1; TEST_RELAY=loop also makes peer 1 reach peer 3 through peer 0, so each relays through
+		// the other.
+		const char* test_relay = is_local_test_ ? getenv("TEST_RELAY") : nullptr;
+		if (test_relay != nullptr) {
+			if (matching_.peer_id() == 0) {
+				ping_pong_.DebugSetRtt(0, 1, 10);
+				ping_pong_.DebugSetRtt(1, 3, 10);
+				ping_pong_.DebugSetRtt(0, 3, 200);
+			}
+			if (matching_.peer_id() == 1 && std::string(test_relay) == "loop") {
+				ping_pong_.DebugSetRtt(1, 0, 10);
+				ping_pong_.DebugSetRtt(0, 3, 10);
+				ping_pong_.DebugSetRtt(1, 3, 200);
+			}
+			NOTICE_LOG(COMMON, "TEST_RELAY=%s", test_relay);
+		}
 		bool ok = true;
 		uint8_t rtt_matrix[4][4] = {};
 		ping_pong_.GetRttMatrix(rtt_matrix);
@@ -402,8 +421,14 @@ bool GdxsvBackendRollback::StartLocalTest(const char* param) {
 	}
 
 	if (const u64 seed = config::loadInt64("gdxsv", "rand_input", 0)) {
-		NOTICE_LOG(COMMON, "RandomInput Seed=%d", seed + me);
-		ggpo::randomInput(true, seed + me, 0x0004 | 0x0400 | 0x0200 | 0x0010 | 0x0040);
+		// The default mask leaves out down/right, so the re-battle menu is never cancelled.
+		// RAND_MASK (hex kcode bits) overrides it, e.g. 06F6 to reach the re-battle-cancel scene.
+		u32 mask = 0x0004 | 0x0400 | 0x0200 | 0x0010 | 0x0040;
+		if (const char* env = getenv("RAND_MASK")) {
+			mask = strtoul(env, nullptr, 16);
+		}
+		NOTICE_LOG(COMMON, "RandomInput Seed=%d Mask=%04x", seed + me, mask);
+		ggpo::randomInput(true, seed + me, mask);
 	}
 	// Team vitals (Renpo, Zeon), little endian. VITAL=600 for a full-length battle.
 	const int vital = getenv("VITAL") ? atoi(getenv("VITAL")) : 1;
@@ -548,6 +573,11 @@ void GdxsvBackendRollback::OnNextFrame() {
 	const int COM_R_No0 = gdxsv.Disk() == 1 ? 0x0c2f6639 : 0x0c391d79;
 	const u8 scene = gdxsv_ReadMem8(COM_R_No0);
 	const u8 sub_scene = gdxsv_ReadMem8(COM_R_No0 + 5);
+	if (test_log_ && scene * 256 + sub_scene != last_scene_) {
+		last_scene_ = scene * 256 + sub_scene;
+		NOTICE_LOG(COMMON, "RBKTEST scene frame=%d scene=%d/%d confirmed=%d state=%d", frame, scene, sub_scene,
+				   ConfirmedFrame(), (int)state_);
+	}
 
 	// Re-battle cancelled. Entering this scene depends on the players' menu input, so the frame it shows up on may
 	// still be a prediction; disconnecting cannot be undone, so wait until that frame is confirmed.

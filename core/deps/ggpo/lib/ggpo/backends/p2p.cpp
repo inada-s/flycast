@@ -31,7 +31,9 @@ Peer2PeerBackend::Peer2PeerBackend(GGPOSessionCallbacks *cb,
     _next_spectator_frame(0),
     _disconnect_timeout(DEFAULT_DISCONNECT_TIMEOUT),
     _disconnect_notify_start(DEFAULT_DISCONNECT_NOTIFY_START),
-    _disconnect_without_rollback(false)
+    _disconnect_without_rollback(false),
+    _test_log(GGPOPlatform::GetConfigInt("GGPO_TEST_LOG")),
+    _relay_forwards(0)
 {
    _callbacks = *cb;
    _synchronizing = true;
@@ -650,6 +652,9 @@ Peer2PeerBackend::OnMsg(sockaddr_storage &from, UdpMsg *msg, int len)
             msg->hdr.org_type = UdpMsg::Invalid;
             msg->hdr.relay_magic = 0;
             msg->hdr.relay_to_endpoint = 0;
+            if (_test_log && ++_relay_forwards % 500 == 1) {
+               LogInfo("RBKTEST relay forward n=%d to=%d", _relay_forwards, i);
+            }
             _endpoints[i].SendUnmanagedMsg(msg, len, from);
          }
       }
