@@ -250,9 +250,16 @@ void GdxsvBackendRollback::OnMainUiLoop() {
 			bool relay_ok = false;
 			auto [relay_peer, relay_rtt] = find_relay_peer(i);
 			if (relay_peer != -1 && (!direct_ok || relay_rtt + 32 < rtt)) {
-				relay_ok = ping_pong_.GetAvailableAddress(relay_peer, &addr_storage, &rtt);
-				rtt += static_cast<float>(rtt_matrix[relay_peer][i]);
-				relays[i] = true;
+				// Switch to the relay only once its address is known; otherwise keep the direct path, since
+				// relay-wrapped packets sent straight to the destination peer are dropped there.
+				sockaddr_storage relay_addr{};
+				float relay_peer_rtt;
+				relay_ok = ping_pong_.GetAvailableAddress(relay_peer, &relay_addr, &relay_peer_rtt);
+				if (relay_ok) {
+					addr_storage = relay_addr;
+					rtt = relay_peer_rtt + static_cast<float>(rtt_matrix[relay_peer][i]);
+					relays[i] = true;
+				}
 			}
 
 			if (direct_ok || relay_ok) {

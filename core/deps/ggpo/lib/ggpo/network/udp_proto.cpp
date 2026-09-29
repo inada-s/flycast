@@ -360,6 +360,67 @@ UdpProtocol::HandlesMsg(sockaddr_storage &from, UdpMsg *msg)
    return false;
 }
 
+/*
+ * The handlers trust the sizes and counts inside a message, so check them
+ * against what was actually received before dispatching.
+ */
+static bool
+IsValidMsgLength(UdpMsg *msg, int len)
+{
+   const int payload = len - (int)sizeof(msg->hdr);
+   switch (msg->hdr.type) {
+   case UdpMsg::SyncRequest:
+      return payload >= (int)(&msg->u.sync_request.verification[0] - (uint8 *)&msg->u);
+   case UdpMsg::SyncReply:     return payload >= (int)sizeof(msg->u.sync_reply);
+   case UdpMsg::QualityReport: return payload >= (int)sizeof(msg->u.quality_report);
+   case UdpMsg::QualityReply:  return payload >= (int)sizeof(msg->u.quality_reply);
+   case UdpMsg::KeepAlive:     return payload >= 0;
+   case UdpMsg::InputAck:      return payload >= (int)sizeof(msg->u.input_ack);
+   case UdpMsg::Input: {
+      const int fixed = (int)((char *)&msg->u.input.bits - (char *)&msg->u.input);
+      return payload >= fixed
+         && msg->u.input.num_bits <= MAX_COMPRESSED_BITS
+         && payload >= fixed + (msg->u.input.num_bits + 7) / 8;
+   }
+   case UdpMsg::AppData: {
+      const int fixed = (int)(sizeof(msg->u.app_data) - sizeof(msg->u.app_data.data));
+      return payload >= fixed
+         && msg->u.app_data.size <= MAX_APPDATA_SIZE
+         && payload >= fixed + msg->u.app_data.size;
+   }
+   default:
+      return false;
+   }
+}
+
+/*
+ * Walks the compressed input stream the way OnInput decodes it, making sure
+ * every read stays inside num_bits and every button index fits the input.
+ */
+static bool
+IsValidInputBits(uint8 *bits, int num_bits, int max_button)
+{
+   int offset = 0;
+   while (offset < num_bits) {
+      for (;;) {
+         if (offset >= num_bits) {
+            return false;
+         }
+         if (!BitVector_ReadBit(bits, &offset)) {
+            break;
+         }
+         if (offset + 1 + BITVECTOR_NIBBLE_SIZE > num_bits) {
+            return false;
+         }
+         BitVector_ReadBit(bits, &offset);
+         if (BitVector_ReadNibblet(bits, &offset) >= max_button) {
+            return false;
+         }
+      }
+   }
+   return true;
+}
+
 void
 UdpProtocol::OnMsg(UdpMsg *msg, int len)
 {
@@ -379,6 +440,11 @@ UdpProtocol::OnMsg(UdpMsg *msg, int len)
 
    if (msg->hdr.const_magic != CONST_MAGIC) {
       LogMsg("invalid const magic", msg);
+      return;
+   }
+
+   if (!IsValidMsgLength(msg, len)) {
+      Log("udpproto%d | dropping malformed packet (type: %d, len: %d)", _queue, msg->hdr.type, len);
       return;
    }
 
@@ -601,6 +667,15 @@ UdpProtocol::OnSyncReply(UdpMsg *msg, int len)
 bool
 UdpProtocol::OnInput(UdpMsg *msg, int len)
 {
+   if (msg->u.input.num_bits) {
+      const int input_size = msg->u.input.input_size;
+      if (input_size <= 0 || input_size > GAMEINPUT_MAX_BYTES * GAMEINPUT_MAX_PLAYERS
+            || !IsValidInputBits(msg->u.input.bits, msg->u.input.num_bits, input_size * 8)) {
+         Log("udpproto%d | dropping malformed input (size: %d, bits: %d)", _queue, input_size, msg->u.input.num_bits);
+         return false;
+      }
+   }
+
    /*
     * If a disconnect is requested, go ahead and disconnect now.
     */
@@ -902,12 +977,35 @@ bool UdpProtocol::OnAppData(UdpMsg *msg, int len)
 	return true;
 }
 
-void UdpProtocol::SendUnmanagedMsg(UdpMsg* msg, int len)
+static bool SameAddress(const sockaddr_storage &a, const sockaddr_storage &b)
+{
+    if (a.ss_family != b.ss_family)
+        return false;
+    if (a.ss_family == AF_INET) {
+        const auto &a4 = (const sockaddr_in &)a;
+        const auto &b4 = (const sockaddr_in &)b;
+        return a4.sin_port == b4.sin_port && memcmp(&a4.sin_addr, &b4.sin_addr, sizeof(a4.sin_addr)) == 0;
+    }
+    if (a.ss_family == AF_INET6) {
+        const auto &a6 = (const sockaddr_in6 &)a;
+        const auto &b6 = (const sockaddr_in6 &)b;
+        return a6.sin6_port == b6.sin6_port && memcmp(&a6.sin6_addr, &b6.sin6_addr, sizeof(a6.sin6_addr)) == 0;
+    }
+    return false;
+}
+
+void UdpProtocol::SendUnmanagedMsg(UdpMsg* msg, int len, const sockaddr_storage &from)
 {
     if (_udp == nullptr)
         return;
 
     if (_relay) {
+        // Peers pick their relays independently, so two of them can each relay this endpoint through the other.
+        // Never hand a relayed packet back to the peer it came from, or it bounces between the two forever.
+        if (SameAddress(_peer_addr, from)) {
+            Log("Relay SendUnmanagedMsg %d->%d dropped: would return to sender", msg->hdr.remote_endpoint, _queue);
+            return;
+        }
         Log("Relay SendUnmanagedMsg %d->%d me:%d q:%d", msg->hdr.remote_endpoint, msg->hdr.relay_to_endpoint, _local_player_queue, _queue);
         msg->hdr.relay_magic = RELAY_MAGIC;
         msg->hdr.relay_to_endpoint = _queue;
