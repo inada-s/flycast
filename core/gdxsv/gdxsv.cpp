@@ -301,7 +301,8 @@ void Gdxsv::HookNextFrame() {
 void Gdxsv::HookMainUiLoop() {
 	if (!enabled_) return;
 
-	if (InGame()) {
+	// Stop fast-forward from lbsReadyBattle on: the P2P ping test that follows would measure an inflated RTT.
+	if (InGame() || going_to_battle_) {
 		settings.input.fastForwardMode = false;
 	}
 
