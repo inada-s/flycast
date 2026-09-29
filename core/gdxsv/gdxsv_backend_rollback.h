@@ -1,8 +1,11 @@
 #pragma once
+#include <array>
 #include <future>
+#include <mutex>
 #include <set>
 
 #include "gdxsv_network.h"
+#include "network/ggpo.h"
 #include "gdxsv_spectator_uplink.h"
 #include "lbs_message.h"
 
@@ -28,6 +31,7 @@ class GdxsvBackendRollback {
 	void DisplayOSD();
 	void Reset();
 	void OnMainUiLoop();
+	void OnNextFrame();
 	bool StartLocalTest(const char *param);
 	void Prepare(const proto::P2PMatching &matching, int port);
 	void Open();
@@ -54,6 +58,9 @@ class GdxsvBackendRollback {
 	// happen inline where those vectors are written (they're written on every
 	// speculative/rollback simulation pass, not just the final settled one).
 	void FlushConfirmedToSpectatorUplink();
+	// Highest frame GGPO can no longer roll back, or -1 without a session.
+	int ConfirmedFrame();
+	void UpdateNetworkStatSnapshot();
 
 	State state_ = State::None;
 	bool is_local_test_ = false;
@@ -85,4 +92,14 @@ class GdxsvBackendRollback {
 	int32_t spectator_flushed_inputs_ = 0;
 	int32_t spectator_flushed_round_events_ = 0;
 	std::vector<std::pair<int, int32_t>> pending_spectator_round_results_;
+
+	// First frame the re-battle-cancel scene was seen on, or -1. The match is closed once this frame is confirmed.
+	int battle_end_frame_ = -1;
+	int disconnect_frame_ = 0;
+
+	// Network stats copied on the emulation thread for the OSD. The UI thread must not call into GGPO: the emu
+	// thread can hold the GGPO lock for seconds (prediction barrier while a peer drops), freezing the window.
+	std::mutex net_stat_mutex_;
+	std::array<ggpo::NetworkStats, 4> net_stats_{};
+	std::array<bool, 4> net_connected_{};
 };
