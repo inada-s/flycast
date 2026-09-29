@@ -85,6 +85,11 @@ Peer2PeerBackend::AddRemotePlayer(char *ip,
    _synchronizing = true;
    
    _endpoints[queue].Init(&_udp, _poll, queue, ip, port, relay, _local_connect_status);
+   for (const auto &server : _relay_servers) {
+      if (relay && _endpoints[queue].IsPeerAddress(server)) {
+         _endpoints[queue].UseRelayServer(server);
+      }
+   }
    _endpoints[queue].SetDisconnectTimeout(_disconnect_timeout);
    _endpoints[queue].SetDisconnectNotifyStart(_disconnect_notify_start);
    _endpoints[queue].Synchronize();
@@ -627,6 +632,38 @@ Peer2PeerBackend::SetDisconnectWithoutRollback(bool allow)
 }
 
 GGPOErrorCode
+Peer2PeerBackend::AddRelayServer(const char *ip, unsigned short port)
+{
+   addrinfo hints{};
+   hints.ai_family = AF_UNSPEC;
+   hints.ai_socktype = SOCK_DGRAM;
+   hints.ai_flags = AI_NUMERICHOST | AI_NUMERICSERV;
+   char service[10] = {};
+   snprintf(service, sizeof(service), "%d", port);
+   addrinfo *res = nullptr;
+   if (getaddrinfo(ip, service, &hints, &res) != 0 || res == nullptr) {
+      LogError("AddRelayServer: invalid address %s:%d", ip, port);
+      return GGPO_ERRORCODE_INVALID_REQUEST;
+   }
+   sockaddr_storage addr{};
+   memcpy(&addr, res->ai_addr, res->ai_addrlen);
+   freeaddrinfo(res);
+   _relay_servers.push_back(addr);
+   return GGPO_OK;
+}
+
+bool
+Peer2PeerBackend::IsRelayServer(const sockaddr_storage &addr) const
+{
+   for (const auto &server : _relay_servers) {
+      if (UdpProtocol::SameAddress(server, addr)) {
+         return true;
+      }
+   }
+   return false;
+}
+
+GGPOErrorCode
 Peer2PeerBackend::PlayerHandleToQueue(GGPOPlayerHandle player, int *queue)
 {
    int offset = ((int)player - 1);
@@ -662,6 +699,9 @@ Peer2PeerBackend::OnMsg(sockaddr_storage &from, UdpMsg *msg, int len)
    }
    for (int i = 0; i < _num_players; i++) {
       if (_endpoints[i].HandlesMsg(from, msg)) {
+         if (IsRelayServer(from)) {
+            _endpoints[i].UseRelayServer(from);
+         }
          _endpoints[i].OnMsg(msg, len);
          return;
       }

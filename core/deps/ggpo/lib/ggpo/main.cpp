@@ -275,3 +275,11 @@ GGPOErrorCode ggpo_set_disconnect_without_rollback(
 
 	return ggpo->SetDisconnectWithoutRollback(true);
 }
+
+GGPOErrorCode ggpo_add_relay_server(GGPOSession *ggpo, const char *ip, unsigned short port)
+{
+	if (ggpo == nullptr)
+		return GGPO_ERRORCODE_INVALID_SESSION;
+
+	return ggpo->AddRelayServer(ip, port);
+}

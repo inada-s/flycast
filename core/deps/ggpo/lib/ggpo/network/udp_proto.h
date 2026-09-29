@@ -85,6 +85,9 @@ public:
    void Disconnect();
    void SendAppData(const void *data, int len, bool spectators);
    void SendUnmanagedMsg(UdpMsg* msg, int len, const sockaddr_storage &from);
+   bool IsPeerAddress(const sockaddr_storage &addr) const { return SameAddress(_peer_addr, addr); }
+   void UseRelayServer(const sockaddr_storage &server);
+   static bool SameAddress(const sockaddr_storage &a, const sockaddr_storage &b);
   
    void GetNetworkStats(struct GGPONetworkStats *stats);
    bool GetEvent(UdpProtocol::Event &e);
@@ -148,6 +151,7 @@ protected:
    int            _local_player_queue;
    int            _queue;
    bool           _relay;
+   bool           _relay_server;     /* _relay goes through a relay server, not a peer */
    uint16         _remote_magic_number;
    bool           _connected;
    int            _send_latency;

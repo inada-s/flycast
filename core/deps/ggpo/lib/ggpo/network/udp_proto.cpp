@@ -28,6 +28,7 @@ UdpProtocol::UdpProtocol() :
    _local_player_queue(-1),
    _queue(-1),
    _relay(false),
+   _relay_server(false),
    _remote_magic_number(0),
    _connected(false),
    _round_trip_time(0),
@@ -979,7 +980,7 @@ bool UdpProtocol::OnAppData(UdpMsg *msg, int len)
 	return true;
 }
 
-static bool SameAddress(const sockaddr_storage &a, const sockaddr_storage &b)
+bool UdpProtocol::SameAddress(const sockaddr_storage &a, const sockaddr_storage &b)
 {
     if (a.ss_family != b.ss_family)
         return false;
@@ -994,6 +995,25 @@ static bool SameAddress(const sockaddr_storage &a, const sockaddr_storage &b)
         return a6.sin6_port == b6.sin6_port && memcmp(&a6.sin6_addr, &b6.sin6_addr, sizeof(a6.sin6_addr)) == 0;
     }
     return false;
+}
+
+void UdpProtocol::UseRelayServer(const sockaddr_storage &server)
+{
+   // Once on a relay server, stay there: switching between servers could flap on packets still in flight.
+   if (_relay_server) {
+      return;
+   }
+   {
+      std::lock_guard<std::mutex> lock(_send_mutex);
+      _peer_addr = server;
+      _peer_addr_len = sizeof(server);
+      _relay = true;
+      _relay_server = true;
+   }
+   LogInfo("udpproto%d | using the relay server", _queue);
+   if (_test_log) {
+      LogInfo("RBKTEST relay server path queue=%d", _queue);
+   }
 }
 
 void UdpProtocol::SendUnmanagedMsg(UdpMsg* msg, int len, const sockaddr_storage &from)

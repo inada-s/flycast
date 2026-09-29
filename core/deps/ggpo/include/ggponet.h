@@ -611,6 +611,16 @@ GGPO_API GGPOErrorCode __cdecl ggpo_get_current_frame(GGPOSession*, int *frame);
  */
 GGPO_API GGPOErrorCode __cdecl ggpo_set_disconnect_without_rollback(GGPOSession*, bool allow);
 
+/*
+ * ggpo_add_relay_server --
+ *
+ * Registers a relay server that peers may route their packets through.
+ * Call it before adding the players. A peer whose packets arrive through
+ * the server is answered through it too, which keeps the server's NAT
+ * mapping alive on this side.
+ */
+GGPO_API GGPOErrorCode __cdecl ggpo_add_relay_server(GGPOSession*, const char *ip, unsigned short port);
+
 #ifdef __cplusplus
 };
 #endif

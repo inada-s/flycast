@@ -48,7 +48,7 @@ struct TableStruct_gdxsv_2eproto {
     PROTOBUF_SECTION_VARIABLE(protodesc_cold);
   static const ::PROTOBUF_NAMESPACE_ID::internal::AuxiliaryParseTableField aux[]
     PROTOBUF_SECTION_VARIABLE(protodesc_cold);
-  static const ::PROTOBUF_NAMESPACE_ID::internal::ParseTable schema[22]
+  static const ::PROTOBUF_NAMESPACE_ID::internal::ParseTable schema[23]
     PROTOBUF_SECTION_VARIABLE(protodesc_cold);
   static const ::PROTOBUF_NAMESPACE_ID::internal::FieldMetadata field_metadata[];
   static const ::PROTOBUF_NAMESPACE_ID::internal::SerializationTable serialization_table[];
@@ -104,6 +104,9 @@ extern PlayerAddressDefaultTypeInternal _PlayerAddress_default_instance_;
 class PongMessage;
 class PongMessageDefaultTypeInternal;
 extern PongMessageDefaultTypeInternal _PongMessage_default_instance_;
+class RelayServer;
+class RelayServerDefaultTypeInternal;
+extern RelayServerDefaultTypeInternal _RelayServer_default_instance_;
 class SpectatorInputAck;
 class SpectatorInputAckDefaultTypeInternal;
 extern SpectatorInputAckDefaultTypeInternal _SpectatorInputAck_default_instance_;
@@ -140,6 +143,7 @@ template<> ::proto::Packet* Arena::CreateMaybeMessage<::proto::Packet>(Arena*);
 template<> ::proto::PingMessage* Arena::CreateMaybeMessage<::proto::PingMessage>(Arena*);
 template<> ::proto::PlayerAddress* Arena::CreateMaybeMessage<::proto::PlayerAddress>(Arena*);
 template<> ::proto::PongMessage* Arena::CreateMaybeMessage<::proto::PongMessage>(Arena*);
+template<> ::proto::RelayServer* Arena::CreateMaybeMessage<::proto::RelayServer>(Arena*);
 template<> ::proto::SpectatorInputAck* Arena::CreateMaybeMessage<::proto::SpectatorInputAck>(Arena*);
 template<> ::proto::SpectatorInputPush* Arena::CreateMaybeMessage<::proto::SpectatorInputPush>(Arena*);
 template<> ::proto::SpectatorRoundEvent* Arena::CreateMaybeMessage<::proto::SpectatorRoundEvent>(Arena*);
@@ -644,6 +648,7 @@ class P2PMatching PROTOBUF_FINAL :
   enum : int {
     kUsersFieldNumber = 9,
     kCandidatesFieldNumber = 10,
+    kRelaysFieldNumber = 11,
     kBattleCodeFieldNumber = 1,
     kRuleBinFieldNumber = 8,
     kSessionIdFieldNumber = 2,
@@ -687,6 +692,24 @@ class P2PMatching PROTOBUF_FINAL :
   ::proto::PlayerAddress* add_candidates();
   const ::PROTOBUF_NAMESPACE_ID::RepeatedPtrField< ::proto::PlayerAddress >&
       candidates() const;
+
+  // repeated .proto.RelayServer relays = 11;
+  int relays_size() const;
+  private:
+  int _internal_relays_size() const;
+  public:
+  void clear_relays();
+  ::proto::RelayServer* mutable_relays(int index);
+  ::PROTOBUF_NAMESPACE_ID::RepeatedPtrField< ::proto::RelayServer >*
+      mutable_relays();
+  private:
+  const ::proto::RelayServer& _internal_relays(int index) const;
+  ::proto::RelayServer* _internal_add_relays();
+  public:
+  const ::proto::RelayServer& relays(int index) const;
+  ::proto::RelayServer* add_relays();
+  const ::PROTOBUF_NAMESPACE_ID::RepeatedPtrField< ::proto::RelayServer >&
+      relays() const;
 
   // string battle_code = 1;
   void clear_battle_code();
@@ -774,6 +797,7 @@ class P2PMatching PROTOBUF_FINAL :
   typedef void DestructorSkippable_;
   ::PROTOBUF_NAMESPACE_ID::RepeatedPtrField< ::proto::BattleLogUser > users_;
   ::PROTOBUF_NAMESPACE_ID::RepeatedPtrField< ::proto::PlayerAddress > candidates_;
+  ::PROTOBUF_NAMESPACE_ID::RepeatedPtrField< ::proto::RelayServer > relays_;
   ::PROTOBUF_NAMESPACE_ID::internal::ArenaStringPtr battle_code_;
   ::PROTOBUF_NAMESPACE_ID::internal::ArenaStringPtr rule_bin_;
   ::PROTOBUF_NAMESPACE_ID::int32 session_id_;
@@ -981,6 +1005,190 @@ class PlayerAddress PROTOBUF_FINAL :
 };
 // -------------------------------------------------------------------
 
+class RelayServer PROTOBUF_FINAL :
+    public ::PROTOBUF_NAMESPACE_ID::Message /* @@protoc_insertion_point(class_definition:proto.RelayServer) */ {
+ public:
+  inline RelayServer() : RelayServer(nullptr) {}
+  virtual ~RelayServer();
+
+  RelayServer(const RelayServer& from);
+  RelayServer(RelayServer&& from) noexcept
+    : RelayServer() {
+    *this = ::std::move(from);
+  }
+
+  inline RelayServer& operator=(const RelayServer& from) {
+    CopyFrom(from);
+    return *this;
+  }
+  inline RelayServer& operator=(RelayServer&& from) noexcept {
+    if (GetArena() == from.GetArena()) {
+      if (this != &from) InternalSwap(&from);
+    } else {
+      CopyFrom(from);
+    }
+    return *this;
+  }
+
+  static const ::PROTOBUF_NAMESPACE_ID::Descriptor* descriptor() {
+    return GetDescriptor();
+  }
+  static const ::PROTOBUF_NAMESPACE_ID::Descriptor* GetDescriptor() {
+    return GetMetadataStatic().descriptor;
+  }
+  static const ::PROTOBUF_NAMESPACE_ID::Reflection* GetReflection() {
+    return GetMetadataStatic().reflection;
+  }
+  static const RelayServer& default_instance();
+
+  static void InitAsDefaultInstance();  // FOR INTERNAL USE ONLY
+  static inline const RelayServer* internal_default_instance() {
+    return reinterpret_cast<const RelayServer*>(
+               &_RelayServer_default_instance_);
+  }
+  static constexpr int kIndexInFileMessages =
+    3;
+
+  friend void swap(RelayServer& a, RelayServer& b) {
+    a.Swap(&b);
+  }
+  inline void Swap(RelayServer* other) {
+    if (other == this) return;
+    if (GetArena() == other->GetArena()) {
+      InternalSwap(other);
+    } else {
+      ::PROTOBUF_NAMESPACE_ID::internal::GenericSwap(this, other);
+    }
+  }
+  void UnsafeArenaSwap(RelayServer* other) {
+    if (other == this) return;
+    GOOGLE_DCHECK(GetArena() == other->GetArena());
+    InternalSwap(other);
+  }
+
+  // implements Message ----------------------------------------------
+
+  inline RelayServer* New() const final {
+    return CreateMaybeMessage<RelayServer>(nullptr);
+  }
+
+  RelayServer* New(::PROTOBUF_NAMESPACE_ID::Arena* arena) const final {
+    return CreateMaybeMessage<RelayServer>(arena);
+  }
+  void CopyFrom(const ::PROTOBUF_NAMESPACE_ID::Message& from) final;
+  void MergeFrom(const ::PROTOBUF_NAMESPACE_ID::Message& from) final;
+  void CopyFrom(const RelayServer& from);
+  void MergeFrom(const RelayServer& from);
+  PROTOBUF_ATTRIBUTE_REINITIALIZES void Clear() final;
+  bool IsInitialized() const final;
+
+  size_t ByteSizeLong() const final;
+  const char* _InternalParse(const char* ptr, ::PROTOBUF_NAMESPACE_ID::internal::ParseContext* ctx) final;
+  ::PROTOBUF_NAMESPACE_ID::uint8* _InternalSerialize(
+      ::PROTOBUF_NAMESPACE_ID::uint8* target, ::PROTOBUF_NAMESPACE_ID::io::EpsCopyOutputStream* stream) const final;
+  int GetCachedSize() const final { return _cached_size_.Get(); }
+
+  private:
+  inline void SharedCtor();
+  inline void SharedDtor();
+  void SetCachedSize(int size) const final;
+  void InternalSwap(RelayServer* other);
+  friend class ::PROTOBUF_NAMESPACE_ID::internal::AnyMetadata;
+  static ::PROTOBUF_NAMESPACE_ID::StringPiece FullMessageName() {
+    return "proto.RelayServer";
+  }
+  protected:
+  explicit RelayServer(::PROTOBUF_NAMESPACE_ID::Arena* arena);
+  private:
+  static void ArenaDtor(void* object);
+  inline void RegisterArenaDtor(::PROTOBUF_NAMESPACE_ID::Arena* arena);
+  public:
+
+  ::PROTOBUF_NAMESPACE_ID::Metadata GetMetadata() const final;
+  private:
+  static ::PROTOBUF_NAMESPACE_ID::Metadata GetMetadataStatic() {
+    ::PROTOBUF_NAMESPACE_ID::internal::AssignDescriptors(&::descriptor_table_gdxsv_2eproto);
+    return ::descriptor_table_gdxsv_2eproto.file_level_metadata[kIndexInFileMessages];
+  }
+
+  public:
+
+  // nested types ----------------------------------------------------
+
+  // accessors -------------------------------------------------------
+
+  enum : int {
+    kRegionFieldNumber = 1,
+    kIpFieldNumber = 2,
+    kTokenFieldNumber = 4,
+    kPortFieldNumber = 3,
+  };
+  // string region = 1;
+  void clear_region();
+  const std::string& region() const;
+  void set_region(const std::string& value);
+  void set_region(std::string&& value);
+  void set_region(const char* value);
+  void set_region(const char* value, size_t size);
+  std::string* mutable_region();
+  std::string* release_region();
+  void set_allocated_region(std::string* region);
+  private:
+  const std::string& _internal_region() const;
+  void _internal_set_region(const std::string& value);
+  std::string* _internal_mutable_region();
+  public:
+
+  // string ip = 2;
+  void clear_ip();
+  const std::string& ip() const;
+  void set_ip(const std::string& value);
+  void set_ip(std::string&& value);
+  void set_ip(const char* value);
+  void set_ip(const char* value, size_t size);
+  std::string* mutable_ip();
+  std::string* release_ip();
+  void set_allocated_ip(std::string* ip);
+  private:
+  const std::string& _internal_ip() const;
+  void _internal_set_ip(const std::string& value);
+  std::string* _internal_mutable_ip();
+  public:
+
+  // uint64 token = 4;
+  void clear_token();
+  ::PROTOBUF_NAMESPACE_ID::uint64 token() const;
+  void set_token(::PROTOBUF_NAMESPACE_ID::uint64 value);
+  private:
+  ::PROTOBUF_NAMESPACE_ID::uint64 _internal_token() const;
+  void _internal_set_token(::PROTOBUF_NAMESPACE_ID::uint64 value);
+  public:
+
+  // int32 port = 3;
+  void clear_port();
+  ::PROTOBUF_NAMESPACE_ID::int32 port() const;
+  void set_port(::PROTOBUF_NAMESPACE_ID::int32 value);
+  private:
+  ::PROTOBUF_NAMESPACE_ID::int32 _internal_port() const;
+  void _internal_set_port(::PROTOBUF_NAMESPACE_ID::int32 value);
+  public:
+
+  // @@protoc_insertion_point(class_scope:proto.RelayServer)
+ private:
+  class _Internal;
+
+  template <typename T> friend class ::PROTOBUF_NAMESPACE_ID::Arena::InternalHelper;
+  typedef void InternalArenaConstructable_;
+  typedef void DestructorSkippable_;
+  ::PROTOBUF_NAMESPACE_ID::internal::ArenaStringPtr region_;
+  ::PROTOBUF_NAMESPACE_ID::internal::ArenaStringPtr ip_;
+  ::PROTOBUF_NAMESPACE_ID::uint64 token_;
+  ::PROTOBUF_NAMESPACE_ID::int32 port_;
+  mutable ::PROTOBUF_NAMESPACE_ID::internal::CachedSize _cached_size_;
+  friend struct ::TableStruct_gdxsv_2eproto;
+};
+// -------------------------------------------------------------------
+
 class GamePatch PROTOBUF_FINAL :
     public ::PROTOBUF_NAMESPACE_ID::Message /* @@protoc_insertion_point(class_definition:proto.GamePatch) */ {
  public:
@@ -1023,7 +1231,7 @@ class GamePatch PROTOBUF_FINAL :
                &_GamePatch_default_instance_);
   }
   static constexpr int kIndexInFileMessages =
-    3;
+    4;
 
   friend void swap(GamePatch& a, GamePatch& b) {
     a.Swap(&b);
@@ -1216,7 +1424,7 @@ class GamePatchCode PROTOBUF_FINAL :
                &_GamePatchCode_default_instance_);
   }
   static constexpr int kIndexInFileMessages =
-    4;
+    5;
 
   friend void swap(GamePatchCode& a, GamePatchCode& b) {
     a.Swap(&b);
@@ -1386,7 +1594,7 @@ class GamePatchList PROTOBUF_FINAL :
                &_GamePatchList_default_instance_);
   }
   static constexpr int kIndexInFileMessages =
-    5;
+    6;
 
   friend void swap(GamePatchList& a, GamePatchList& b) {
     a.Swap(&b);
@@ -1532,7 +1740,7 @@ class BattleLogUser PROTOBUF_FINAL :
                &_BattleLogUser_default_instance_);
   }
   static constexpr int kIndexInFileMessages =
-    6;
+    7;
 
   friend void swap(BattleLogUser& a, BattleLogUser& b) {
     a.Swap(&b);
@@ -1832,7 +2040,7 @@ class BattleLogRound PROTOBUF_FINAL :
                &_BattleLogRound_default_instance_);
   }
   static constexpr int kIndexInFileMessages =
-    7;
+    8;
 
   friend void swap(BattleLogRound& a, BattleLogRound& b) {
     a.Swap(&b);
@@ -1994,7 +2202,7 @@ class SpectatorInputPush PROTOBUF_FINAL :
                &_SpectatorInputPush_default_instance_);
   }
   static constexpr int kIndexInFileMessages =
-    8;
+    9;
 
   friend void swap(SpectatorInputPush& a, SpectatorInputPush& b) {
     a.Swap(&b);
@@ -2357,7 +2565,7 @@ class SpectatorInputAck PROTOBUF_FINAL :
                &_SpectatorInputAck_default_instance_);
   }
   static constexpr int kIndexInFileMessages =
-    9;
+    10;
 
   friend void swap(SpectatorInputAck& a, SpectatorInputAck& b) {
     a.Swap(&b);
@@ -2584,7 +2792,7 @@ class SpectatorSubscribeRequest PROTOBUF_FINAL :
                &_SpectatorSubscribeRequest_default_instance_);
   }
   static constexpr int kIndexInFileMessages =
-    10;
+    11;
 
   friend void swap(SpectatorSubscribeRequest& a, SpectatorSubscribeRequest& b) {
     a.Swap(&b);
@@ -2757,7 +2965,7 @@ class SpectatorSubscribeChallenge PROTOBUF_FINAL :
                &_SpectatorSubscribeChallenge_default_instance_);
   }
   static constexpr int kIndexInFileMessages =
-    11;
+    12;
 
   friend void swap(SpectatorSubscribeChallenge& a, SpectatorSubscribeChallenge& b) {
     a.Swap(&b);
@@ -2919,7 +3127,7 @@ class SpectatorRoundEvent PROTOBUF_FINAL :
                &_SpectatorRoundEvent_default_instance_);
   }
   static constexpr int kIndexInFileMessages =
-    12;
+    13;
 
   friend void swap(SpectatorRoundEvent& a, SpectatorRoundEvent& b) {
     a.Swap(&b);
@@ -3096,7 +3304,7 @@ class SpectatorRoundResult PROTOBUF_FINAL :
                &_SpectatorRoundResult_default_instance_);
   }
   static constexpr int kIndexInFileMessages =
-    13;
+    14;
 
   friend void swap(SpectatorRoundResult& a, SpectatorRoundResult& b) {
     a.Swap(&b);
@@ -3282,7 +3490,7 @@ class BattleLogFile PROTOBUF_FINAL :
                &_BattleLogFile_default_instance_);
   }
   static constexpr int kIndexInFileMessages =
-    14;
+    15;
 
   friend void swap(BattleLogFile& a, BattleLogFile& b) {
     a.Swap(&b);
@@ -3697,7 +3905,7 @@ class BattleMessage PROTOBUF_FINAL :
                &_BattleMessage_default_instance_);
   }
   static constexpr int kIndexInFileMessages =
-    15;
+    16;
 
   friend void swap(BattleMessage& a, BattleMessage& b) {
     a.Swap(&b);
@@ -3870,7 +4078,7 @@ class PingMessage PROTOBUF_FINAL :
                &_PingMessage_default_instance_);
   }
   static constexpr int kIndexInFileMessages =
-    16;
+    17;
 
   friend void swap(PingMessage& a, PingMessage& b) {
     a.Swap(&b);
@@ -4025,7 +4233,7 @@ class PongMessage PROTOBUF_FINAL :
                &_PongMessage_default_instance_);
   }
   static constexpr int kIndexInFileMessages =
-    17;
+    18;
 
   friend void swap(PongMessage& a, PongMessage& b) {
     a.Swap(&b);
@@ -4198,7 +4406,7 @@ class HelloServerMessage PROTOBUF_FINAL :
                &_HelloServerMessage_default_instance_);
   }
   static constexpr int kIndexInFileMessages =
-    18;
+    19;
 
   friend void swap(HelloServerMessage& a, HelloServerMessage& b) {
     a.Swap(&b);
@@ -4371,7 +4579,7 @@ class FinMessage PROTOBUF_FINAL :
                &_FinMessage_default_instance_);
   }
   static constexpr int kIndexInFileMessages =
-    19;
+    20;
 
   friend void swap(FinMessage& a, FinMessage& b) {
     a.Swap(&b);
@@ -4515,7 +4723,7 @@ class HelloLbsMessage PROTOBUF_FINAL :
                &_HelloLbsMessage_default_instance_);
   }
   static constexpr int kIndexInFileMessages =
-    20;
+    21;
 
   friend void swap(HelloLbsMessage& a, HelloLbsMessage& b) {
     a.Swap(&b);
@@ -4659,7 +4867,7 @@ class Packet PROTOBUF_FINAL :
                &_Packet_default_instance_);
   }
   static constexpr int kIndexInFileMessages =
-    21;
+    22;
 
   friend void swap(Packet& a, Packet& b) {
     a.Swap(&b);
@@ -5863,6 +6071,45 @@ P2PMatching::candidates() const {
   return candidates_;
 }
 
+// repeated .proto.RelayServer relays = 11;
+inline int P2PMatching::_internal_relays_size() const {
+  return relays_.size();
+}
+inline int P2PMatching::relays_size() const {
+  return _internal_relays_size();
+}
+inline void P2PMatching::clear_relays() {
+  relays_.Clear();
+}
+inline ::proto::RelayServer* P2PMatching::mutable_relays(int index) {
+  // @@protoc_insertion_point(field_mutable:proto.P2PMatching.relays)
+  return relays_.Mutable(index);
+}
+inline ::PROTOBUF_NAMESPACE_ID::RepeatedPtrField< ::proto::RelayServer >*
+P2PMatching::mutable_relays() {
+  // @@protoc_insertion_point(field_mutable_list:proto.P2PMatching.relays)
+  return &relays_;
+}
+inline const ::proto::RelayServer& P2PMatching::_internal_relays(int index) const {
+  return relays_.Get(index);
+}
+inline const ::proto::RelayServer& P2PMatching::relays(int index) const {
+  // @@protoc_insertion_point(field_get:proto.P2PMatching.relays)
+  return _internal_relays(index);
+}
+inline ::proto::RelayServer* P2PMatching::_internal_add_relays() {
+  return relays_.Add();
+}
+inline ::proto::RelayServer* P2PMatching::add_relays() {
+  // @@protoc_insertion_point(field_add:proto.P2PMatching.relays)
+  return _internal_add_relays();
+}
+inline const ::PROTOBUF_NAMESPACE_ID::RepeatedPtrField< ::proto::RelayServer >&
+P2PMatching::relays() const {
+  // @@protoc_insertion_point(field_list:proto.P2PMatching.relays)
+  return relays_;
+}
+
 // -------------------------------------------------------------------
 
 // PlayerAddress
@@ -6049,6 +6296,174 @@ inline void PlayerAddress::_internal_set_team(::PROTOBUF_NAMESPACE_ID::int32 val
 inline void PlayerAddress::set_team(::PROTOBUF_NAMESPACE_ID::int32 value) {
   _internal_set_team(value);
   // @@protoc_insertion_point(field_set:proto.PlayerAddress.team)
+}
+
+// -------------------------------------------------------------------
+
+// RelayServer
+
+// string region = 1;
+inline void RelayServer::clear_region() {
+  region_.ClearToEmpty(&::PROTOBUF_NAMESPACE_ID::internal::GetEmptyStringAlreadyInited(), GetArena());
+}
+inline const std::string& RelayServer::region() const {
+  // @@protoc_insertion_point(field_get:proto.RelayServer.region)
+  return _internal_region();
+}
+inline void RelayServer::set_region(const std::string& value) {
+  _internal_set_region(value);
+  // @@protoc_insertion_point(field_set:proto.RelayServer.region)
+}
+inline std::string* RelayServer::mutable_region() {
+  // @@protoc_insertion_point(field_mutable:proto.RelayServer.region)
+  return _internal_mutable_region();
+}
+inline const std::string& RelayServer::_internal_region() const {
+  return region_.Get();
+}
+inline void RelayServer::_internal_set_region(const std::string& value) {
+  
+  region_.Set(&::PROTOBUF_NAMESPACE_ID::internal::GetEmptyStringAlreadyInited(), value, GetArena());
+}
+inline void RelayServer::set_region(std::string&& value) {
+  
+  region_.Set(
+    &::PROTOBUF_NAMESPACE_ID::internal::GetEmptyStringAlreadyInited(), ::std::move(value), GetArena());
+  // @@protoc_insertion_point(field_set_rvalue:proto.RelayServer.region)
+}
+inline void RelayServer::set_region(const char* value) {
+  GOOGLE_DCHECK(value != nullptr);
+  
+  region_.Set(&::PROTOBUF_NAMESPACE_ID::internal::GetEmptyStringAlreadyInited(), ::std::string(value),
+              GetArena());
+  // @@protoc_insertion_point(field_set_char:proto.RelayServer.region)
+}
+inline void RelayServer::set_region(const char* value,
+    size_t size) {
+  
+  region_.Set(&::PROTOBUF_NAMESPACE_ID::internal::GetEmptyStringAlreadyInited(), ::std::string(
+      reinterpret_cast<const char*>(value), size), GetArena());
+  // @@protoc_insertion_point(field_set_pointer:proto.RelayServer.region)
+}
+inline std::string* RelayServer::_internal_mutable_region() {
+  
+  return region_.Mutable(&::PROTOBUF_NAMESPACE_ID::internal::GetEmptyStringAlreadyInited(), GetArena());
+}
+inline std::string* RelayServer::release_region() {
+  // @@protoc_insertion_point(field_release:proto.RelayServer.region)
+  return region_.Release(&::PROTOBUF_NAMESPACE_ID::internal::GetEmptyStringAlreadyInited(), GetArena());
+}
+inline void RelayServer::set_allocated_region(std::string* region) {
+  if (region != nullptr) {
+    
+  } else {
+    
+  }
+  region_.SetAllocated(&::PROTOBUF_NAMESPACE_ID::internal::GetEmptyStringAlreadyInited(), region,
+      GetArena());
+  // @@protoc_insertion_point(field_set_allocated:proto.RelayServer.region)
+}
+
+// string ip = 2;
+inline void RelayServer::clear_ip() {
+  ip_.ClearToEmpty(&::PROTOBUF_NAMESPACE_ID::internal::GetEmptyStringAlreadyInited(), GetArena());
+}
+inline const std::string& RelayServer::ip() const {
+  // @@protoc_insertion_point(field_get:proto.RelayServer.ip)
+  return _internal_ip();
+}
+inline void RelayServer::set_ip(const std::string& value) {
+  _internal_set_ip(value);
+  // @@protoc_insertion_point(field_set:proto.RelayServer.ip)
+}
+inline std::string* RelayServer::mutable_ip() {
+  // @@protoc_insertion_point(field_mutable:proto.RelayServer.ip)
+  return _internal_mutable_ip();
+}
+inline const std::string& RelayServer::_internal_ip() const {
+  return ip_.Get();
+}
+inline void RelayServer::_internal_set_ip(const std::string& value) {
+  
+  ip_.Set(&::PROTOBUF_NAMESPACE_ID::internal::GetEmptyStringAlreadyInited(), value, GetArena());
+}
+inline void RelayServer::set_ip(std::string&& value) {
+  
+  ip_.Set(
+    &::PROTOBUF_NAMESPACE_ID::internal::GetEmptyStringAlreadyInited(), ::std::move(value), GetArena());
+  // @@protoc_insertion_point(field_set_rvalue:proto.RelayServer.ip)
+}
+inline void RelayServer::set_ip(const char* value) {
+  GOOGLE_DCHECK(value != nullptr);
+  
+  ip_.Set(&::PROTOBUF_NAMESPACE_ID::internal::GetEmptyStringAlreadyInited(), ::std::string(value),
+              GetArena());
+  // @@protoc_insertion_point(field_set_char:proto.RelayServer.ip)
+}
+inline void RelayServer::set_ip(const char* value,
+    size_t size) {
+  
+  ip_.Set(&::PROTOBUF_NAMESPACE_ID::internal::GetEmptyStringAlreadyInited(), ::std::string(
+      reinterpret_cast<const char*>(value), size), GetArena());
+  // @@protoc_insertion_point(field_set_pointer:proto.RelayServer.ip)
+}
+inline std::string* RelayServer::_internal_mutable_ip() {
+  
+  return ip_.Mutable(&::PROTOBUF_NAMESPACE_ID::internal::GetEmptyStringAlreadyInited(), GetArena());
+}
+inline std::string* RelayServer::release_ip() {
+  // @@protoc_insertion_point(field_release:proto.RelayServer.ip)
+  return ip_.Release(&::PROTOBUF_NAMESPACE_ID::internal::GetEmptyStringAlreadyInited(), GetArena());
+}
+inline void RelayServer::set_allocated_ip(std::string* ip) {
+  if (ip != nullptr) {
+    
+  } else {
+    
+  }
+  ip_.SetAllocated(&::PROTOBUF_NAMESPACE_ID::internal::GetEmptyStringAlreadyInited(), ip,
+      GetArena());
+  // @@protoc_insertion_point(field_set_allocated:proto.RelayServer.ip)
+}
+
+// int32 port = 3;
+inline void RelayServer::clear_port() {
+  port_ = 0;
+}
+inline ::PROTOBUF_NAMESPACE_ID::int32 RelayServer::_internal_port() const {
+  return port_;
+}
+inline ::PROTOBUF_NAMESPACE_ID::int32 RelayServer::port() const {
+  // @@protoc_insertion_point(field_get:proto.RelayServer.port)
+  return _internal_port();
+}
+inline void RelayServer::_internal_set_port(::PROTOBUF_NAMESPACE_ID::int32 value) {
+  
+  port_ = value;
+}
+inline void RelayServer::set_port(::PROTOBUF_NAMESPACE_ID::int32 value) {
+  _internal_set_port(value);
+  // @@protoc_insertion_point(field_set:proto.RelayServer.port)
+}
+
+// uint64 token = 4;
+inline void RelayServer::clear_token() {
+  token_ = PROTOBUF_ULONGLONG(0);
+}
+inline ::PROTOBUF_NAMESPACE_ID::uint64 RelayServer::_internal_token() const {
+  return token_;
+}
+inline ::PROTOBUF_NAMESPACE_ID::uint64 RelayServer::token() const {
+  // @@protoc_insertion_point(field_get:proto.RelayServer.token)
+  return _internal_token();
+}
+inline void RelayServer::_internal_set_token(::PROTOBUF_NAMESPACE_ID::uint64 value) {
+  
+  token_ = value;
+}
+inline void RelayServer::set_token(::PROTOBUF_NAMESPACE_ID::uint64 value) {
+  _internal_set_token(value);
+  // @@protoc_insertion_point(field_set:proto.RelayServer.token)
 }
 
 // -------------------------------------------------------------------
@@ -10727,6 +11142,8 @@ inline void Packet::set_allocated_spectator_subscribe_challenge_data(::proto::Sp
 #ifdef __GNUC__
   #pragma GCC diagnostic pop
 #endif  // __GNUC__
+// -------------------------------------------------------------------
+
 // -------------------------------------------------------------------
 
 // -------------------------------------------------------------------

@@ -49,6 +49,7 @@ A failed ROM load still exits with code 0, so the suite checks the logs, not the
 | D1 | Malformed packets | ~45 s of `fuzz.py` during the battle (oversized AppData/Input, truncated, unknown types, bogus relays) | common checks |
 | D2 | Relay in use | `TEST_RELAY=single` | p1 picks the relay (`Relay:1`), p2 forwards, common checks |
 | D3 | Relay loop | `TEST_RELAY=loop` | peers 1 and 2 cut the loop (a few `relay drop-return-to-sender` lines, not a flood), no crash; session start times out as expected |
+| D4 | Relay server | a local `gdxsv relay` (`--relay-exe`, default `../gdxsv/bin/gdxsv.exe`), `TEST_RELAY=server` | p1 picks the server (`Relay:2`), every peer sends through it (the others after p1's packets reach them through it), the relay bound all four peers, common checks. Skipped without the binary |
 
 ## Test-only switches (environment variables)
 
@@ -59,8 +60,9 @@ These do nothing unless set.
 | `GGPO_NETWORK_DELAY` | Send latency in ms (GGPO, existing) | any session |
 | `VITAL`, `MAXREBATTLE` | Team vitals and number of re-battles (existing) | local test |
 | `RAND_MASK` | Hex kcode mask for the random input. The default leaves out down/right, so the re-battle menu is never cancelled; `06F6` reaches it | local test |
-| `TEST_RELAY` | `single`: peer 0 reaches peer 3 through peer 1. `loop`: peer 1 also reaches peer 3 through peer 0 | local test |
-| `GGPO_TEST_LOG` | Logs `RBKTEST` lines: timesync skip record/replay, rollback loads, scene changes, relay forwards and loop drops | any session |
+| `TEST_RELAY` | `single`: peer 0 reaches peer 3 through peer 1. `loop`: peer 1 also reaches peer 3 through peer 0. `server`: peer 0 reaches every peer through the relay server | local test |
+| `TEST_RELAY_SERVER`, `TEST_RELAY_TOKEN` | Adds a relay server (`ip:port`, hex token, default `1234`) to the local match, for a relay started with `-relay_test_session=12345:<token>` | local test |
+| `GGPO_TEST_LOG` | Logs `RBKTEST` lines: timesync skip record/replay, rollback loads, scene changes, relay forwards and loop drops, relay server use | any session |
 
 ## Not covered here
 
