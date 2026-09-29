@@ -69,7 +69,8 @@ u16 convertInput(MapleInputState input) {
 }
 
 void drawConnectionDiagram(int elapsed, const uint8_t matrix[4][4], const std::map<int, int>& pos_to_id);
-void drawNetworkStat(const proto::P2PMatching& matching);
+void drawNetworkStat(const proto::P2PMatching& matching, const std::array<ggpo::NetworkStats, 4>& stats,
+					 const std::array<bool, 4>& is_connected);
 }  // namespace
 
 void GdxsvBackendRollback::DisplayOSD() {
@@ -91,7 +92,14 @@ void GdxsvBackendRollback::DisplayOSD() {
 
 	if (osd_network_stat_ || osd_network_stat_countdown_) {
 		if (osd_network_stat_countdown_) osd_network_stat_countdown_--;
-		drawNetworkStat(matching_);
+		std::array<ggpo::NetworkStats, 4> stats;
+		std::array<bool, 4> is_connected;
+		{
+			std::lock_guard<std::mutex> lock(net_stat_mutex_);
+			stats = net_stats_;
+			is_connected = net_connected_;
+		}
+		drawNetworkStat(matching_, stats, is_connected);
 	}
 }
 
@@ -125,6 +133,13 @@ void GdxsvBackendRollback::Reset() {
 	spectator_flushed_inputs_ = 0;
 	spectator_flushed_round_events_ = 0;
 	pending_spectator_round_results_.clear();
+	battle_end_frame_ = -1;
+	disconnect_frame_ = 0;
+	{
+		std::lock_guard<std::mutex> lock(net_stat_mutex_);
+		net_stats_ = {};
+		net_connected_ = {};
+	}
 
 	ggpo::stopSession();
 	gdxsv.key_display_.Clear();
@@ -316,39 +331,22 @@ void GdxsvBackendRollback::OnMainUiLoop() {
 		}
 	}
 
-	static int disconnect_frame = 0;
-
-	// Re battle end
-	if (gdxsv_ReadMem8(COM_R_No0) == 4 && gdxsv_ReadMem8(COM_R_No0 + 5) == 3 && ggpo::active() && !ggpo::isInRollback()) {
-		if (state_ != State::CloseWait) {
-			SetCloseReason("game_end");
-			ggpo::getCurrentFrame(&disconnect_frame);
-			for (int i = 0; i < matching_.users_size(); i++) {
-				ggpo::disconnect(matching_.peer_id());
-			}
-			state_ = State::CloseWait;
-		}
-	}
+	// Ending the match (re-battle cancelled, friend save scene) is handled in OnNextFrame.
 
 	// Friend save scene
 	if (gdxsv_ReadMem8(COM_R_No0) == 4 && gdxsv_ReadMem8(COM_R_No0 + 5) == 4 && ggpo::active() && !ggpo::isInRollback()) {
 		ResetGgpoGameRendererState();
-
-		int frame = 0;
-		ggpo::getCurrentFrame(&frame);
-
-		if (16 < frame - disconnect_frame) {
-			ggpo::stopSession();
-			config::GGPOEnable.reset();
-			state_ = State::End;
-		}
 	}
 
-	// Close session on error
+	// Close session on error. While the emulator runs, OnNextFrame stops the session between frames.
 	if (error_fast_return_) {
 		SetCloseReason("error_fast_return");
-		ggpo::stopSession();
-		config::GGPOEnable.reset();
+		if (ggpo::active() && !emu.running()) {
+			ggpo::stopSession();
+		}
+		if (!ggpo::active()) {
+			config::GGPOEnable.reset();
+		}
 		if (state_ < State::End) {
 			state_ = State::End;
 		}
@@ -519,21 +517,96 @@ void GdxsvBackendRollback::ResetGgpoGameRendererState() {
 	EventManager::event(Event::GGPOGameEnd);
 }
 
+void GdxsvBackendRollback::OnNextFrame() {
+	// Runs on the emulation thread between SH4 runs, rollback re-simulation included. Everything that drives the
+	// GGPO session lives here instead of OnMainUiLoop: calling into GGPO from the UI thread blocks it on the GGPO
+	// lock, which the emu thread can hold for a long time (prediction barrier) or while waiting on the renderer.
+	if (!ggpo::active()) {
+		return;
+	}
+	int frame = 0;
+	if (!ggpo::getCurrentFrame(&frame)) {
+		return;
+	}
+	if (ggpo::isInRollback()) {
+		// A re-simulation from at or before the frame the scene was first seen on may take it back.
+		if (0 <= battle_end_frame_ && frame <= battle_end_frame_) {
+			battle_end_frame_ = -1;
+		}
+		return;
+	}
+
+	UpdateNetworkStatSnapshot();
+
+	const int COM_R_No0 = gdxsv.Disk() == 1 ? 0x0c2f6639 : 0x0c391d79;
+	const u8 scene = gdxsv_ReadMem8(COM_R_No0);
+	const u8 sub_scene = gdxsv_ReadMem8(COM_R_No0 + 5);
+
+	// Re-battle cancelled. Entering this scene depends on the players' menu input, so the frame it shows up on may
+	// still be a prediction; disconnecting cannot be undone, so wait until that frame is confirmed.
+	if (state_ != State::CloseWait) {
+		if (scene == 4 && sub_scene == 3) {
+			if (battle_end_frame_ < 0) {
+				battle_end_frame_ = frame;
+			}
+			if (battle_end_frame_ <= ConfirmedFrame()) {
+				SetCloseReason("game_end");
+				disconnect_frame_ = frame;
+				ggpo::disconnect(matching_.peer_id());
+				state_ = State::CloseWait;
+			}
+		} else {
+			battle_end_frame_ = -1;
+		}
+	}
+
+	// Friend save scene
+	if (scene == 4 && sub_scene == 4 && 16 < frame - disconnect_frame_) {
+		ggpo::stopSession();
+		config::GGPOEnable.reset();
+		state_ = State::End;
+		return;
+	}
+
+	if (error_fast_return_) {
+		ggpo::stopSession();
+		config::GGPOEnable.reset();
+	}
+}
+
+int GdxsvBackendRollback::ConfirmedFrame() {
+	// Derived from public API so no GGPO source needs patching: GetPredictedFrames() is simply
+	// (framecount - last_confirmed_frame), and it is already surfaced as stats.sync.predicted_frames.
+	int current_frame = 0;
+	if (!ggpo::getCurrentFrame(&current_frame)) {
+		return -1;
+	}
+	ggpo::NetworkStats stats{};
+	ggpo::getNetworkStats(matching_.peer_id(), &stats);
+	return current_frame - stats.sync.predicted_frames;
+}
+
+void GdxsvBackendRollback::UpdateNetworkStatSnapshot() {
+	std::array<ggpo::NetworkStats, 4> stats{};
+	std::array<bool, 4> connected{};
+	const int n = std::min(matching_.users_size(), 4);
+	for (int i = 0; i < n; i++) {
+		ggpo::getNetworkStats(i, &stats[i]);
+		connected[i] = ggpo::isConnected(i);
+	}
+	std::lock_guard<std::mutex> lock(net_stat_mutex_);
+	net_stats_ = stats;
+	net_connected_ = connected;
+}
+
 void GdxsvBackendRollback::FlushConfirmedToSpectatorUplink() {
 	if (matching_.is_training_game() || !ggpo::active()) {
 		return;
 	}
-	// Highest frame GGPO can no longer roll back, derived from public API so
-	// no GGPO source needs patching: GetPredictedFrames() is simply
-	// (framecount - last_confirmed_frame), and it is already surfaced as
-	// stats.sync.predicted_frames.
-	int current_frame = 0;
-	if (!ggpo::getCurrentFrame(&current_frame)) {
+	const int confirmed_frame = ConfirmedFrame();
+	if (confirmed_frame < 0) {
 		return;
 	}
-	ggpo::NetworkStats stats{};
-	ggpo::getNetworkStats(matching_.peer_id(), &stats);
-	const int confirmed_frame = current_frame - stats.sync.predicted_frames;
 
 	while (spectator_flushed_inputs_ < static_cast<int32_t>(input_logs_.size()) &&
 		   input_logs_[spectator_flushed_inputs_].first <= confirmed_frame) {
@@ -1795,16 +1868,9 @@ void drawNetworkPlayerHeading(int player, const proto::BattleLogUser& user,
 	drawNetworkPlayerName(user.pilot_name(), false);
 }
 
-void drawNetworkStat(const proto::P2PMatching& matching) {
+void drawNetworkStat(const proto::P2PMatching& matching, const std::array<ggpo::NetworkStats, 4>& stats,
+					 const std::array<bool, 4>& is_connected) {
 	auto me = matching.peer_id();
-	static ggpo::NetworkStats stats[4] = {};
-	static bool is_connected[4] = {};
-	if (ggpo::active()) {
-		for (int i = 0; i < matching.users_size(); i++) {
-			ggpo::getNetworkStats(i, &stats[i]);
-			is_connected[i] = ggpo::isConnected(i);
-		}
-	}
 
 	const int remote_players = std::max(matching.users_size() - 1, 0);
 	static std::array<ConnectionHealthTracker, 4> health_trackers;

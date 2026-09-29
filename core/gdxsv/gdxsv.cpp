@@ -290,6 +290,9 @@ void Gdxsv::HookNextFrame() {
 	// Apply viewport changes on the emulation thread between SH4 runs,
 	// keeping guest-memory writes and code-cache resets off the SDL thread.
 	WriteWidescreenPatch();
+	if (netmode_ == NetMode::McsRollback) {
+		gdxsv.rollback_net_.OnNextFrame();
+	}
 	if (netmode_ == NetMode::Replay) {
 		gdxsv.replay_net_.OnNextFrame();
 	}
