@@ -1120,6 +1120,7 @@ class RelayServer PROTOBUF_FINAL :
   enum : int {
     kRegionFieldNumber = 1,
     kIpFieldNumber = 2,
+    kIp6FieldNumber = 5,
     kTokenFieldNumber = 4,
     kPortFieldNumber = 3,
   };
@@ -1155,6 +1156,22 @@ class RelayServer PROTOBUF_FINAL :
   std::string* _internal_mutable_ip();
   public:
 
+  // string ip6 = 5;
+  void clear_ip6();
+  const std::string& ip6() const;
+  void set_ip6(const std::string& value);
+  void set_ip6(std::string&& value);
+  void set_ip6(const char* value);
+  void set_ip6(const char* value, size_t size);
+  std::string* mutable_ip6();
+  std::string* release_ip6();
+  void set_allocated_ip6(std::string* ip6);
+  private:
+  const std::string& _internal_ip6() const;
+  void _internal_set_ip6(const std::string& value);
+  std::string* _internal_mutable_ip6();
+  public:
+
   // uint64 token = 4;
   void clear_token();
   ::PROTOBUF_NAMESPACE_ID::uint64 token() const;
@@ -1182,6 +1199,7 @@ class RelayServer PROTOBUF_FINAL :
   typedef void DestructorSkippable_;
   ::PROTOBUF_NAMESPACE_ID::internal::ArenaStringPtr region_;
   ::PROTOBUF_NAMESPACE_ID::internal::ArenaStringPtr ip_;
+  ::PROTOBUF_NAMESPACE_ID::internal::ArenaStringPtr ip6_;
   ::PROTOBUF_NAMESPACE_ID::uint64 token_;
   ::PROTOBUF_NAMESPACE_ID::int32 port_;
   mutable ::PROTOBUF_NAMESPACE_ID::internal::CachedSize _cached_size_;
@@ -6464,6 +6482,68 @@ inline void RelayServer::_internal_set_token(::PROTOBUF_NAMESPACE_ID::uint64 val
 inline void RelayServer::set_token(::PROTOBUF_NAMESPACE_ID::uint64 value) {
   _internal_set_token(value);
   // @@protoc_insertion_point(field_set:proto.RelayServer.token)
+}
+
+// string ip6 = 5;
+inline void RelayServer::clear_ip6() {
+  ip6_.ClearToEmpty(&::PROTOBUF_NAMESPACE_ID::internal::GetEmptyStringAlreadyInited(), GetArena());
+}
+inline const std::string& RelayServer::ip6() const {
+  // @@protoc_insertion_point(field_get:proto.RelayServer.ip6)
+  return _internal_ip6();
+}
+inline void RelayServer::set_ip6(const std::string& value) {
+  _internal_set_ip6(value);
+  // @@protoc_insertion_point(field_set:proto.RelayServer.ip6)
+}
+inline std::string* RelayServer::mutable_ip6() {
+  // @@protoc_insertion_point(field_mutable:proto.RelayServer.ip6)
+  return _internal_mutable_ip6();
+}
+inline const std::string& RelayServer::_internal_ip6() const {
+  return ip6_.Get();
+}
+inline void RelayServer::_internal_set_ip6(const std::string& value) {
+  
+  ip6_.Set(&::PROTOBUF_NAMESPACE_ID::internal::GetEmptyStringAlreadyInited(), value, GetArena());
+}
+inline void RelayServer::set_ip6(std::string&& value) {
+  
+  ip6_.Set(
+    &::PROTOBUF_NAMESPACE_ID::internal::GetEmptyStringAlreadyInited(), ::std::move(value), GetArena());
+  // @@protoc_insertion_point(field_set_rvalue:proto.RelayServer.ip6)
+}
+inline void RelayServer::set_ip6(const char* value) {
+  GOOGLE_DCHECK(value != nullptr);
+  
+  ip6_.Set(&::PROTOBUF_NAMESPACE_ID::internal::GetEmptyStringAlreadyInited(), ::std::string(value),
+              GetArena());
+  // @@protoc_insertion_point(field_set_char:proto.RelayServer.ip6)
+}
+inline void RelayServer::set_ip6(const char* value,
+    size_t size) {
+  
+  ip6_.Set(&::PROTOBUF_NAMESPACE_ID::internal::GetEmptyStringAlreadyInited(), ::std::string(
+      reinterpret_cast<const char*>(value), size), GetArena());
+  // @@protoc_insertion_point(field_set_pointer:proto.RelayServer.ip6)
+}
+inline std::string* RelayServer::_internal_mutable_ip6() {
+  
+  return ip6_.Mutable(&::PROTOBUF_NAMESPACE_ID::internal::GetEmptyStringAlreadyInited(), GetArena());
+}
+inline std::string* RelayServer::release_ip6() {
+  // @@protoc_insertion_point(field_release:proto.RelayServer.ip6)
+  return ip6_.Release(&::PROTOBUF_NAMESPACE_ID::internal::GetEmptyStringAlreadyInited(), GetArena());
+}
+inline void RelayServer::set_allocated_ip6(std::string* ip6) {
+  if (ip6 != nullptr) {
+    
+  } else {
+    
+  }
+  ip6_.SetAllocated(&::PROTOBUF_NAMESPACE_ID::internal::GetEmptyStringAlreadyInited(), ip6,
+      GetArena());
+  // @@protoc_insertion_point(field_set_allocated:proto.RelayServer.ip6)
 }
 
 // -------------------------------------------------------------------

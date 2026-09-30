@@ -196,13 +196,20 @@ void GdxsvBackendRollback::OnMainUiLoop() {
 		// Local test only: rewrite the RTT matrix so the relay path gets used. TEST_RELAY=single makes peer 0 reach
 		// peer 3 through peer 1; TEST_RELAY=loop also makes peer 1 reach peer 3 through peer 0, so each relays through
 		// the other. TEST_RELAY=server makes peer 0 reach every peer through the relay server (TEST_RELAY_SERVER);
-		// the others stay direct until peer 0's packets reach them through the server.
+		// the others stay direct until peer 0's packets reach them through the server. TEST_RELAY=server2 needs two
+		// relay servers: peer 0 picks the second and peer 1 reaches peer 0 through the first, so they must settle.
 		const char* test_relay = is_local_test_ ? getenv("TEST_RELAY") : nullptr;
-		if (test_relay != nullptr && std::string(test_relay) == "server") {
+		if (test_relay != nullptr && std::string(test_relay).rfind("server", 0) == 0) {
+			const bool two = std::string(test_relay) == "server2";
 			if (matching_.peer_id() == 0) {
 				for (int j = 1; j < matching_.player_count(); j++) {
 					ping_pong_.DebugSetRtt(0, j, 200);
 				}
+				if (two) ping_pong_.DebugSetRelayRtt(0, 0, 150);
+			}
+			if (matching_.peer_id() == 1 && two) {
+				ping_pong_.DebugSetRtt(1, 0, 200);
+				ping_pong_.DebugSetRelayRtt(1, 1, 150);
 			}
 			NOTICE_LOG(COMMON, "TEST_RELAY=%s", test_relay);
 		} else if (test_relay != nullptr) {
@@ -339,9 +346,10 @@ void GdxsvBackendRollback::OnMainUiLoop() {
 			config::LimitFPS.override(false);
 			config::AudioBufferSize.override(2822);
 
-			std::vector<std::pair<std::string, u16>> relay_servers;
+			std::vector<ggpo::RelayServerAddr> relay_servers;
 			for (const auto& r : matching_.relays()) {
-				relay_servers.emplace_back(r.ip(), static_cast<u16>(r.port()));
+				const std::string ip = RelayIp(r);
+				relay_servers.push_back({ip, ip == r.ip() ? r.ip6() : r.ip(), static_cast<u16>(r.port())});
 			}
 			start_network_ = ggpo::gdxsvStartNetwork(matching_.battle_code().c_str(), matching_.peer_id(), ips, ports, relays,
 													 relay_servers);
@@ -506,17 +514,24 @@ bool GdxsvBackendRollback::StartLocalTest(const char* param) {
 		user.set_team(i / 2 + 1);
 		matching.mutable_users()->Add(std::move(user));
 	}
-	// A relay server started with -relay_test_session=12345:<TEST_RELAY_TOKEN>.
-	if (const char* relay = getenv("TEST_RELAY_SERVER")) {
-		const std::string addr(relay);
-		const auto colon = addr.rfind(':');
+	// Relay servers (IPv4 ip:port, comma separated) started with -relay_test_session=12345:<TEST_RELAY_TOKEN>.
+	if (const char* relays = getenv("TEST_RELAY_SERVER")) {
 		const char* token = getenv("TEST_RELAY_TOKEN");
-		proto::RelayServer server{};
-		server.set_region("local");
-		server.set_ip(addr.substr(0, colon));
-		server.set_port(atoi(addr.substr(colon + 1).c_str()));
-		server.set_token(strtoull(token != nullptr ? token : "1234", nullptr, 16));
-		matching.mutable_relays()->Add(std::move(server));
+		std::stringstream ss(relays);
+		std::string addr;
+		while (std::getline(ss, addr, ',')) {
+			const auto colon = addr.rfind(':');
+			proto::RelayServer server{};
+			server.set_region("local");
+			server.set_ip(addr.substr(0, colon));
+			server.set_port(atoi(addr.substr(colon + 1).c_str()));
+			server.set_token(strtoull(token != nullptr ? token : "1234", nullptr, 16));
+			// Peers 0 and 1 have IPv6 (::1) candidates, so they reach a relay through TEST_RELAY_IPV6.
+			if (const char* ip6 = getenv("TEST_RELAY_IPV6")) {
+				server.set_ip6(ip6);
+			}
+			matching.mutable_relays()->Add(std::move(server));
+		}
 	}
 
 	Prepare(matching, 20010 + me);
@@ -546,7 +561,7 @@ void GdxsvBackendRollback::Prepare(const proto::P2PMatching& matching, int port)
 		}
 	}
 	for (const auto& r : matching.relays()) {
-		ping_pong_.AddRelay(r.ip(), r.port(), r.token());
+		ping_pong_.AddRelay(RelayIp(r), r.port(), r.token());
 	}
 	ping_pong_.Start(matching.session_id(), matching.peer_id(), port, matching.ping_test_duration());
 	spectator_uplink_.Start(gdxsv.lbs_net_.RemoteHost(), gdxsv.lbs_net_.RemotePort(), matching.battle_code(),
@@ -559,6 +574,20 @@ void GdxsvBackendRollback::Prepare(const proto::P2PMatching& matching, int port)
 	report_.set_peer_id(matching.peer_id());
 	report_.set_player_count(matching.player_count());
 	start_at_ = std::chrono::duration_cast<std::chrono::seconds>(std::chrono::system_clock::now().time_since_epoch()).count();
+}
+
+std::string GdxsvBackendRollback::RelayIp(const proto::RelayServer& relay) const {
+	// A relay knows a peer by one address, so each peer talks to it in a single IP family. The lobby lists this
+	// peer's own IPv6 address among its candidates when it has one.
+	if (relay.ip6().empty()) {
+		return relay.ip();
+	}
+	for (const auto& c : matching_.candidates()) {
+		if (c.peer_id() == matching_.peer_id() && c.ip().find(':') != std::string::npos && c.ip().rfind("fe80", 0) != 0) {
+			return relay.ip6();
+		}
+	}
+	return relay.ip();
 }
 
 void GdxsvBackendRollback::Open() {

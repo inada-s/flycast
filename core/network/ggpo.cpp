@@ -1223,7 +1223,7 @@ void getNetworkStats(int playerNum, NetworkStats* stats)
 
 void gdxsvStartSession(const char* sessionCode, int me,
 	const std::vector<std::string>& ips, const std::vector<u16>& ports, const std::vector<u8>& relays,
-	const std::vector<std::pair<std::string, u16>>& relayServers)
+	const std::vector<RelayServerAddr>& relayServers)
 {
 	GGPOSessionCallbacks cb{};
 	cb.begin_game      = begin_game;
@@ -1297,7 +1297,7 @@ void gdxsvStartSession(const char* sessionCode, int me,
 	ggpo_set_disconnect_notify_start(ggpoSession, 1000);
 	ggpo_set_disconnect_without_rollback(ggpoSession, true);
 	for (const auto& server : relayServers) {
-		ggpo_add_relay_server(ggpoSession, server.first.c_str(), server.second);
+		ggpo_add_relay_server(ggpoSession, server.ip.c_str(), server.port, server.altIp.c_str());
 	}
 
 	GGPOPlayer player{sizeof(GGPOPlayer), GGPO_PLAYERTYPE_LOCAL, me + 1};
@@ -1354,7 +1354,7 @@ std::future<bool> gdxsvStartNetwork(const char* sessionCode, int me,
 	const std::vector<std::string>& ips,
 	const std::vector<u16>& ports,
 	const std::vector<u8>& relays,
-	const std::vector<std::pair<std::string, u16>>& relayServers) {
+	const std::vector<RelayServerAddr>& relayServers) {
 	synchronized = false;
 	const std::string session_code(sessionCode);
 	return std::async(std::launch::async, [=]{
@@ -1452,11 +1452,11 @@ void getNetworkStats(int playerNum, NetworkStats* stats) {
 }
 
 void gdxsvStartSession(const char* sessionCode, int me, const std::vector<std::string>& ips, const std::vector<u16>& ports, const std::vector<u8>& relays,
-	const std::vector<std::pair<std::string, u16>>& relayServers) {
+	const std::vector<RelayServerAddr>& relayServers) {
 }
 
 std::future<bool> gdxsvStartNetwork(const char* sessionCode, int me, const std::vector<std::string>& ips, const std::vector<u16>& ports,
-	const std::vector<u8>& relays, const std::vector<std::pair<std::string, u16>>& relayServers) {
+	const std::vector<u8>& relays, const std::vector<RelayServerAddr>& relayServers) {
 }
 
 }

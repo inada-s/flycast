@@ -138,6 +138,7 @@ class UdpPingPong {
 	void PrintRttMatrix();
 	void DebugUnreachable(uint8_t peer_id, uint8_t remote_peer_id);
 	void DebugSetRtt(uint8_t peer_id, uint8_t remote_peer_id, uint8_t rtt);
+	void DebugSetRelayRtt(uint8_t peer_id, int relay_idx, uint8_t rtt);
 
    private:
 	static const uint32_t MAGIC = 2205246188;

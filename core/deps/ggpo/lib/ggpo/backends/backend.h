@@ -25,7 +25,7 @@ struct GGPOSession {
    virtual GGPOErrorCode SetDisconnectTimeout(int timeout) { return GGPO_ERRORCODE_UNSUPPORTED; }
    virtual GGPOErrorCode SetDisconnectNotifyStart(int timeout) { return GGPO_ERRORCODE_UNSUPPORTED; }
    virtual GGPOErrorCode SetDisconnectWithoutRollback(bool allow) { return GGPO_ERRORCODE_UNSUPPORTED; }
-   virtual GGPOErrorCode AddRelayServer(const char *ip, unsigned short port) { return GGPO_ERRORCODE_UNSUPPORTED; }
+   virtual GGPOErrorCode AddRelayServer(const char *ip, unsigned short port, const char *alt_ip) { return GGPO_ERRORCODE_UNSUPPORTED; }
    virtual GGPOErrorCode SendMessage(const void *msg, int len, bool spectators) { return GGPO_ERRORCODE_UNSUPPORTED; }
    virtual GGPOErrorCode GetCurrentFrame(int *frame) { return GGPO_ERRORCODE_UNSUPPORTED; }
 };

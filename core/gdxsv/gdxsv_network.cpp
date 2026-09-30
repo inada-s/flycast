@@ -1099,8 +1099,7 @@ void UdpPingPong::AddRelay(const std::string &ip, int port, uint64_t token) {
 	if (MAX_RELAYS <= relays_.size()) return;
 	Relay r{};
 	r.token = token;
-	// The relay listens on IPv4 only.
-	if (r.remote.Open(ip.c_str(), port, UdpRemote::IpPref::V4Only)) {
+	if (r.remote.Open(ip.c_str(), port)) {
 		relays_.emplace_back(r);
 	}
 }
@@ -1236,6 +1235,11 @@ void UdpPingPong::DebugUnreachable(uint8_t peer_id, uint8_t remote_peer_id) {
 			c.rtt_samples.clear();
 		}
 	}
+}
+
+void UdpPingPong::DebugSetRelayRtt(uint8_t peer_id, int relay_idx, uint8_t rtt) {
+	std::lock_guard<std::recursive_mutex> lock(mutex_);
+	relay_rtt_matrix_[peer_id][relay_idx] = rtt;
 }
 
 void UdpPingPong::DebugSetRtt(uint8_t peer_id, uint8_t remote_peer_id, uint8_t rtt) {

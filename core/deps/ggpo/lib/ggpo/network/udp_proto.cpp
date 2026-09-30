@@ -28,7 +28,7 @@ UdpProtocol::UdpProtocol() :
    _local_player_queue(-1),
    _queue(-1),
    _relay(false),
-   _relay_server(false),
+   _relay_server_idx(-1),
    _remote_magic_number(0),
    _connected(false),
    _round_trip_time(0),
@@ -997,10 +997,11 @@ bool UdpProtocol::SameAddress(const sockaddr_storage &a, const sockaddr_storage 
     return false;
 }
 
-void UdpProtocol::UseRelayServer(const sockaddr_storage &server)
+void UdpProtocol::UseRelayServer(const sockaddr_storage &server, int index)
 {
-   // Once on a relay server, stay there: switching between servers could flap on packets still in flight.
-   if (_relay_server) {
+   // Two peers that picked different servers settle on the earlier one. Only ever moving to an earlier server
+   // keeps packets still in flight through the other from switching back.
+   if (_relay_server_idx != -1 && _relay_server_idx <= index) {
       return;
    }
    {
@@ -1008,11 +1009,11 @@ void UdpProtocol::UseRelayServer(const sockaddr_storage &server)
       _peer_addr = server;
       _peer_addr_len = sizeof(server);
       _relay = true;
-      _relay_server = true;
+      _relay_server_idx = index;
    }
-   LogInfo("udpproto%d | using the relay server", _queue);
+   LogInfo("udpproto%d | using relay server %d", _queue, index);
    if (_test_log) {
-      LogInfo("RBKTEST relay server path queue=%d", _queue);
+      LogInfo("RBKTEST relay server path queue=%d idx=%d", _queue, index);
    }
 }
 

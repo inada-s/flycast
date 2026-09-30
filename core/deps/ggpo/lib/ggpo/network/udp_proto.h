@@ -86,7 +86,7 @@ public:
    void SendAppData(const void *data, int len, bool spectators);
    void SendUnmanagedMsg(UdpMsg* msg, int len, const sockaddr_storage &from);
    bool IsPeerAddress(const sockaddr_storage &addr) const { return SameAddress(_peer_addr, addr); }
-   void UseRelayServer(const sockaddr_storage &server);
+   void UseRelayServer(const sockaddr_storage &server, int index);
    static bool SameAddress(const sockaddr_storage &a, const sockaddr_storage &b);
   
    void GetNetworkStats(struct GGPONetworkStats *stats);
@@ -151,7 +151,7 @@ protected:
    int            _local_player_queue;
    int            _queue;
    bool           _relay;
-   bool           _relay_server;     /* _relay goes through a relay server, not a peer */
+   int            _relay_server_idx; /* index of the relay server _relay goes through, -1 if a peer or none */
    uint16         _remote_magic_number;
    bool           _connected;
    int            _send_latency;

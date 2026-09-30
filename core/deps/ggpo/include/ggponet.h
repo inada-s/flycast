@@ -615,11 +615,17 @@ GGPO_API GGPOErrorCode __cdecl ggpo_set_disconnect_without_rollback(GGPOSession*
  * ggpo_add_relay_server --
  *
  * Registers a relay server that peers may route their packets through.
- * Call it before adding the players. A peer whose packets arrive through
- * the server is answered through it too, which keeps the server's NAT
- * mapping alive on this side.
+ * Call it before adding the players, in the same order on every peer.
+ * A peer whose packets arrive through a server is answered through it
+ * too, which keeps the server's NAT mapping alive on this side; when two
+ * peers use different servers, both settle on the one added first.
+ *
+ * ip - the address this peer uses for the server.
+ * alt_ip - the server's address in the other IP family, or NULL. Packets
+ *          from it count as coming from the same server.
  */
-GGPO_API GGPOErrorCode __cdecl ggpo_add_relay_server(GGPOSession*, const char *ip, unsigned short port);
+GGPO_API GGPOErrorCode __cdecl ggpo_add_relay_server(GGPOSession*, const char *ip, unsigned short port,
+                                                     const char *alt_ip);
 
 #ifdef __cplusplus
 };
