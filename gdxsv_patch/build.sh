@@ -19,8 +19,10 @@ cd "$SCRIPT_DIR"
 rm -rf ./bin
 mkdir bin
 
+python3 gen_abi.py entries
 sh4-linux-gnu-gcc-9 -O2 -fno-stack-protector src/main.c -c -o bin/main.x
 sh4-linux-gnu-ld -T src/ld.script bin/main.x -o bin/main.o
+sh4-linux-gnu-nm bin/main.o > bin/symbols.txt
 sh4-linux-gnu-objdump -h bin/main.o
 sh4-linux-gnu-objcopy \
     --only-section gdx.main1 --only-section gdx.main2 \

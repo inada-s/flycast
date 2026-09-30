@@ -1,2 +1,4 @@
 bin/
 mybuild.sh
+__pycache__/
+src/gdx_entries.h
