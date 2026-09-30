@@ -14,16 +14,23 @@ inline u32 gdxsv_ReadMem(int bits, u32 addr) {
 	verify(false);
 }
 
-inline void gdxsv_WriteMem32(u32 addr, u32 value) {
-	if (ReadMem32_nommu(addr) != value) WriteMem32_nommu(addr, value);
+// Writes only a differing value; returns whether guest memory changed.
+inline bool gdxsv_WriteMem32(u32 addr, u32 value) {
+	if (ReadMem32_nommu(addr) == value) return false;
+	WriteMem32_nommu(addr, value);
+	return true;
 }
 
-inline void gdxsv_WriteMem16(u32 addr, u16 value) {
-	if (ReadMem16_nommu(addr) != value) WriteMem16_nommu(addr, value);
+inline bool gdxsv_WriteMem16(u32 addr, u16 value) {
+	if (ReadMem16_nommu(addr) == value) return false;
+	WriteMem16_nommu(addr, value);
+	return true;
 }
 
-inline void gdxsv_WriteMem8(u32 addr, u8 value) {
-	if (ReadMem8_nommu(addr) != value) WriteMem8_nommu(addr, value);
+inline bool gdxsv_WriteMem8(u32 addr, u8 value) {
+	if (ReadMem8_nommu(addr) == value) return false;
+	WriteMem8_nommu(addr, value);
+	return true;
 }
 
 inline void gdxsv_WriteMem(int bits, u32 addr, u32 value) {

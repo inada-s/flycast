@@ -14,8 +14,10 @@
 #include "emulator.h"
 #include "gdx_rpc.h"
 #include "gdxsv_key_display.h"
+#include "gdxsv_patch_abi.h"
 #include "gdxsv_prof.h"
 #include "gdxsv_translation.h"
+#include "hw/sh4/sh4_if.h"
 #include "imgui/imgui.h"
 #include "libs.h"
 #include "log/InMemoryListener.h"
@@ -138,7 +140,6 @@ void Gdxsv::Reset() {
 	std::string disk_num(ip_meta.disk_num, 1);
 	if (disk_num == "1") disk_ = 1;
 	if (disk_num == "2") disk_ = 2;
-	widescreen_patch_enabled_ = config::Widescreen.get() && config::WidescreenGameHacks.get();
 	settings.gdxsv.disk = disk_;
 	settings.gdxsv.skipRenderingBaseAddr = (disk_ == 1) ? 0x0c064cce : (disk_ == 2) ? 0x0c0520e2 : 0;
 	if (disk_ == 1) {
@@ -508,7 +509,12 @@ void Gdxsv::HandleRPC() {
 		if (netmode_ == NetMode::Replay) {
 			replay_net_.Open();
 		} else if (tolobby == 1) {
-			if (lbs_net_.Connect(config::GdxLobbyServer, port)) {
+			// WritePatch() can still be waiting to replace the payload of a
+			// savestate from another version. Never go online with it.
+			if (gdxsv_ReadMem32(symbols_["patch_id"]) != symbols_[":patch_id"]) {
+				WARN_LOG(COMMON, "Lobby connection refused: the payload is not updated yet");
+				netmode_ = NetMode::Offline;
+			} else if (lbs_net_.Connect(config::GdxLobbyServer, port)) {
 				netmode_ = NetMode::Lbs;
 				lbs_net_.Send(GeneratePlatformInfoPacket());
 			} else {
@@ -698,10 +704,31 @@ void Gdxsv::RestoreOnlinePatch() {
 	emu.getSh4Executor()->ResetCache();
 }
 
+namespace {
+// A savestate of another version resumes its own payload. Replacing it while
+// the SH4 executes there, or will return there, continues in different code.
+bool Sh4InPayloadCode() {
+	const auto in_code = [](u32 addr) { return (addr & 0x1fff0000) == 0x0c4f0000; };
+	if (in_code(Sh4cntx.pc) || in_code(Sh4cntx.pr))
+		return true;
+	const u32 sp = Sh4cntx.r[15];
+	if ((sp & 0x1f000000) != 0x0c000000)
+		return false;
+	for (u32 i = 0; i < 64; i++)
+		if (in_code(gdxsv_ReadMem32(sp + i * 4)))
+			return true;
+	return false;
+}
+} // namespace
+
 void Gdxsv::WritePatch() {
 	if (disk_ == 1) WritePatchDisk1();
 	if (disk_ == 2) WritePatchDisk2();
 	if (symbols_["patch_id"] == 0 || gdxsv_ReadMem32(symbols_["patch_id"]) != symbols_[":patch_id"]) {
+		if (Sh4InPayloadCode()) {
+			DEBUG_LOG(COMMON, "patch deferred: pc=%08x pr=%08x", Sh4cntx.pc, Sh4cntx.pr);
+			return;
+		}
 		NOTICE_LOG(COMMON, "patch %d %d", gdxsv_ReadMem32(symbols_["patch_id"]), symbols_[":patch_id"]);
 		emu.getSh4Executor()->ResetCache();
 
@@ -863,86 +890,33 @@ void Gdxsv::WritePatchDisk2() {
 }
 
 namespace {
-// Both discs share the widescreen code byte for byte at every hooked site;
-// only the addresses and the guest helpers differ.
-struct WidescreenSites {
-	const char *hud_table_symbol;
-	const char *transition_symbol;
-	const char *fade_symbol;
-	const char *result_symbol;
-	const char *result_scale_symbol;
-	u32 hud_table_ptr;   // literal holding the HUD renderer table
-	u32 stock_hud_table;
-	u32 transition_ptr;  // literal holding the transition matte function
-	u32 fade_submit_ptr; // private general-fade submit pointer
-	u32 culling[4];      // MS and building horizontal culling branches
-	u32 result_hook;     // result-screen post-projection, literal at +8
-	u32 info_panel_x;    // information panel glyph X-origin literal
-	u32 frustum_x;       // -X, +X frustum pair
-	// Each quad lists its two left and two right X coordinates.
-	u32 mattes[9][4];
-};
-
-constexpr WidescreenSites widescreen_disk1 = {
-	"gdx_widescreen1_hud_renderer_table",
-	"gdx_widescreen1_transition_matte",
-	"gdx_widescreen1_fade_submit",
-	"gdx_widescreen1_result_black_postproject",
-	"gdx_widescreen1_result_black_scale",
-	0x0c019fac,
-	0x0c17ea78,
-	0x0c135e18,
-	0x0c05cb50,
-	{0x0c14f40a, 0x0c14f424, 0x0c14ba46, 0x0c14ba60},
-	0x0c15e9fc,
-	0x0c020378,
-	0x0c067dbc,
-	{
-		{0x0c16e1d4, 0x0c16e1e4, 0x0c16e1f4, 0x0c16e204}, // menu background gray fade
-		{0x0c16e214, 0x0c16e224, 0x0c16e234, 0x0c16e244}, // full-screen fade
-		{0x0c173ac4, 0x0c173ad4, 0x0c173ae4, 0x0c173af4}, // opening fade
-		{0x0c173b04, 0x0c173b14, 0x0c173b24, 0x0c173b34}, // centre-field fade
-		{0x0c173d48, 0x0c173d58, 0x0c173d68, 0x0c173d78}, // title-logo mask
-		{0x0c173b44, 0x0c173b54, 0x0c173b64, 0x0c173b74}, // upper cinema bar
-		{0x0c173b84, 0x0c173b94, 0x0c173ba4, 0x0c173bb4}, // lower cinema bar
-		{0x0c1811fc, 0x0c18121c, 0x0c18120c, 0x0c18122c}, // pause overlay
-		{0x0c181af0, 0x0c181b10, 0x0c181b00, 0x0c181b20}, // network return-to-lobby mask
-	},
-};
-
-constexpr WidescreenSites widescreen_disk2 = {
-	"gdx_widescreen_hud_renderer_table",
-	"gdx_widescreen_transition_matte",
-	"gdx_widescreen_fade_submit",
-	"gdx_widescreen_result_black_postproject",
-	"gdx_widescreen_result_black_scale",
-	0x0c1196f0,
-	0x0c2403a4,
-	0x0c1955ac,
-	0x0c049f70,
-	{0x0c1aebea, 0x0c1aec04, 0x0c1ab226, 0x0c1ab240},
-	0x0c1be1dc,
-	0x0c1213cc,
-	0x0c055280,
-	{
-		{0x0c1ce334, 0x0c1ce344, 0x0c1ce354, 0x0c1ce364}, // menu background gray fade
-		{0x0c1ce374, 0x0c1ce384, 0x0c1ce394, 0x0c1ce3a4}, // full-screen fade
-		{0x0c1d3b88, 0x0c1d3b98, 0x0c1d3ba8, 0x0c1d3bb8}, // opening fade
-		{0x0c1d3bc8, 0x0c1d3bd8, 0x0c1d3be8, 0x0c1d3bf8}, // centre-field fade
-		{0x0c1d3e78, 0x0c1d3e88, 0x0c1d3e98, 0x0c1d3ea8}, // title-logo mask
-		{0x0c1d3c60, 0x0c1d3c70, 0x0c1d3c80, 0x0c1d3c90}, // upper cinema bar
-		{0x0c1d3ca0, 0x0c1d3cb0, 0x0c1d3cc0, 0x0c1d3cd0}, // lower cinema bar
-		{0x0c1deba8, 0x0c1debc8, 0x0c1debb8, 0x0c1debd8}, // pause overlay
-		{0x0c1e01b0, 0x0c1e01d0, 0x0c1e01c0, 0x0c1e01e0}, // network return-to-lobby mask
-	},
-};
+u32 FloatBits(float value) {
+	u32 bits;
+	std::memcpy(&bits, &value, sizeof(bits));
+	return bits;
+}
 } // namespace
 
-void Gdxsv::WriteWidescreenPatch() {
-	if (!widescreen_patch_enabled_ || (disk_ != 1 && disk_ != 2))
-		return;
-	const WidescreenSites &ws = disk_ == 1 ? widescreen_disk1 : widescreen_disk2;
+// True once every site holds its stock or its widescreen value: the game
+// image is loaded and uses the known layout.
+bool Gdxsv::WidescreenSitesKnown() {
+	for (const auto &hook : gdxsv_abi::widescreen_hooks) {
+		const u32 value = gdxsv_ReadMem32(hook.addr);
+		if (hook.disk == disk_ && value != hook.stock && value != symbols_[hook.target])
+			return false;
+	}
+	for (const auto &code : gdxsv_abi::widescreen_code) {
+		const u16 value = gdxsv_ReadMem16(code.addr);
+		if (code.disk == disk_ && value != code.stock && value != code.patched)
+			return false;
+	}
+	return true;
+}
 
+void Gdxsv::WriteWidescreenPatch() {
+	if (disk_ != 1 && disk_ != 2)
+		return;
+	const bool enabled = config::Widescreen && config::WidescreenGameHacks;
 	const int width = settings.display.width;
 	const int height = settings.display.height;
 	if (width <= 0 || height <= 0)
@@ -952,112 +926,80 @@ void Gdxsv::WriteWidescreenPatch() {
 	const int hud_layout = config::GdxWidescreenHudLayout;
 	// State restoration and payload installation invalidate this host cache.
 	// Unchanged frames need no symbol lookups, guest reads or aspect arithmetic.
-	if (width == widescreen_viewport_width_ && height == widescreen_viewport_height_ &&
-		super_widescreen == widescreen_super_ && hud_layout == widescreen_hud_layout_)
-		return;
-	if (symbols_.count("gdx_widescreen_transition_right_x") == 0 || symbols_.count(ws.hud_table_symbol) == 0)
+	if (enabled == widescreen_enabled_ && width == widescreen_viewport_width_ &&
+		height == widescreen_viewport_height_ && super_widescreen == widescreen_super_ &&
+		hud_layout == widescreen_hud_layout_)
 		return;
 	// A savestate can restore an older payload while host symbols stay current.
-	// Wait for WritePatch() to install the current payload before publishing hooks.
-	if (gdxsv_ReadMem32(symbols_["patch_id"]) != symbols_[":patch_id"])
+	// Wait for WritePatch() to install the current payload.
+	if (symbols_.count("patch_id") == 0 || gdxsv_ReadMem32(symbols_["patch_id"]) != symbols_[":patch_id"])
 		return;
+	if (!WidescreenSitesKnown())
+		return; // The game image may not be ready, or the layout is unsupported.
 
 	constexpr float stock_aspect = 4.f / 3.f;
 	const float viewport_aspect = static_cast<float>(width) / height;
-	const float aspect = super_widescreen ? viewport_aspect : 16.f / 9.f;
-	// HUD placement follows the viewport. Full Width must stay within the
-	// rendered image when SuperWidescreen is off.
+	// With widescreen off, every value below is the stock one.
+	float aspect = stock_aspect;
 	float hud_aspect = stock_aspect;
-	if (hud_layout == 1)
-		hud_aspect = std::max(stock_aspect, std::min(viewport_aspect, 16.f / 9.f));
-	else if (hud_layout == 2)
-		hud_aspect = std::max(stock_aspect, std::min(viewport_aspect, aspect));
+	if (enabled) {
+		aspect = super_widescreen ? viewport_aspect : 16.f / 9.f;
+		// HUD placement follows the viewport. Full Width must stay within the
+		// rendered image when SuperWidescreen is off.
+		if (hud_layout == 1)
+			hud_aspect = std::max(stock_aspect, std::min(viewport_aspect, 16.f / 9.f));
+		else if (hud_layout == 2)
+			hud_aspect = std::max(stock_aspect, std::min(viewport_aspect, aspect));
+	}
+	const float scale = aspect / stock_aspect;
+	const float hud_offset = 0.075f * (hud_aspect - stock_aspect);
+	// Include a five-pixel overscan margin for fades at fractional viewport aspects.
+	const float left = 320.f - 325.f * scale;
+	const float right = 320.f + 325.f * scale;
 
-	auto float_bits = [](float value) {
-		u32 bits;
-		std::memcpy(&bits, &value, sizeof(bits));
-		return bits;
-	};
-
-	// Install the hooks independently of viewport/HUD changes. Keeping
-	// the HUD shim installed with zero offsets also handles objects which
-	// have already copied its callback from the table.
-	const u32 hud_table = symbols_[ws.hud_table_symbol];
-	const u32 transition = symbols_[ws.transition_symbol];
-	const u32 fade_submit = symbols_[ws.fade_symbol];
-	const u32 result = symbols_[ws.result_symbol];
-	const u32 result_ptr = ws.result_hook + 8;
-	const u32 old_table = gdxsv_ReadMem32(ws.hud_table_ptr);
-	const bool patch_table = (old_table & 0x1fffffff) >= 0x0c4e0200 &&
-		(old_table & 0x1fffffff) < 0x0c500000;
-	if (old_table != ws.stock_hud_table && old_table != hud_table && !patch_table) {
-		if (old_table != 0) {
-			static bool warned = false;
-			if (!warned) {
-				WARN_LOG(COMMON, "Widescreen update deferred: unrecognized HUD renderer table=%08x", old_table);
-				warned = true;
+	bool changed = false;
+	for (const auto &code : gdxsv_abi::widescreen_code)
+		if (code.disk == disk_)
+			changed |= gdxsv_WriteMem16(code.addr, enabled ? code.patched : code.stock);
+	for (const auto &hook : gdxsv_abi::widescreen_hooks)
+		if (hook.disk == disk_)
+			changed |= gdxsv_WriteMem32(hook.addr, enabled ? symbols_[hook.target] : hook.stock);
+	for (const auto &site : gdxsv_abi::widescreen_values) {
+		if (site.disk != disk_)
+			continue;
+		u32 value = site.stock;
+		if (enabled) {
+			switch (site.kind) {
+			case gdxsv_abi::Kind::MatteLeft: value = FloatBits(left); break;
+			case gdxsv_abi::Kind::MatteRight: value = FloatBits(right); break;
+			case gdxsv_abi::Kind::FrustumLeft: value = FloatBits(-0.075f * aspect); break;
+			case gdxsv_abi::Kind::FrustumRight: value = FloatBits(0.075f * aspect); break;
+			// The information panel's glyph loop has a private X-origin literal.
+			case gdxsv_abi::Kind::InfoPanelX: value = FloatBits(-0.0457f - hud_offset * 0.5f); break;
 			}
 		}
-		return; // The game image may not be ready, or the table may be unsupported.
+		changed |= gdxsv_WriteMem32(site.addr, value);
 	}
+	// HUD objects which copied the entry keep calling it; stock values leave them in place.
+	changed |= gdxsv_WriteMem32(symbols_["gdx_widescreen_transition_left_x"], FloatBits(enabled ? left : 0.f));
+	changed |= gdxsv_WriteMem32(symbols_["gdx_widescreen_transition_right_x"], FloatBits(enabled ? right : 640.f));
+	changed |= gdxsv_WriteMem32(symbols_["gdx_widescreen_hud_right_offset"], FloatBits(hud_offset));
+	changed |= gdxsv_WriteMem32(symbols_["gdx_widescreen_hud_left_offset"], FloatBits(-hud_offset));
+	changed |= gdxsv_WriteMem32(symbols_["gdx_widescreen_hud_half_left_offset"], FloatBits(-hud_offset * 0.5f));
+	changed |= gdxsv_WriteMem32(symbols_["gdx_widescreen_result_black_scale"], FloatBits(enabled ? scale * 650.f / 640.f : 1.f));
 
-	const bool install = old_table != hud_table ||
-		gdxsv_ReadMem32(ws.transition_ptr) != transition || gdxsv_ReadMem32(result_ptr) != result ||
-		gdxsv_ReadMem32(ws.fade_submit_ptr) != fade_submit;
-	if (install) {
-		gdxsv_WriteMem32(ws.hud_table_ptr, hud_table);
-		gdxsv_WriteMem32(ws.transition_ptr, transition);
-		gdxsv_WriteMem32(ws.fade_submit_ptr, fade_submit);
-		// Intro/battle MS and building horizontal culling (stock 0x8fc9, 0x8dbc, 0x8faf, 0x8da2).
-		for (u32 branch : ws.culling)
-			gdxsv_WriteMem16(branch, 0x0009);
-		// Result-screen post-projection hook, preserving its live registers.
-		gdxsv_WriteMem16(ws.result_hook + 0, 0xd201); // mov.l result_ptr,r2
-		gdxsv_WriteMem16(ws.result_hook + 2, 0x422b); // jmp @r2
-		gdxsv_WriteMem16(ws.result_hook + 4, 0x0009); // nop (delay slot)
-		gdxsv_WriteMem16(ws.result_hook + 6, 0x0009); // literal alignment
-		gdxsv_WriteMem32(result_ptr, result);
-	}
-
-	const float scale = aspect / stock_aspect;
-	const u32 left = float_bits(320.f - 325.f * scale);
-	const u32 right = float_bits(320.f + 325.f * scale);
-	const float hud_offset = 0.075f * (hud_aspect - stock_aspect);
-	const u32 right_x = symbols_["gdx_widescreen_transition_right_x"];
-	const u32 hud_right = symbols_["gdx_widescreen_hud_right_offset"];
+	widescreen_enabled_ = enabled;
 	widescreen_viewport_width_ = width;
 	widescreen_viewport_height_ = height;
 	widescreen_super_ = super_widescreen;
 	widescreen_hud_layout_ = hud_layout;
-	// After invalidation, restored guest values may already match. Avoid
-	// rewriting them and resetting the SH4 code cache in that case.
-	if (!install && gdxsv_ReadMem32(right_x) == right &&
-		gdxsv_ReadMem32(hud_right) == float_bits(hud_offset))
-		return;
-
-	gdxsv_WriteMem32(symbols_["gdx_widescreen_transition_left_x"], left);
-	gdxsv_WriteMem32(right_x, right);
-	gdxsv_WriteMem32(hud_right, float_bits(hud_offset));
-	gdxsv_WriteMem32(symbols_["gdx_widescreen_hud_left_offset"], float_bits(-hud_offset));
-	gdxsv_WriteMem32(symbols_["gdx_widescreen_hud_half_left_offset"], float_bits(-hud_offset * 0.5f));
-	// The information panel's glyph loop has a private X-origin literal.
-	gdxsv_WriteMem32(ws.info_panel_x, float_bits(-0.0457f - hud_offset * 0.5f));
-
-	// Include a five-pixel overscan margin for fades at fractional viewport aspects.
-	for (const auto& quad : ws.mattes) {
-		gdxsv_WriteMem32(quad[0], left);
-		gdxsv_WriteMem32(quad[1], left);
-		gdxsv_WriteMem32(quad[2], right);
-		gdxsv_WriteMem32(quad[3], right);
-	}
-	gdxsv_WriteMem32(ws.frustum_x, float_bits(-0.075f * aspect));
-	gdxsv_WriteMem32(ws.frustum_x + 4, float_bits(0.075f * aspect));
-	gdxsv_WriteMem32(symbols_[ws.result_scale_symbol], float_bits(scale * 650.f / 640.f));
-
 	// Some parameters are literals in the game's code. Invalidate only when
 	// hooks or parameters actually changed, never for an unchanged frame.
-	emu.getSh4Executor()->ResetCache();
-	NOTICE_LOG(COMMON, "widescreen patch refreshed: aspect=%.6f hud-aspect=%.6f disk=%d", aspect, hud_aspect, int(disk_));
+	if (changed) {
+		emu.getSh4Executor()->ResetCache();
+		NOTICE_LOG(COMMON, "widescreen patch %s: aspect=%.6f hud-aspect=%.6f disk=%d",
+			enabled ? "refreshed" : "removed", aspect, hud_aspect, int(disk_));
+	}
 }
 
 bool Gdxsv::StartReplayFile(const char *path, int pov) {
