@@ -8,6 +8,7 @@
 import argparse
 import json
 import os
+import subprocess
 import sys
 import threading
 import time
@@ -256,6 +257,91 @@ def d3_relay_loop(s: Settings) -> Result:
     return verdict(bad, ["session start is expected to time out: peers 0 and 1 cannot reach peer 3"])
 
 
+def _with_relays(s: Settings, tag: str, count: int, test_relay: str, dual_stack: bool = False):
+    """Run a match with local relay servers (gdxsv relay). Returns the match and each relay's log.
+
+    A dual-stack relay listens on every address (IPv4 and IPv6), and peers 0 and 1 reach it over IPv6 (::1).
+    """
+    ports = [19879 + i for i in range(count)]
+    logs = [os.path.join(s.out, f"{tag}_relay{i}.log") for i in range(count)]
+    relays = []
+    try:
+        for port, path in zip(ports, logs):
+            penv = os.environ.copy()
+            penv["GDXSV_RELAY_ADDR"] = f":{port}" if dual_stack else f"127.0.0.1:{port}"
+            with open(path, "w", encoding="utf-8") as log:
+                relays.append(subprocess.Popen([s.relay_exe, "-pprof=0", "-relay_test_session=12345:1234", "relay"],
+                                               env=penv, stdout=log, stderr=subprocess.STDOUT))
+        env = {"TEST_RELAY": test_relay, "TEST_RELAY_SERVER": ",".join(f"127.0.0.1:{p}" for p in ports),
+               "TEST_RELAY_TOKEN": "1234", "GGPO_TEST_LOG": "1"}
+        if dual_stack:
+            env["TEST_RELAY_IPV6"] = "::1"
+        m = lib.run_match(s, tag, [s.exe] * 4, [16] * 4, env=env)
+    finally:
+        for r in relays:
+            lib.kill(r.pid)
+            r.wait()
+    relay_logs = []
+    for path in logs:
+        with open(path, encoding="utf-8", errors="replace") as f:
+            relay_logs.append(f.read())
+    return m, relay_logs
+
+
+def d4_relay_server(s: Settings) -> Result:
+    if not s.relay_exe:
+        return SKIP, ["no gdxsv binary (--relay-exe)"]
+    m, relay_logs = _with_relays(s, "D4", 1, "server")
+    bad = common(m)
+    if "Relay:2" not in m.peers[0].log:
+        bad.append("p1 did not pick the relay server")
+    for p in m.peers:
+        if "RBKTEST relay server path" not in p.log:
+            bad.append(f"p{p.index} did not send through the relay server")
+    bound = relay_logs[0].count("relay peer bound")
+    if bound != len(m.peers):
+        bad.append(f"relay bound {bound} peers, expected {len(m.peers)}")
+    return verdict(bad, [summary(m)])
+
+
+def d5_relay_servers_settle(s: Settings) -> Result:
+    if not s.relay_exe:
+        return SKIP, ["no gdxsv binary (--relay-exe)"]
+    m, relay_logs = _with_relays(s, "D5", 2, "server2")
+    bad = common(m)
+    p1, p2 = m.peers[0].log, m.peers[1].log
+    # Peer 0 starts on server 1 for peer 1 and moves to server 0, which peer 1 picked.
+    if "relay server path queue=1 idx=1" not in p1 or "relay server path queue=1 idx=0" not in p1:
+        bad.append("p1 did not move to server 0 for peer 1")
+    if "relay server path queue=0 idx=0" not in p2 or "relay server path queue=0 idx=1" in p2:
+        bad.append("p2 did not stay on server 0 for peer 0")
+    for p in m.peers[2:]:
+        if "relay server path queue=0 idx=1" not in p.log:
+            bad.append(f"p{p.index} did not answer peer 0 through server 1")
+    for i, log in enumerate(relay_logs):
+        if log.count("relay peer bound") != len(m.peers):
+            bad.append(f"relay {i} bound {log.count('relay peer bound')} peers, expected {len(m.peers)}")
+    return verdict(bad, [summary(m)])
+
+
+def d6_relay_server_ipv6(s: Settings) -> Result:
+    if not s.relay_exe:
+        return SKIP, ["no gdxsv binary (--relay-exe)"]
+    m, relay_logs = _with_relays(s, "D6", 1, "server", dual_stack=True)
+    bad = common(m)
+    if "Relay:2" not in m.peers[0].log:
+        bad.append("p1 did not pick the relay server")
+    for p in m.peers:
+        if "RBKTEST relay server path" not in p.log:
+            bad.append(f"p{p.index} did not send through the relay server")
+    bound = [l for l in relay_logs[0].splitlines() if "relay peer bound" in l]
+    v6 = sum(1 for l in bound if "[::1]" in l)
+    v4 = sum(1 for l in bound if "127.0.0.1" in l)
+    if (v6, v4) != (2, 2):
+        bad.append(f"relay bound {v6} peers over IPv6 and {v4} over IPv4, expected 2 and 2")
+    return verdict(bad, [summary(m)])
+
+
 CASES: Dict[str, Tuple[str, Callable[[Settings], Result], int, bool]] = {
     # id: (title, function, rough minutes, long-running)
     "A1": ("basic 4-player match", a1_basic, 1, False),
@@ -271,6 +357,9 @@ CASES: Dict[str, Tuple[str, Callable[[Settings], Result], int, bool]] = {
     "D1": ("malformed packet fuzzing during a match", d1_fuzz, 1, False),
     "D2": ("relay path in use", d2_relay, 1, False),
     "D3": ("relay loop is cut", d3_relay_loop, 2, False),
+    "D4": ("relay server path, peers answer through it", d4_relay_server, 1, False),
+    "D5": ("two relay servers, peers settle on the earlier one", d5_relay_servers_settle, 1, False),
+    "D6": ("relay server between IPv6 and IPv4 peers", d6_relay_server_ipv6, 1, False),
 }
 
 
@@ -286,6 +375,9 @@ def main() -> int:
     ap.add_argument("--old-release", help="previous release tag to download instead, e.g. gdxsv-1.9.2")
     ap.add_argument("--older-exe", help="an older release executable, for A4")
     ap.add_argument("--older-release", help="older release tag to download instead")
+    ap.add_argument("--relay-exe", default=os.path.join(lib.REPO, "..", "gdxsv", "bin",
+                                                         "gdxsv.exe" if os.name == "nt" else "gdxsv"),
+                    help="gdxsv binary serving the relay, for D4")
     ap.add_argument("--cases", help="comma-separated case ids (default: all but long ones)")
     ap.add_argument("--long", action="store_true", help="include long-running cases")
     ap.add_argument("--list", action="store_true", help="list cases and exit")
@@ -303,7 +395,8 @@ def main() -> int:
     out = os.path.abspath(a.out)
     os.makedirs(out, exist_ok=True)
     s = Settings(exe=os.path.abspath(a.exe), rom=os.path.abspath(a.rom), out=out,
-                 state_dir=os.path.abspath(a.state_dir), old_exe=a.old_exe, older_exe=a.older_exe)
+                 state_dir=os.path.abspath(a.state_dir), old_exe=a.old_exe, older_exe=a.older_exe,
+                 relay_exe=os.path.abspath(a.relay_exe) if os.path.isfile(a.relay_exe) else None)
     if a.old_release:
         s.old_exe = lib.fetch_release(a.old_release, out)
     if a.older_release:

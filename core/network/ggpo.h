@@ -70,11 +70,18 @@ void disconnect(int playerNum);
 void randomInput(bool enable, u64 seed, u32 inputMask);
 void getNetworkStats(int playerNum, NetworkStats* stats);
 bool poll();
+struct RelayServerAddr {
+	std::string ip;    // what this peer uses
+	std::string altIp; // the other IP family, or empty
+	u16 port;
+};
+
 std::future<bool> gdxsvStartNetwork(
     const char* sessionCode, int me,
     const std::vector<std::string>& ips,
     const std::vector<u16>& ports,
-    const std::vector<u8>& relays);
+    const std::vector<u8>& relays,
+    const std::vector<RelayServerAddr>& relayServers);
 
 static inline bool isInRollback() {
 	extern bool inRollback;

@@ -121,22 +121,36 @@ class UdpClient {
 class UdpPingPong {
    public:
 	static const int N = 4;
+	static const int MAX_RELAYS = 4;
 	void Start(uint32_t session_id, uint8_t peer_id, int port, int duration_ms);
 	void Stop();
 	void Reset();
 	bool Running() const;
 	int ElapsedMs() const;
 	void AddCandidate(const std::string &user_id, uint8_t peer_id, const std::string &ip, int port);
+	// A relay is pinged over IPv4 and IPv6 (ip6 may be empty); the faster family that answers is used.
+	void AddRelay(const std::string &ip, const std::string &ip6, int port, uint64_t token);
 	bool GetAvailableAddress(uint8_t peer_id, sockaddr_storage *dst, float *rtt);
+	// use: the relay's address in the faster family that answered, false if neither did.
+	// alt: its address in the other family, if any (ss_family 0 otherwise).
+	bool GetRelayAddress(int relay_idx, sockaddr_storage *use, sockaddr_storage *alt);
 	void GetRttMatrix(uint8_t matrix[N][N]);
+	// matrix[peer][relay] is the RTT from the peer to the relay, 0 when unknown.
+	void GetRelayRttMatrix(uint8_t matrix[N][MAX_RELAYS]);
+	int RelayCount();
 	void PrintRttMatrix();
 	void DebugUnreachable(uint8_t peer_id, uint8_t remote_peer_id);
 	void DebugSetRtt(uint8_t peer_id, uint8_t remote_peer_id, uint8_t rtt);
+	void DebugSetRelayRtt(uint8_t peer_id, int relay_idx, uint8_t rtt);
 
    private:
 	static const uint32_t MAGIC = 2205246188;
 	static const uint8_t PING = 1;
 	static const uint8_t PONG = 2;
+	// Relay pings share gdxsv relay.go's format.
+	static const uint32_t RELAY_MAGIC = 0x594c4552;
+	static const uint8_t RELAY_PING = 1;
+	static const uint8_t RELAY_PONG = 2;
 
 	struct Candidate {
 		uint8_t peer_id;
@@ -145,6 +159,20 @@ class UdpPingPong {
 		int pong_count;
 		float rtt;
 		std::vector<int> rtt_samples;
+	};
+
+	struct RelayPath {
+		UdpRemote remote;
+		int ping_count;
+		int pong_count;
+		int rtt;  // median, 0 until a pong
+		std::vector<int> rtt_samples;
+	};
+
+	struct Relay {
+		uint64_t token;
+		RelayPath paths[2];  // IPv4, IPv6
+		int BestPath() const;
 	};
 
 #pragma pack(1)
@@ -159,7 +187,25 @@ class UdpPingPong {
 		uint64_t ping_timestamp;
 		uint8_t rtt_matrix[N][N];
 	};
+	// Sent instead of Packet only when the match has relays, which every peer then supports.
+	struct PacketWithRelays : Packet {
+		uint8_t relay_rtt_matrix[N][MAX_RELAYS];
+	};
+	struct RelayPacket {
+		uint32_t magic;
+		uint8_t type;
+		uint8_t peer_id;
+		uint8_t relay_idx;
+		uint8_t reserved;
+		uint32_t session_id;
+		uint64_t token;
+		uint64_t timestamp;
+	};
 #pragma pack()
+	static_assert(sizeof(RelayPacket) == 28, "RelayPacket must match gdxsv relayPingSize");
+
+	void SendPeerPacket(PacketWithRelays &p, const UdpRemote &remote);
+	void OnRelayPong(const RelayPacket &recv, uint32_t session_id, bool from_v6);
 
 	std::atomic<bool> running_;
 	std::chrono::high_resolution_clock::time_point start_time_;
@@ -168,7 +214,9 @@ class UdpPingPong {
 	std::recursive_mutex mutex_;
 	uint8_t peer_id_;
 	uint8_t rtt_matrix_[N][N] = {};
+	uint8_t relay_rtt_matrix_[N][MAX_RELAYS] = {};
 	std::vector<Candidate> candidates_;
+	std::vector<Relay> relays_;
 	std::map<std::string, int> user_to_peer_;
 	std::map<int, std::string> peer_to_user_;
 };

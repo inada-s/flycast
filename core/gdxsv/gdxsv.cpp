@@ -375,6 +375,8 @@ std::vector<u8> Gdxsv::GeneratePlatformInfoPacket() {
 	ss << "language=" << GdxsvLanguage::TextureDirectoryName() << "\n";
 	ss << "local_ip=" << lbs_net_.LocalIP() << "\n";
 	ss << "udp_port=" << config::GdxLocalPort << "\n";
+	// Understands P2PMatching.relays, so the lobby may hand out relay servers.
+	ss << "relay_server=1\n";
 	std::string machine_id = os_GetMachineID();
 	if (machine_id.length()) {
 		auto digest = XXH64(machine_id.c_str(), machine_id.size(), 37);

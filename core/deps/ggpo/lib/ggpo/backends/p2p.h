@@ -34,6 +34,7 @@ public:
    GGPOErrorCode SetDisconnectTimeout(int timeout) override;
    GGPOErrorCode SetDisconnectNotifyStart(int timeout) override;
    GGPOErrorCode SetDisconnectWithoutRollback(bool allow) override;
+   GGPOErrorCode AddRelayServer(const char *ip, unsigned short port, const char *alt_ip) override;
    GGPOErrorCode SendMessage(const void *msg, int len, bool spectators) override;
    GGPOErrorCode GetCurrentFrame(int* frame) override { *frame = _sync.GetFrameCount(); return GGPO_OK; }
 
@@ -51,6 +52,7 @@ protected:
    int Poll2Players(int current_frame);
    int PollNPlayers(int current_frame);
    void AddRemotePlayer(char *remoteip, uint16 reportport, int queue, bool relay);
+   int RelayServerIndex(const sockaddr_storage &addr) const;
    GGPOErrorCode AddSpectator(char *remoteip, uint16 reportport);
    virtual void OnSyncEvent(Sync::Event &e) { }
    virtual void OnUdpProtocolEvent(UdpProtocol::Event &e, GGPOPlayerHandle handle);
@@ -78,6 +80,11 @@ protected:
    bool                  _disconnect_without_rollback;
    int                   _test_log;       /* GGPO_TEST_LOG: count relay forwards for tools/rbk_test */
    int                   _relay_forwards;
+   struct RelayServer {
+      sockaddr_storage addr;                  /* where this peer sends */
+      std::vector<sockaddr_storage> known;    /* addr and the other IP family's address */
+   };
+   std::vector<RelayServer> _relay_servers;
 
    UdpMsg::connect_status _local_connect_status[UDP_MSG_MAX_PLAYERS];
 };

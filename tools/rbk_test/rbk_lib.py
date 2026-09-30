@@ -34,6 +34,7 @@ class Settings:
     state_dir: str
     old_exe: Optional[str] = None
     older_exe: Optional[str] = None
+    relay_exe: Optional[str] = None  # gdxsv binary, for the relay server case
 
 
 @dataclass
