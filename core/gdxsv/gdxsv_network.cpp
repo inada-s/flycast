@@ -919,7 +919,8 @@ void UdpPingPong::Start(uint32_t session_id, uint8_t peer_id, int port, int dura
 					continue;
 				}
 
-				if (recv.from_peer_id == recv.to_peer_id) {
+				// from_peer_id indexes the RTT matrices, and a candidate added from it is trusted by later pongs.
+				if (N <= recv.from_peer_id || recv.from_peer_id == recv.to_peer_id) {
 					WARN_LOG(COMMON, "invalid peer_id");
 					continue;
 				}
