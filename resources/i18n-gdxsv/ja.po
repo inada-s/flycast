@@ -15,9 +15,6 @@ msgstr ""
 msgid "Patch game language and texture, for DX only"
 msgstr "ゲーム内の文字列やテクスチャに変更を加えます"
 
-msgid "Japanese"
-msgstr "日本語"
-
 msgid "Cantonese"
 msgstr "廣東話"
 
@@ -30,38 +27,11 @@ msgstr "デバイスA"
 msgid "Dreamcast Device A Slot 1"
 msgstr "デバイスA スロット1"
 
-msgid "SH4 Clock"
-msgstr "SH4 クロック"
-
-msgid "Transparent Sorting"
-msgstr "透明ソート"
-
-msgid "Delay Frame Swapping"
-msgstr "フレームスワップ遅延"
-
-msgid "Graphics API"
-msgstr "グラフィックスAPI"
-
-msgid "Frame Skipping"
-msgstr "フレームスキップ"
-
-msgid "Enable DSP"
-msgstr "DSP有効"
-
-msgid "Volume Level"
-msgstr "音量"
-
 msgid "Audio Latency"
 msgstr "オーディオ遅延"
 
-msgid "CPU Mode"
-msgstr "CPUモード"
-
 msgid "Set a random Gdx UDP Port"
 msgstr "ランダムなUDPポートを設定"
-
-msgid "Internal Resolution"
-msgstr "内部解像度"
 
 msgid "Automatic Frame Skipping"
 msgstr "自動フレームスキップ"
