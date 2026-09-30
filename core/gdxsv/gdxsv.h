@@ -75,6 +75,7 @@ class Gdxsv {
 	void WritePatchDisk1();
 	void WritePatchDisk2();
 	void WriteWidescreenPatch();
+	bool WidescreenSitesKnown();
 
 	NetMode netmode_ = NetMode::Offline;
 	std::atomic<bool> enabled_;
@@ -87,9 +88,8 @@ class Gdxsv {
 	std::map<std::string, u32> symbols_;
 	proto::GamePatchList patch_list_;
 	bool going_to_battle_ = false;
-	// Enabling the hack requires a restart; aspect/HUD placement update per frame.
-	bool widescreen_patch_enabled_ = false;
-	// A zero width invalidates the last successfully applied viewport/settings.
+	// A zero width invalidates the last applied enable state, viewport and settings.
+	bool widescreen_enabled_ = false;
 	int widescreen_viewport_width_ = 0;
 	int widescreen_viewport_height_ = 0;
 	bool widescreen_super_ = false;

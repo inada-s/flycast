@@ -64,6 +64,7 @@ These do nothing unless set.
 | `RAND_MASK` | Hex kcode mask for the random input. The default leaves out down/right, so the re-battle menu is never cancelled; `06F6` reaches it | local test |
 | `TEST_RELAY` | `single`: peer 0 reaches peer 3 through peer 1. `loop`: peer 1 also reaches peer 3 through peer 0. `server`: peer 0 reaches every peer through the relay server. `server2`: two relay servers, peer 0 picks the second and peer 1 the first | local test |
 | `TEST_RELAY_SERVER`, `TEST_RELAY_TOKEN`, `TEST_RELAY_IPV6` | Adds relay servers (`ip:port`, comma separated; hex token, default `1234`; for peers 0-1, every relay gets this IPv6 address and an unreachable IPv4 one) to the local match, for a relay started with `-relay_test_session=12345:<token>` | local test |
+| `RBK_SAVE_REPLAY` | Saves the match to `data/replays/0123456.pb` when it ends (never uploaded) | local test |
 | `GGPO_TEST_LOG` | Logs `RBKTEST` lines: timesync skip record/replay, rollback loads, scene changes, relay forwards and loop drops, relay server use | any session |
 
 ## Not covered here

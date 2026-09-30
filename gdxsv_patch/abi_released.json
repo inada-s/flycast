@@ -1,0 +1,36 @@
+{
+  "entries": {
+    "ws_transition_matte": [
+      "0x0c4f0590",
+      "r0"
+    ],
+    "ws_fade_submit": [
+      "0x0c4f059c",
+      "r0"
+    ],
+    "ws_hud_render": [
+      "0x0c4f0640",
+      "r0"
+    ],
+    "ws_result": [
+      "0x0c4f06f4",
+      "r2"
+    ]
+  },
+  "pinned": {
+    "gdx_sock_create": "0x0c4f0000",
+    "gdx_sock_close": "0x0c4f0004",
+    "gdx_gethostbyname": "0x0c4f003c",
+    "gdx_connect_sock": "0x0c4f0068",
+    "gdx_select": "0x0c4f00b4",
+    "gdx_lbs_sock_write": "0x0c4f00f4",
+    "gdx_lbs_sock_read": "0x0c4f0120",
+    "gdx_mcs_sock_read": "0x0c4f015c",
+    "gdx_mcs_sock_write": "0x0c4f0168",
+    "gdx_softreset_disconnect": "0x0c4f0194",
+    "gdx_ppp_get_status": "0x0c4f0218",
+    "gdx_dial_start_disk1": "0x0c4f0540",
+    "gdx_dial_start_disk2": "0x0c4f0568",
+    "gdx_rpc": "0x0c4e0200"
+  }
+}
