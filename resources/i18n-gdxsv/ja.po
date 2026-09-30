@@ -378,13 +378,13 @@ msgid "Solomon (Space)"
 msgstr "ソロモン宙域"
 
 msgid "A Baoa Qu (Space)"
-msgstr "ア・巴瓦・庫 宙域"
+msgstr "ア・バオア・クー宙域"
 
 msgid "A Baoa Qu (Outter)"
-msgstr "ア・巴瓦・庫 外部"
+msgstr "ア・バオア・クー外部"
 
 msgid "A Baoa Qu (Inner)"
-msgstr "ア・巴瓦・庫 內部"
+msgstr "ア・バオア・クー内部"
 
 msgid "Sat.Orbit 1"
 msgstr "衛星軌道１"
