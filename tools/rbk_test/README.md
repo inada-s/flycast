@@ -60,6 +60,7 @@ These do nothing unless set.
 | `VITAL`, `MAXREBATTLE` | Team vitals and number of re-battles (existing) | local test |
 | `RAND_MASK` | Hex kcode mask for the random input. The default leaves out down/right, so the re-battle menu is never cancelled; `06F6` reaches it | local test |
 | `TEST_RELAY` | `single`: peer 0 reaches peer 3 through peer 1. `loop`: peer 1 also reaches peer 3 through peer 0 | local test |
+| `RBK_SAVE_REPLAY` | Saves the match to `data/replays/0123456.pb` when it ends (never uploaded) | local test |
 | `GGPO_TEST_LOG` | Logs `RBKTEST` lines: timesync skip record/replay, rollback loads, scene changes, relay forwards and loop drops | any session |
 
 ## Not covered here

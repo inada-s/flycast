@@ -384,6 +384,10 @@ void GdxsvBackendRollback::OnMainUiLoop() {
 	// return-to-lobby flow blocks retrying a lobby server that isn't there.
 	if (is_local_test_ && State::CloseWait <= state_) {
 		static int local_test_closing = 180;
+		// RBK_SAVE_REPLAY=1 keeps the match as a local replay. The countdown
+		// leaves the writer thread time to finish before the process exits.
+		if (local_test_closing == 180 && getenv("RBK_SAVE_REPLAY"))
+			SaveReplay();
 		if (--local_test_closing == 0) {
 			// The exit status is how a test harness learns whether the match
 			// ran to its end or broke off. A normal battle closes with
@@ -439,6 +443,8 @@ bool GdxsvBackendRollback::StartLocalTest(const char* param) {
 
 	proto::P2PMatching matching;
 	matching.set_battle_code("0123456");
+	// Saved with the replay, which sends it back as the rule; Disc 1 crashes on an empty rule.
+	matching.set_rule_bin(DummyRuleData, sizeof(DummyRuleData));
 	matching.set_peer_id(me);
 	matching.set_session_id(12345);
 	matching.set_ping_test_duration(7500);
@@ -456,10 +462,20 @@ bool GdxsvBackendRollback::StartLocalTest(const char* param) {
 		matching.mutable_candidates()->Add(std::move(player));
 	}
 	for (int i = 0; i < n; i++) {
+		// Mirror the lbsAskPlayerInfo answer below, so a saved replay feeds the
+		// game the same player info and plays back in sync.
+		const std::string id = "USER0" + std::to_string(i + 1);
+		std::string game_param(reinterpret_cast<char*>(DummyGameParam), sizeof(DummyGameParam));
+		game_param[16] = '0' + i + 1;
+		game_param[17] = 0;
 		proto::BattleLogUser user{};
-		user.set_user_id("USER0" + std::to_string(i));
-		user.set_user_name("USER0" + std::to_string(i));
+		user.set_user_id(id);
+		user.set_user_name(id);
+		user.set_user_name_sjis(id);
 		user.set_pilot_name("PILOT0" + std::to_string(i));
+		user.set_game_param(game_param);
+		user.set_grade(1);
+		user.set_pos(i + 1);
 		user.set_team(i / 2 + 1);
 		matching.mutable_users()->Add(std::move(user));
 	}
@@ -1146,7 +1162,9 @@ void GdxsvBackendRollback::SaveReplay() const {
 	log->set_close_reason(report_.close_reason());
 	log->set_disconnect_user_index(report_.disconnected_peer_id());
 
-	std::thread([log = std::move(log)]() {
+	// Local test replays share one battle code and must never reach the server.
+	const bool upload = config::GdxUploadReplay && !is_local_test_;
+	std::thread([log = std::move(log), upload]() {
 		auto replay_dir = get_writable_data_path("replays");
 		if (!file_exists(replay_dir)) {
 			if (!make_directory(replay_dir)) {
@@ -1176,7 +1194,7 @@ void GdxsvBackendRollback::SaveReplay() const {
 			return;
 		}
 
-		if (!config::GdxUploadReplay) {
+		if (!upload) {
 			return;
 		}
 
