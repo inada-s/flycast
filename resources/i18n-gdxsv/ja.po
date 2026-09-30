@@ -235,6 +235,15 @@ msgstr "リプレイアップロード"
 msgid "Automatically upload the replay file after save"
 msgstr "オンライン対戦のリプレイファイルを自動アップロードします。"
 
+msgid "Replay Folder"
+msgstr "リプレイフォルダー"
+
+msgid "Folder where replay files are saved and listed, e.g. on an external drive.\nReplays already saved are not moved.\nIf the folder is not found, the default folder is used."
+msgstr "リプレイファイルを保存・一覧表示するフォルダです。外付けドライブも指定できます。\n保存済みのリプレイは移動されません。\nフォルダが見つからない場合は既定のフォルダを使います。"
+
+msgid "Select the replay folder"
+msgstr "リプレイフォルダーを選択"
+
 msgid "Display Network Statistics"
 msgstr "通信状況表示"
 

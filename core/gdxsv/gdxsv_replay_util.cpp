@@ -111,7 +111,8 @@ size_t local_replay_page = 0;
 std::string selected_replay_file;
 std::string broken_replay_path;
 std::set<std::string> local_favorites;
-bool local_favorites_loaded = false;
+std::string local_favorites_dir; // the folder local_favorites was read from
+std::string local_replays_dir;   // the folder local_replays_future lists
 bool local_favorites_only = false;
 std::future<bool> server_favorite_download;
 std::string server_favorite_download_name;
@@ -511,7 +512,7 @@ std::string local_favorites_path(const std::string& replay_dir) {
 
 void load_local_favorites(const std::string& replay_dir) {
 	local_favorites.clear();
-	local_favorites_loaded = true;
+	local_favorites_dir = replay_dir;
 	FILE* fp = nowide::fopen(local_favorites_path(replay_dir).c_str(), "rb");
 	if (fp == nullptr)
 		return;
@@ -570,8 +571,8 @@ bool download_replay_file(const std::string& url, const std::string& replay_dir,
 
 // Server replays become favorites by saving them next to the local recordings.
 void draw_server_favorite_button(const std::string& replay_url, const std::string& battle_code) {
-	const auto replay_dir = get_writable_data_path("replays");
-	if (!local_favorites_loaded)
+	const auto replay_dir = gdxsv_replay_dir();
+	if (local_favorites_dir != replay_dir)
 		load_local_favorites(replay_dir);
 	if (server_favorite_download.valid() && future_is_ready(server_favorite_download)) {
 		if (server_favorite_download.get()) {
@@ -735,10 +736,19 @@ bool draw_replay_entry(const ReplayEntry& entry, int index, bool selected, bool 
 }
 
 void gdxsv_replay_local_tab() {
-	const auto replay_dir = get_writable_data_path("replays");
+	const auto replay_dir = gdxsv_replay_dir();
+	// The replay folder setting changed, or its drive came or went. A scan still
+	// running finishes first: dropping its future would block this frame.
+	if (replay_dir != local_replays_dir && (!local_replays_future.valid() || future_is_ready(local_replays_future))) {
+		local_replays_dir = replay_dir;
+		local_replay_page = 0;
+		local_replays_future = {};
+		selected_replay_file.clear();
+		pov_index = -1;
+	}
 	const bool new_page = !local_replays_future.valid();
 	if (new_page) {
-		if (!local_favorites_loaded)
+		if (local_favorites_dir != replay_dir)
 			load_local_favorites(replay_dir);
 		// Scan filenames and parse only the requested page off the UI thread.
 		local_replays_future = std::async(std::launch::async, read_local_replays, replay_dir, local_replay_page,
@@ -752,7 +762,7 @@ void gdxsv_replay_local_tab() {
 	if (ImGui::Button(ICON_FA_ARROW_ROTATE_RIGHT "  Reload")) {
 		local_replay_page = 0;
 		local_replays_future = {};
-		local_favorites_loaded = false;
+		local_favorites_dir.clear();
 		selected_replay_file.clear();
 		pov_index = -1;
 		ImGui::EndDisabled();
@@ -795,6 +805,10 @@ void gdxsv_replay_local_tab() {
 
 	ImGui::SameLine();
 	ImGui::TextUnformatted(replay_dir.c_str());
+	if (!config::GdxReplayPath.get().empty() && replay_dir != config::GdxReplayPath.get()) {
+		ImGui::TextColored(ImVec4(1.f, .8f, .2f, 1.f), ICON_FA_TRIANGLE_EXCLAMATION "  Replay folder not found, showing the default folder: %s",
+			config::GdxReplayPath.get().c_str());
+	}
 
 	ImGui::BeginChild(ImGui::GetID("gdxsv_replay_file_list_paging"), ScaledVec2(450, 0), false, ImGuiWindowFlags_NoDecoration);
 	ImGui::BeginChild(ImGui::GetID("gdxsv_replay_file_list"),
@@ -1719,6 +1733,53 @@ void gdxsv_replay_server_tab() {
 }
 
 }  // namespace
+
+std::string gdxsv_replay_dir() {
+	const std::string custom = config::GdxReplayPath;
+	if (!custom.empty()) {
+		if (file_exists(custom))
+			return custom;
+		static std::mutex mutex;
+		static std::string warned;
+		std::lock_guard<std::mutex> lock(mutex);
+		if (warned != custom) {
+			WARN_LOG(COMMON, "Replay folder not found, using the default one: %s", custom.c_str());
+			warned = custom;
+		}
+	}
+	return get_writable_data_path("replays");
+}
+
+// Only the default folder is created: a chosen one missing now may be a mount
+// point of an unplugged drive, and creating it would fill the internal disk.
+static bool write_replay_file(const proto::BattleLogFile& log, const std::string& dir, const std::string& path, bool create_dir) {
+	if (!file_exists(dir) && (!create_dir || !make_directory(dir)))
+		return false;
+	FILE* fp = nowide::fopen(path.c_str(), "wb");
+	if (fp == nullptr)
+		return false;
+	const int fd = fileno(fp);
+	const bool ok = fd != -1 && log.SerializeToFileDescriptor(fd);
+	std::fclose(fp);
+	if (!ok)
+		nowide::remove(path.c_str());
+	return ok;
+}
+
+std::string gdxsv_save_replay_file(const proto::BattleLogFile& log, const std::string& dir, const std::string& filename) {
+	const std::string fallback = get_writable_data_path("replays");
+	std::string path = dir + "/" + filename;
+	if (write_replay_file(log, dir, path, dir == fallback))
+		return path;
+	if (dir != fallback) {
+		WARN_LOG(COMMON, "SaveReplay: cannot write to %s, saving to %s instead", dir.c_str(), fallback.c_str());
+		path = fallback + "/" + filename;
+		if (write_replay_file(log, fallback, path, true))
+			return path;
+	}
+	ERROR_LOG(COMMON, "SaveReplay: failed to write %s", path.c_str());
+	return {};
+}
 
 bool gdxsv_ensure_replay_savestate(int disk) {
 	const auto save_path = hostfs::getSavestatePath(99, false);

@@ -8,6 +8,16 @@
 // present before any dc_loadstate(99).
 bool gdxsv_ensure_replay_savestate(int disk);
 
+namespace proto { class BattleLogFile; }
+
+// gdxsv:ReplayPath when the folder exists, else data/replays. A folder on an
+// unplugged drive falls back instead of failing.
+std::string gdxsv_replay_dir();
+// Writes log to filename in dir (from gdxsv_replay_dir()), or in data/replays
+// if dir cannot take it, so a finished match is not lost. Safe on any thread.
+// Returns the path written, empty on failure.
+std::string gdxsv_save_replay_file(const proto::BattleLogFile& log, const std::string& dir, const std::string& filename);
+
 void gdxsv_start_replay(const std::string& replay_path, int pov, bool four_screen);
 void gdxsv_start_live_spectate(const std::string& battle_code, int pov);
 

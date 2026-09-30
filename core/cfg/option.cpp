@@ -178,6 +178,7 @@ Option<int> GdxLocalPort("LocalPort", 0, "gdxsv");
 Option<int> GdxMinDelay("MinDelay", 2, "gdxsv");
 Option<bool> GdxSaveReplay("SaveReplay", true, "gdxsv");
 Option<bool> GdxUploadReplay("UploadReplay", true, "gdxsv");
+Option<std::string, false> GdxReplayPath("ReplayPath", "", "gdxsv");
 Option<bool> GdxSkipRenderingHack("SkipRenderingHack", true, "gdxsv");
 Option<bool> GdxSlowIdleLoopHack("SlowIdleLoopHack", true, "gdxsv");
 

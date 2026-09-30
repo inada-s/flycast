@@ -232,6 +232,15 @@ msgstr "上載 Replay"
 msgid "Automatically upload the replay file after save"
 msgstr "上載網絡對戰嘅重播檔案。"
 
+msgid "Replay Folder"
+msgstr "Replay 資料夾"
+
+msgid "Folder where replay files are saved and listed, e.g. on an external drive.\nReplays already saved are not moved.\nIf the folder is not found, the default folder is used."
+msgstr "儲存同列出重播檔案嘅資料夾，可以揀外置硬碟。\n已經儲存咗嘅重播唔會搬走。\n搵唔到資料夾嘅話，會用預設資料夾。"
+
+msgid "Select the replay folder"
+msgstr "揀 Replay 資料夾"
+
 msgid "Display Network Statistics"
 msgstr "對戰時顯示連線状態"
 

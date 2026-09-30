@@ -533,6 +533,7 @@ extern Option<int> GdxLocalPort;
 extern Option<int> GdxMinDelay;
 extern Option<bool> GdxSaveReplay;
 extern Option<bool> GdxUploadReplay;
+extern Option<std::string, false> GdxReplayPath; // empty: data/replays
 extern Option<bool> GdxSkipRenderingHack;
 extern Option<bool> GdxSlowIdleLoopHack;
 extern Option<bool> GdxReplayHideName;
