@@ -893,7 +893,7 @@ void UdpPingPong::Start(uint32_t session_id, uint8_t peer_id, int port, int dura
 				}
 
 				if (n == sizeof(RelayPacket) && buf.relay.magic == RELAY_MAGIC) {
-					OnRelayPong(buf.relay, session_id);
+					OnRelayPong(buf.relay, session_id, sender_storage.ss_family == AF_INET6);
 					continue;
 				}
 
@@ -1028,20 +1028,22 @@ void UdpPingPong::Start(uint32_t session_id, uint8_t peer_id, int port, int dura
 					}
 				}
 				for (int k = 0; k < (int)relays_.size(); k++) {
-					auto &r = relays_[k];
-					RelayPacket p{};
-					p.magic = RELAY_MAGIC;
-					p.type = RELAY_PING;
-					p.peer_id = peer_id;
-					p.relay_idx = k;
-					p.session_id = session_id;
-					p.token = r.token;
-					p.timestamp = std::chrono::duration_cast<std::chrono::milliseconds>(
-									  std::chrono::high_resolution_clock::now().time_since_epoch())
-									  .count();
-					p.timestamp -= network_delay;
-					client_.SendTo(reinterpret_cast<const char *>(&p), sizeof(p), r.remote);
-					r.ping_count++;
+					for (auto &path : relays_[k].paths) {
+						if (!path.remote.is_open()) continue;
+						RelayPacket p{};
+						p.magic = RELAY_MAGIC;
+						p.type = RELAY_PING;
+						p.peer_id = peer_id;
+						p.relay_idx = k;
+						p.session_id = session_id;
+						p.token = relays_[k].token;
+						p.timestamp = std::chrono::duration_cast<std::chrono::milliseconds>(
+										  std::chrono::high_resolution_clock::now().time_since_epoch())
+										  .count();
+						p.timestamp -= network_delay;
+						client_.SendTo(reinterpret_cast<const char *>(&p), sizeof(p), path.remote);
+						path.ping_count++;
+					}
 				}
 			}
 
@@ -1094,14 +1096,27 @@ void UdpPingPong::AddCandidate(const std::string &user_id, uint8_t peer_id, cons
 	}
 }
 
-void UdpPingPong::AddRelay(const std::string &ip, int port, uint64_t token) {
+void UdpPingPong::AddRelay(const std::string &ip, const std::string &ip6, int port, uint64_t token) {
 	std::lock_guard<std::recursive_mutex> lock(mutex_);
 	if (MAX_RELAYS <= relays_.size()) return;
+	// Keep the slot even if neither address opens: the relay index must match the lobby's list.
 	Relay r{};
 	r.token = token;
-	if (r.remote.Open(ip.c_str(), port)) {
-		relays_.emplace_back(r);
+	r.paths[0].remote.Open(ip.c_str(), port, UdpRemote::IpPref::V4Only);
+	if (!ip6.empty()) {
+		r.paths[1].remote.Open(ip6.c_str(), port, UdpRemote::IpPref::V6Only);
 	}
+	relays_.emplace_back(r);
+}
+
+int UdpPingPong::Relay::BestPath() const {
+	int best = -1;
+	for (int f = 0; f < 2; f++) {
+		if (0 < paths[f].rtt && (best == -1 || paths[f].rtt < paths[best].rtt)) {
+			best = f;
+		}
+	}
+	return best;
 }
 
 void UdpPingPong::SendPeerPacket(PacketWithRelays &p, const UdpRemote &remote) {
@@ -1114,36 +1129,47 @@ void UdpPingPong::SendPeerPacket(PacketWithRelays &p, const UdpRemote &remote) {
 	client_.SendTo(reinterpret_cast<const char *>(&p), sizeof(PacketWithRelays), remote);
 }
 
-void UdpPingPong::OnRelayPong(const RelayPacket &recv, uint32_t session_id) {
+void UdpPingPong::OnRelayPong(const RelayPacket &recv, uint32_t session_id, bool from_v6) {
 	std::lock_guard<std::recursive_mutex> lock(mutex_);
 	if (recv.type != RELAY_PONG || recv.session_id != session_id || recv.peer_id != peer_id_ ||
 		relays_.size() <= recv.relay_idx) {
 		return;
 	}
 	auto &r = relays_[recv.relay_idx];
-	if (recv.token != r.token || 256 <= r.rtt_samples.size()) {
+	auto &path = r.paths[from_v6 ? 1 : 0];
+	if (recv.token != r.token || 256 <= path.rtt_samples.size()) {
 		return;
 	}
 	const auto now =
 		std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::high_resolution_clock::now().time_since_epoch()).count();
-	const int rtt = std::max(1, static_cast<int>(now - recv.timestamp));
-	r.rtt_samples.push_back(rtt);
-	r.pong_count++;
-	auto samples = r.rtt_samples;
+	path.rtt_samples.push_back(std::max(1, static_cast<int>(now - recv.timestamp)));
+	path.pong_count++;
+	auto samples = path.rtt_samples;
 	auto mid = samples.begin() + (samples.size() - 1) / 2;
 	std::nth_element(samples.begin(), mid, samples.end());
-	relay_rtt_matrix_[peer_id_][recv.relay_idx] = static_cast<uint8_t>(std::min(255, *mid));
+	path.rtt = *mid;
+	relay_rtt_matrix_[peer_id_][recv.relay_idx] = static_cast<uint8_t>(std::min(255, r.paths[r.BestPath()].rtt));
 }
 
-bool UdpPingPong::GetRelayAddress(int relay_idx, sockaddr_storage *dst) {
+bool UdpPingPong::GetRelayAddress(int relay_idx, sockaddr_storage *use, sockaddr_storage *alt) {
 	std::lock_guard<std::recursive_mutex> lock(mutex_);
+	memset(use, 0, sizeof(sockaddr_storage));
+	memset(alt, 0, sizeof(sockaddr_storage));
 	if (relay_idx < 0 || (int)relays_.size() <= relay_idx) {
 		return false;
 	}
 	const auto &r = relays_[relay_idx];
-	memset(dst, 0, sizeof(sockaddr_storage));
-	memcpy(dst, r.remote.net_addr(), r.remote.net_addr_len());
-	return true;
+	const int best = r.BestPath();
+	const int f = best == -1 ? 0 : best;
+	const auto &used = r.paths[f].remote;
+	const auto &other = r.paths[1 - f].remote;
+	if (used.is_open()) {
+		memcpy(use, used.net_addr(), used.net_addr_len());
+	}
+	if (other.is_open()) {
+		memcpy(alt, other.net_addr(), other.net_addr_len());
+	}
+	return best != -1;
 }
 
 void UdpPingPong::GetRelayRttMatrix(uint8_t matrix[N][MAX_RELAYS]) {
@@ -1218,9 +1244,14 @@ void UdpPingPong::PrintRttMatrix() {
 	}
 
 	for (int k = 0; k < (int)relays_.size(); k++) {
-		const auto &r = relays_[k];
-		NOTICE_LOG(COMMON, "RELAY%d %s: ping=%d pong=%d rtt=[%d %d %d %d]", k, r.remote.str_addr().c_str(), r.ping_count, r.pong_count,
-				   relay_rtt_matrix_[0][k], relay_rtt_matrix_[1][k], relay_rtt_matrix_[2][k], relay_rtt_matrix_[3][k]);
+		NOTICE_LOG(COMMON, "RELAY%d rtt=[%d %d %d %d]", k, relay_rtt_matrix_[0][k], relay_rtt_matrix_[1][k], relay_rtt_matrix_[2][k],
+				   relay_rtt_matrix_[3][k]);
+		for (const auto &path : relays_[k].paths) {
+			if (path.remote.is_open()) {
+				NOTICE_LOG(COMMON, "  %s: ping=%d pong=%d rtt=%d", path.remote.str_addr().c_str(), path.ping_count, path.pong_count,
+						   path.rtt);
+			}
+		}
 	}
 }
 

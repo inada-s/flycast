@@ -128,9 +128,12 @@ class UdpPingPong {
 	bool Running() const;
 	int ElapsedMs() const;
 	void AddCandidate(const std::string &user_id, uint8_t peer_id, const std::string &ip, int port);
-	void AddRelay(const std::string &ip, int port, uint64_t token);
+	// A relay is pinged over IPv4 and IPv6 (ip6 may be empty); the faster family that answers is used.
+	void AddRelay(const std::string &ip, const std::string &ip6, int port, uint64_t token);
 	bool GetAvailableAddress(uint8_t peer_id, sockaddr_storage *dst, float *rtt);
-	bool GetRelayAddress(int relay_idx, sockaddr_storage *dst);
+	// use: the relay's address in the faster family that answered, false if neither did.
+	// alt: its address in the other family, if any (ss_family 0 otherwise).
+	bool GetRelayAddress(int relay_idx, sockaddr_storage *use, sockaddr_storage *alt);
 	void GetRttMatrix(uint8_t matrix[N][N]);
 	// matrix[peer][relay] is the RTT from the peer to the relay, 0 when unknown.
 	void GetRelayRttMatrix(uint8_t matrix[N][MAX_RELAYS]);
@@ -158,12 +161,18 @@ class UdpPingPong {
 		std::vector<int> rtt_samples;
 	};
 
-	struct Relay {
+	struct RelayPath {
 		UdpRemote remote;
-		uint64_t token;
 		int ping_count;
 		int pong_count;
+		int rtt;  // median, 0 until a pong
 		std::vector<int> rtt_samples;
+	};
+
+	struct Relay {
+		uint64_t token;
+		RelayPath paths[2];  // IPv4, IPv6
+		int BestPath() const;
 	};
 
 #pragma pack(1)
@@ -196,7 +205,7 @@ class UdpPingPong {
 	static_assert(sizeof(RelayPacket) == 28, "RelayPacket must match gdxsv relayPingSize");
 
 	void SendPeerPacket(PacketWithRelays &p, const UdpRemote &remote);
-	void OnRelayPong(const RelayPacket &recv, uint32_t session_id);
+	void OnRelayPong(const RelayPacket &recv, uint32_t session_id, bool from_v6);
 
 	std::atomic<bool> running_;
 	std::chrono::high_resolution_clock::time_point start_time_;

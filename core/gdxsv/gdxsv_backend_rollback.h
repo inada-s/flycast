@@ -61,8 +61,6 @@ class GdxsvBackendRollback {
 	// Highest frame GGPO can no longer roll back, or -1 without a session.
 	int ConfirmedFrame();
 	void UpdateNetworkStatSnapshot();
-	// The address this peer uses for a relay server: IPv6 when both have it, IPv4 otherwise.
-	std::string RelayIp(const proto::RelayServer &relay) const;
 
 	State state_ = State::None;
 	bool is_local_test_ = false;
