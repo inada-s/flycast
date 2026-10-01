@@ -11,6 +11,9 @@
 
 using namespace i18n;
 
+// ui/settings_general.cpp. Not including ui/settings.h: its header() clashes with ours.
+void gui_replay_folder_setting();
+
 inline static void header(const char* title) {
 	ImGui::PushStyleVar(ImGuiStyleVar_ButtonTextAlign, ImVec2(0.f, 0.5f));	// Left
 	ImGui::PushStyleVar(ImGuiStyleVar_DisabledAlpha, 1.0f);
@@ -354,6 +357,9 @@ void gdxsv_gui_settings_tab()
 		OptionCheckbox(T("Upload Replay"), config::GdxUploadReplay,
 			T("Automatically upload the replay file after save"));
 	}
+#if !defined(__ANDROID__) && !defined(TARGET_IPHONE)
+	gui_replay_folder_setting();
+#endif
 
 	OptionCheckbox(T("Display Network Statistics"), config::NetworkStats,
 		T("Display network statistics on screen by default.\n"

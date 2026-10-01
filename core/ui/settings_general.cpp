@@ -78,6 +78,12 @@ static void manageSinglePath(const char* label, const char *popupName, config::O
         ImGui::OpenPopup(T(popupName));
 }
 
+void gui_replay_folder_setting()
+{
+    manageSinglePath(T("Replay Folder"), T("Select the replay folder"), config::GdxReplayPath,
+    		T("Folder where replay files are saved and listed, e.g. on an external drive.\nReplays already saved are not moved.\nIf the folder is not found, the default folder is used."));
+}
+
 static void managePathList(const char* label, const char *popupName, std::vector<std::string>& paths, const char* helpText)
 {
     ImguiID _(label);
@@ -462,6 +468,11 @@ void gui_settings_general()
 #if !defined(TARGET_IPHONE)
     ImGui::Spacing();
     header(T("Custom Paths"));
+
+#if !defined(__ANDROID__)
+    gui_replay_folder_setting();
+    ImGui::Spacing();
+#endif
 
     managePathList(T("BIOS Folders"), T("Select a BIOS folder"), config::BiosPath.get(),
     		T("Folders containing BIOS files (e.g. dc_boot.bin or dc_bios.bin) and arcade BIOS"));

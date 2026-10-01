@@ -26,6 +26,8 @@ using namespace i18n;
 
 void gui_display_settings();
 void gui_settings_general();
+// gdxsv: shown in Custom Paths and in the gdxsv tab. Not on Android or iOS.
+void gui_replay_folder_setting();
 void applyCurrentTheme();
 void addContentPath(bool start);
 void gui_settings_controls(std::array<bool, 4>& mapleDevicesChanges, std::array<std::array<bool, 2>, 4>& expDevicesChanges);

@@ -1842,34 +1842,8 @@ void GdxsvBackendReplay::Stop() {
 	emu.getSh4Executor()->Stop(); // Fix fastForwardMode hang
 
 	if (save_converted_log_) {
-		auto replay_dir = get_writable_data_path("replays");
-		if (!file_exists(replay_dir)) {
-			if (!make_directory(replay_dir)) {
-				ERROR_LOG(COMMON, "Failed to create replay directory");
-				return;
-			}
-		}
-
-		auto replay_file = replay_dir + "/" + log_file_.battle_code() + "_converted.pb";
-		FILE* f = nowide::fopen(replay_file.c_str(), "wb");
-		if (f == nullptr) {
-			ERROR_LOG(COMMON, "SaveReplay: fopen failure");
-			return;
-		}
-
-		int fd = fileno(f);
-		if (fd == -1) {
-			ERROR_LOG(COMMON, "SaveReplay: fileno failure");
-			return;
-		}
-
-		bool ok = log_file_.SerializeToFileDescriptor(fd);
-		fclose(f);
-
-		if (!ok) {
-			ERROR_LOG(COMMON, "SaveReplay: SerializeToFileDescriptor failure");
-		}
-		NOTICE_LOG(COMMON, "SaveReplay: Done");
+		if (!gdxsv_save_replay_file(log_file_, gdxsv_replay_dir(), log_file_.battle_code() + "_converted.pb").empty())
+			NOTICE_LOG(COMMON, "SaveReplay: Done");
 	}
 }
 

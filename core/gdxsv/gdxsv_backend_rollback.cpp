@@ -14,6 +14,7 @@
 #include "gdxsv.h"
 #include "gdxsv_round_counters.h"
 #include "gdxsv_emu_hooks.h"
+#include "gdxsv_replay_util.h"
 #include "gdxsv.pb.h"
 #include "imgui/imgui.h"
 #include "imgui/imgui_internal.h"
@@ -1242,37 +1243,9 @@ void GdxsvBackendRollback::SaveReplay() const {
 
 	// Local test replays share one battle code and must never reach the server.
 	const bool upload = config::GdxUploadReplay && !is_local_test_;
-	std::thread([log = std::move(log), upload]() {
-		auto replay_dir = get_writable_data_path("replays");
-		if (!file_exists(replay_dir)) {
-			if (!make_directory(replay_dir)) {
-				ERROR_LOG(COMMON, "Failed to create replay directory");
-				return;
-			}
-		}
-
-		auto replay_file = replay_dir + "/" + log->battle_code() + ".pb";
-		FILE* f = nowide::fopen(replay_file.c_str(), "wb");
-		if (f == nullptr) {
-			ERROR_LOG(COMMON, "SaveReplay: fopen failure");
-			return;
-		}
-
-		int fd = fileno(f);
-		if (fd == -1) {
-			ERROR_LOG(COMMON, "SaveReplay: fileno failure");
-			return;
-		}
-
-		bool ok = log->SerializeToFileDescriptor(fd);
-		fclose(f);
-
-		if (!ok) {
-			ERROR_LOG(COMMON, "SaveReplay: SerializeToFileDescriptor failure");
-			return;
-		}
-
-		if (!upload) {
+	std::thread([log = std::move(log), upload, replay_dir = gdxsv_replay_dir()]() {
+		const auto replay_file = gdxsv_save_replay_file(*log, replay_dir, log->battle_code() + ".pb");
+		if (replay_file.empty() || !upload) {
 			return;
 		}
 
