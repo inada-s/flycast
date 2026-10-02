@@ -342,6 +342,17 @@ def d6_relay_server_ipv6(s: Settings) -> Result:
     return verdict(bad, [summary(m)])
 
 
+def d7_relay_lower_rtt_wins(s: Settings) -> Result:
+    if not s.relay_exe:
+        return SKIP, ["no gdxsv binary (--relay-exe)"]
+    m, _ = _with_relays(s, "D7", 1, "fair")
+    bad = common(m)
+    picks = [l for l in m.peers[0].log.splitlines() if "Peer3 " in l and "Relay:" in l]
+    if not picks or "Relay:2" not in picks[-1]:
+        bad.append("p1 did not pick the relay server over the slower relaying peer: " + (picks[-1].strip() if picks else "no Peer3 line"))
+    return verdict(bad, [summary(m)] + [p.strip() for p in picks[-1:]])
+
+
 CASES: Dict[str, Tuple[str, Callable[[Settings], Result], int, bool]] = {
     # id: (title, function, rough minutes, long-running)
     "A1": ("basic 4-player match", a1_basic, 1, False),
@@ -360,6 +371,7 @@ CASES: Dict[str, Tuple[str, Callable[[Settings], Result], int, bool]] = {
     "D4": ("relay server path, peers answer through it", d4_relay_server, 1, False),
     "D5": ("two relay servers, peers settle on the earlier one", d5_relay_servers_settle, 1, False),
     "D6": ("relay server between IPv6 and IPv4 peers", d6_relay_server_ipv6, 1, False),
+    "D7": ("relaying peer and relay server: the lower RTT wins", d7_relay_lower_rtt_wins, 1, False),
 }
 
 

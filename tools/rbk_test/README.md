@@ -52,6 +52,7 @@ A failed ROM load still exits with code 0, so the suite checks the logs, not the
 | D4 | Relay server | a local `gdxsv relay` (`--relay-exe`, default `../gdxsv/bin/gdxsv.exe`), `TEST_RELAY=server` | p1 picks the server (`Relay:2`), every peer sends through it (the others after p1's packets reach them through it), the relay bound all four peers, common checks. Skipped without the binary |
 | D5 | Two relay servers | two local relays, `TEST_RELAY=server2` | p1 starts on server 1 for peer 1 and moves to server 0, which peer 1 picked; peer 1 stays on server 0; peers 2 and 3 answer peer 0 through server 1; common checks |
 | D6 | Relay server across IP families | a dual-stack local relay, `TEST_RELAY=server`, `TEST_RELAY_IPV6=::1` | peers 1-2 get only a reachable IPv6 address for the relay and pick it, peers 3-4 use IPv4 (the relay binds 2 and 2), peer 0 relays to everyone, common checks. The relay listens on all addresses, which may raise a firewall prompt |
+| D7 | Lower RTT wins between relays | a local relay, `TEST_RELAY=fair` | p1 reaches p4 through the relay server (~35 ms) rather than through p2 (50 ms), though the server is less than 16 ms faster; common checks |
 
 ## Test-only switches (environment variables)
 
@@ -62,7 +63,7 @@ These do nothing unless set.
 | `GGPO_NETWORK_DELAY` | Send latency in ms (GGPO, existing) | any session |
 | `VITAL`, `MAXREBATTLE` | Team vitals and number of re-battles (existing) | local test |
 | `RAND_MASK` | Hex kcode mask for the random input. The default leaves out down/right, so the re-battle menu is never cancelled; `06F6` reaches it | local test |
-| `TEST_RELAY` | `single`: peer 0 reaches peer 3 through peer 1. `loop`: peer 1 also reaches peer 3 through peer 0. `server`: peer 0 reaches every peer through the relay server. `server2`: two relay servers, peer 0 picks the second and peer 1 the first | local test |
+| `TEST_RELAY` | `single`: peer 0 reaches peer 3 through peer 1. `loop`: peer 1 also reaches peer 3 through peer 0. `server`: peer 0 reaches every peer through the relay server. `server2`: two relay servers, peer 0 picks the second and peer 1 the first. `fair`: peer 0 reaches peer 3 through peer 1 (50 ms) or the relay server, whichever is faster | local test |
 | `TEST_RELAY_SERVER`, `TEST_RELAY_TOKEN`, `TEST_RELAY_IPV6` | Adds relay servers (`ip:port`, comma separated; hex token, default `1234`; for peers 0-1, every relay gets this IPv6 address and an unreachable IPv4 one) to the local match, for a relay started with `-relay_test_session=12345:<token>` | local test |
 | `RBK_SAVE_REPLAY` | Saves the match to `data/replays/0123456.pb` when it ends (never uploaded) | local test |
 | `GGPO_TEST_LOG` | Logs `RBKTEST` lines: timesync skip record/replay, rollback loads, scene changes, relay forwards and loop drops, relay server use | any session |

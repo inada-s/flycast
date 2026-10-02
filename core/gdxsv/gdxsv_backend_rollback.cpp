@@ -199,6 +199,8 @@ void GdxsvBackendRollback::OnMainUiLoop() {
 		// the other. TEST_RELAY=server makes peer 0 reach every peer through the relay server (TEST_RELAY_SERVER);
 		// the others stay direct until peer 0's packets reach them through the server. TEST_RELAY=server2 needs two
 		// relay servers: peer 0 picks the second and peer 1 reaches peer 0 through the first, so they must settle.
+		// TEST_RELAY=fair gives peer 0 two ways to peer 3 that both beat the direct path: through peer 1 (50 ms) and
+		// through the relay server (~35 ms here). The faster one, the server, must win.
 		const char* test_relay = is_local_test_ ? getenv("TEST_RELAY") : nullptr;
 		if (test_relay != nullptr && std::string(test_relay).rfind("server", 0) == 0) {
 			const bool two = std::string(test_relay) == "server2";
@@ -211,6 +213,13 @@ void GdxsvBackendRollback::OnMainUiLoop() {
 			if (matching_.peer_id() == 1 && two) {
 				ping_pong_.DebugSetRtt(1, 0, 200);
 				ping_pong_.DebugSetRelayRtt(1, 1, 150);
+			}
+			NOTICE_LOG(COMMON, "TEST_RELAY=%s", test_relay);
+		} else if (test_relay != nullptr && std::string(test_relay) == "fair") {
+			if (matching_.peer_id() == 0) {
+				ping_pong_.DebugSetRtt(0, 1, 10);
+				ping_pong_.DebugSetRtt(1, 3, 40);
+				ping_pong_.DebugSetRtt(0, 3, 200);
 			}
 			NOTICE_LOG(COMMON, "TEST_RELAY=%s", test_relay);
 		} else if (test_relay != nullptr) {
@@ -297,34 +306,40 @@ void GdxsvBackendRollback::OnMainUiLoop() {
 
 			sockaddr_storage addr_storage{};
 
-			float rtt;
-			bool direct_ok = ping_pong_.GetAvailableAddress(i, &addr_storage, &rtt);
+			float rtt = 0;
+			const bool direct_ok = ping_pong_.GetAvailableAddress(i, &addr_storage, &rtt);
+			const float direct_rtt = rtt;
+
+			// A relaying peer and a relay server each have to beat the direct path by their own margin (a peer
+			// spends its own bandwidth on relaying, so it needs the larger gain). Of the ones that do, the lower
+			// RTT wins.
 			bool relay_ok = false;
+			sockaddr_storage relay_addr{};
+			float relay_path_rtt = 0;
 			auto [relay_peer, relay_rtt] = find_relay_peer(i);
-			if (relay_peer != -1 && (!direct_ok || relay_rtt + 32 < rtt)) {
-				// Switch to the relay only once its address is known; otherwise keep the direct path, since
-				// relay-wrapped packets sent straight to the destination peer are dropped there.
-				sockaddr_storage relay_addr{};
+			if (relay_peer != -1 && (!direct_ok || relay_rtt + 32 < direct_rtt)) {
+				// Use the relay only once its address is known, since relay-wrapped packets sent straight to the
+				// destination peer are dropped there.
 				float relay_peer_rtt;
 				relay_ok = ping_pong_.GetAvailableAddress(relay_peer, &relay_addr, &relay_peer_rtt);
-				if (relay_ok) {
-					addr_storage = relay_addr;
-					rtt = relay_peer_rtt + static_cast<float>(rtt_matrix[relay_peer][i]);
-					relays[i] = true;
-				}
+				relay_path_rtt = relay_peer_rtt + static_cast<float>(rtt_matrix[relay_peer][i]);
 			}
 
-			// A relay server costs no peer any bandwidth, so it needs a smaller gain than a relaying peer.
 			bool server_ok = false;
+			sockaddr_storage server_addr{}, alt_addr{};
 			auto [server_idx, server_rtt] = find_relay_server(i);
-			if (server_idx != -1 && (!(direct_ok || relay_ok) || server_rtt + 16 < rtt)) {
-				sockaddr_storage server_addr{}, alt_addr{};
+			if (server_idx != -1 && (!direct_ok || server_rtt + 16 < direct_rtt)) {
 				server_ok = ping_pong_.GetRelayAddress(server_idx, &server_addr, &alt_addr);
-				if (server_ok) {
-					addr_storage = server_addr;
-					rtt = static_cast<float>(server_rtt);
-					relays[i] = 2;
-				}
+			}
+
+			if (server_ok && (!relay_ok || server_rtt <= relay_path_rtt)) {
+				addr_storage = server_addr;
+				rtt = static_cast<float>(server_rtt);
+				relays[i] = 2;
+			} else if (relay_ok) {
+				addr_storage = relay_addr;
+				rtt = relay_path_rtt;
+				relays[i] = 1;
 			}
 
 			if (direct_ok || relay_ok || server_ok) {
