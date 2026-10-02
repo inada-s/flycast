@@ -191,6 +191,8 @@ def main():
     ap.add_argument("--spectators", default="1:0", help="comma separated pov:join_delay_sec")
     ap.add_argument("--spectator-extra", default="", help="extra flycast args for spectators, space separated")
     ap.add_argument("--timeout", type=int, default=1500)
+    ap.add_argument("--port-base", type=int, default=0,
+                    help="TEST_PORT_BASE for the peers, to run alongside run_suite.py --jobs (needs a build with it)")
     a = ap.parse_args()
 
     s = lib.Settings(exe=a.exe, rom=a.rom, out=a.out, state_dir=a.state_dir)
@@ -200,6 +202,8 @@ def main():
     env = {"VITAL": a.vital, "MAXREBATTLE": a.rounds, "RBK_SAVE_REPLAY": "1"}
     if a.input_delay:
         env["TEST_GGPO_DELAY"] = a.input_delay
+    if a.port_base:
+        env["TEST_PORT_BASE"] = str(a.port_base)
     shutil.copy(LUA, os.path.join(a.out, "live_det.lua"))
     extra = ["--config", f"config:LuaFileName={LUA_REL}"]
     base = os.path.join(a.out, a.tag)
