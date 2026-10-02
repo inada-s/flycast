@@ -1003,6 +1003,7 @@ u32 GdxsvBackendRollback::OnSockRead(u32 addr, u32 size) {
 				DEBUG_LOG(COMMON, "KeyMsg1 frame=%d: skipFrame remaining=%d", frame, tsFrames - 1);
 			} else if (0 < skipFrameCount && gdxsv_ReadMem16(DataStopCounter) < skipFrameCount + 1) {
 				DEBUG_LOG(COMMON, "KeyMsg1 frame=%d: skipFrame replaying", frame);
+				if (ggpo::isInRollback()) ggpo::notifySkipReplayHeld();
 			} else if (frame % 2 == 1 && skipFrameCount == 0 && slowdownOn()) {
 				// Slowdown: this frame's input is dropped and the game waits; the next frame delivers.
 				// Odd frames only: timesync skips (frame % 10 == 0, one peer) never land on them.

@@ -96,6 +96,8 @@ static inline bool isInSkipFrame() {
 }
 
 void notifySkipInput();
+// A replayed timesync skip held back the input the game asked for (advance_frame).
+void notifySkipReplayHeld();
 int getSkippedFrames(int frame = -1);
 
 static inline void setExInput(u16 exInput) {

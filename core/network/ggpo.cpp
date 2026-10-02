@@ -39,6 +39,8 @@ namespace ggpo
 
 bool inRollback;
 bool skipInputOccurred;
+// Set by notifySkipReplayHeld while advance_frame replays a timesync skip.
+bool skipReplayHeld;
 std::unordered_map<int, int> skippedFrames;
 u16 localExInput;
 u16 localExInputFlags;
@@ -351,12 +353,27 @@ static bool advance_frame(int)
 	const int skips = skippedFrames[frame];
 	if (testLog && skips > 0)
 		NOTICE_LOG(NETWORK, "RBKTEST skip replay frame=%d skips=%d", frame, skips);
+	bool frameRan = false;
 	for (int i = 0; i < skips; i++) {
+		skipReplayHeld = false;
 		emu.run();
+		if (!skipReplayHeld) {
+			// A skip only holds back the input the game asked for. When the corrected run asks for none
+			// on this frame, the skip was taken on a mispredicted one, and an extra vblank would advance
+			// a scene that runs on its own, such as the countdown before a battle, ahead of the other peers.
+			// So that run was the frame itself.
+			if (testLog)
+				NOTICE_LOG(NETWORK, "RBKTEST skip dropped frame=%d skips=%d", frame, skips - i);
+			skippedFrames[frame] = i;
+			frameRan = true;
+			break;
+		}
 	}
 
-	settings.gdxsv.skipRenderingAddr = config::GdxSkipRenderingHack ? settings.gdxsv.skipRenderingBaseAddr : 0;
-	emu.run();
+	if (!frameRan) {
+		settings.gdxsv.skipRenderingAddr = config::GdxSkipRenderingHack ? settings.gdxsv.skipRenderingBaseAddr : 0;
+		emu.run();
+	}
 	ggpo_advance_frame(ggpoSession);
 
 	settings.aica.muteAudio = false;
@@ -804,6 +821,11 @@ void getInput(MapleInputState inputState[4])
 void notifySkipInput()
 {
 	skipInputOccurred = true;
+}
+
+void notifySkipReplayHeld()
+{
+	skipReplayHeld = true;
 }
 
 int getSkippedFrames(int frame)
