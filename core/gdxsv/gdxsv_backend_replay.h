@@ -274,6 +274,8 @@ class GdxsvBackendReplay {
 	// in flight (queued SeekToBriefing -> SetRound). Live catch-up must not
 	// run during that window - see the catch-up gate in OnNextFrame.
 	bool live_round_jump_pending_ = false;
+	// Live: the game's StartMsg is held until this round's start index arrives.
+	bool live_start_msg_pending_ = false;
 
 	// Armed only by StartLive. The first catch-up keeps waiting for downloaded
 	// inputs instead of ending at each temporary local edge. Completion or a

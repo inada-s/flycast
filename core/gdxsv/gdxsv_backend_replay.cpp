@@ -149,6 +149,7 @@ void GdxsvBackendReplay::Reset() {
 	live_following_ = true;
 	live_at_edge_ = false;
 	live_round_jump_pending_ = false;
+	live_start_msg_pending_ = false;
 	live_initial_catchup_ = false;
 	live_initial_backlog_ = true;
 	state_ = State::None;
@@ -726,6 +727,10 @@ void GdxsvBackendReplay::OnNextFrame() {
 	// mainui_loop. Draining here lets each one pick up newly arrived frames,
 	// so a catch-up seek can chase an edge that is still moving.
 	CheckLiveUpdate();
+	if (live_start_msg_pending_ && (!live_mode_ || start_msg_count_ < log_file_.start_msg_indexes_size())) {
+		live_start_msg_pending_ = false;
+		ProcessMcsMessage(McsMessage::Create(McsMessage::MsgType::StartMsg, pov_));
+	}
 	FollowMultiPovHost();
 	ProcessUiCommands();
 	if (state_ != State::End) {
@@ -2424,6 +2429,17 @@ void GdxsvBackendReplay::ProcessMcsMessage(const McsMessage& msg) {
 	} else if (msg_type == McsMessage::MsgType::StartMsg) {
 		if (takeover_) {
 			ctrl_commands_.emplace_back(ReplayCtrlCommand::RetryTakeover);
+			return;
+		}
+
+		// Live: playback jumps to the round's start index here, and peers count inputs between rounds
+		// differently, so playing on without it can shift the round. The index comes with the recorded
+		// peer's round marker, which can trail this StartMsg when the peers wait for each other longer
+		// than we trail them. Hold the StartMsg until it arrives, as at the live edge (OnNextFrame).
+		if (live_mode_ && log_file_.start_msg_indexes_size() <= start_msg_count_) {
+			if (!live_start_msg_pending_)
+				NOTICE_LOG(COMMON, "StartMsg held for round %d start", start_msg_count_ + 1);
+			live_start_msg_pending_ = true;
 			return;
 		}
 

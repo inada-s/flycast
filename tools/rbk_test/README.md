@@ -67,6 +67,35 @@ These do nothing unless set.
 | `TEST_RELAY_SERVER`, `TEST_RELAY_TOKEN`, `TEST_RELAY_IPV6` | Adds relay servers (`ip:port`, comma separated; hex token, default `1234`; for peers 0-1, every relay gets this IPv6 address and an unreachable IPv4 one) to the local match, for a relay started with `-relay_test_session=12345:<token>` | local test |
 | `RBK_SAVE_REPLAY` | Saves the match to `data/replays/0123456.pb` when it ends (never uploaded) | local test |
 | `GGPO_TEST_LOG` | Logs `RBKTEST` lines: timesync skip record/replay, rollback loads, scene changes, relay forwards and loop drops, relay server use | any session |
+| `TEST_GGPO_DELAY` | Fixed input delay in frames instead of one derived from the ping test, so a large `GGPO_NETWORK_DELAY` means deep prediction rather than more delay | local test |
+| `TEST_FAKE_TIMESYNC` | Peer 0 takes a timesync skip every K frames (K = value), as a peer whose clock runs fast does. Peers on one machine rarely get them | local test |
+| `TEST_SPECTATOR_LBS` | Streams the peers' confirmed inputs to a local lbs (`ip:port`) started with `-spectator_test_session` | local test |
+| `TEST_SPECTATOR_UPLINK` | Which peer lbs would ask to stream (peer number, default 1), or `all` as clients from before lbs picked one did | local test |
+| `TEST_UPLINK_ROUND_DELAY` | Sends round starts to lbs N frames late, so spectators reach StartMsg before the round's start index | local test |
+
+## Live spectator rig
+
+`live_rig.py` runs a match through a local lbs to live spectators, the same path as production: the
+peers' uplink (`TEST_SPECTATOR_LBS`), lbs assembling the live recording, and spectators joining with
+`gdxsv:spectate`. It needs a gdxsv build with `-spectator_test_session` (`--gdxsv`, default
+`../gdxsv/bin/gdxsv.exe`) and a Disc 2 replay of a local test for lbs to hand spectators the users and
+rule (`--make-header` makes one).
+
+```
+python tools/rbk_test/live_rig.py --rom D:\rom\gdx-disc2\gdx-disc2.gdi --make-header --tag livehdr --rounds 1
+TEST_FAKE_TIMESYNC=20 python tools/rbk_test/live_rig.py --rom D:\rom\gdx-disc2\gdx-disc2.gdi \
+    --header tools/rbk_test/out/livehdr/p1/data/replays/0123456.pb --rounds 4 --delays 30,50,60,80 --input-delay 3
+```
+
+lbs asks the participant nearest it to stream (`spectator_uplink` in P2PMatching), and records only
+the first peer whose upload arrives, which also covers older clients that all stream
+(`TEST_SPECTATOR_UPLINK=all`). The rig checks that lbs's recording is exactly that peer's replay,
+and that each spectator's battle state, logged once per sim step by `live_det.lua`, matches that
+replay played offline. With the settings above, a round often ends one
+input later on some peers than on others: the game sends a KeyMsg1 between rounds, and a peer taking
+a timesync skip on it never records it. lbs used to merge all peers and got the next round's start
+wrong then. Add `TEST_UPLINK_ROUND_DELAY=180` to make spectators wait at StartMsg for the round start
+(`StartMsg held` in their log); `--spectators 1:0,3:120` adds one that joins mid-match.
 
 ## Not covered here
 
@@ -74,4 +103,4 @@ Check these by hand against a real server:
 - Cancelling the re-battle menu with real input.
 - Start failure paths that need the server or real peers, such as `delay_too_large` or `unreachable`.
 - Relay through real NATs.
-- Spectators.
+- Spectators beyond `live_rig.py`: joining through the lobby UI, the close report, real network loss.
