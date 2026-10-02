@@ -523,6 +523,9 @@ bool GdxsvBackendRollback::StartLocalTest(const char* param) {
 	DummyRuleData[8] = vital & 0xff;
 	DummyRuleData[9] = (vital >> 8) & 0xff;
 
+	// TEST_PORT_BASE moves the peers' ports (default 20010 + peer), so several local tests can run at once.
+	const int port_base = getenv("TEST_PORT_BASE") ? atoi(getenv("TEST_PORT_BASE")) : 20010;
+
 	proto::P2PMatching matching;
 	matching.set_battle_code("0123456");
 	// Saved with the replay, which sends it back as the rule; Disc 1 crashes on an empty rule.
@@ -542,7 +545,7 @@ bool GdxsvBackendRollback::StartLocalTest(const char* param) {
 			player.set_ip("::1");
 		else
 			player.set_ip("127.0.0.1");
-		player.set_port(20010 + i);
+		player.set_port(port_base + i);
 		player.set_user_id("USER0" + std::to_string(i));
 		player.set_peer_id(i);
 		player.set_team(i / 2 + 1);
@@ -588,7 +591,7 @@ bool GdxsvBackendRollback::StartLocalTest(const char* param) {
 		}
 	}
 
-	Prepare(matching, 20010 + me);
+	Prepare(matching, port_base + me);
 	state_ = State::StartLocalTest;
 	is_local_test_ = true;
 	gdxsv.maxlag_ = 0;

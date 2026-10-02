@@ -10,6 +10,7 @@ import re
 import shutil
 import subprocess
 import sys
+import threading
 import time
 import urllib.request
 from dataclasses import dataclass, field
@@ -20,6 +21,23 @@ REPO = os.path.abspath(os.path.join(HERE, "..", ".."))
 IS_WINDOWS = os.name == "nt"
 EXE_NAME = "flycast.exe" if IS_WINDOWS else "flycast"
 N = 4
+DEFAULT_PORT_BASE = 20010  # the peers' ports: base + peer. Release builds always use this one.
+
+_local = threading.local()
+
+
+def port_base() -> int:
+    """Port base of the matches this thread runs (TEST_PORT_BASE), so cases can run in parallel."""
+    return getattr(_local, "port_base", DEFAULT_PORT_BASE)
+
+
+def set_port_base(base: int) -> None:
+    _local.port_base = base
+
+
+def relay_port_base() -> int:
+    """First port for local relay servers, apart from every other thread's."""
+    return 19879 + (port_base() - DEFAULT_PORT_BASE) // 10
 STATE_URL = "https://storage.googleapis.com/gdxsv/misc/{name}"
 
 # Log lines that mean something broke, whatever the case.
@@ -161,6 +179,8 @@ def run_match(s: Settings, tag: str, exes: List[str], delays: List[int], seed: i
         penv = os.environ.copy()
         penv.update(env or {})
         penv["GGPO_NETWORK_DELAY"] = str(delays[i])
+        if port_base() != DEFAULT_PORT_BASE:
+            penv["TEST_PORT_BASE"] = str(port_base())
         procs.append(subprocess.Popen(args, cwd=d, env=penv, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL))
         match.peers.append(Peer(i + 1, d))
 

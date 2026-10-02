@@ -11,9 +11,13 @@ python tools/rbk_test/run_suite.py --rom D:\rom\gdx-disc2\gdx-disc2.gdi --old-re
 python tools/rbk_test/run_suite.py --rom ... --cases C1,C2     # selected cases
 python tools/rbk_test/run_suite.py --rom ... --long            # include A2 (about 20 minutes)
 python tools/rbk_test/run_suite.py --list
+python tools/rbk_test/run_suite.py --rom ... --jobs 3                  # cases in parallel
 ```
 
 - `--exe` defaults to `cmake-build-relwithdebinfo/flycast.exe`.
+- `--jobs N` runs N cases at once, each on its own ports (`TEST_PORT_BASE`, local relays too). A3 and A4 run
+  release builds, which always use the default ports, so those two take turns. Each case runs four emulators;
+  keep N well under the CPU count, or timing-sensitive cases (stalls, B1) may fail from load alone.
 - `--old-release` / `--older-release` download a release with the GitHub CLI (`gh`). Use the latest
   release and one before it. Pass `--old-exe` / `--older-exe` to use local builds instead. Without
   them, A3/A4 are skipped.
@@ -66,6 +70,7 @@ These do nothing unless set.
 | `TEST_RELAY` | `single`: peer 0 reaches peer 3 through peer 1. `loop`: peer 1 also reaches peer 3 through peer 0. `server`: peer 0 reaches every peer through the relay server. `server2`: two relay servers, peer 0 picks the second and peer 1 the first. `fair`: peer 0 reaches peer 3 through peer 1 (50 ms) or the relay server, whichever is faster | local test |
 | `TEST_RELAY_SERVER`, `TEST_RELAY_TOKEN`, `TEST_RELAY_IPV6` | Adds relay servers (`ip:port`, comma separated; hex token, default `1234`; for peers 0-1, every relay gets this IPv6 address and an unreachable IPv4 one) to the local match, for a relay started with `-relay_test_session=12345:<token>` | local test |
 | `RBK_SAVE_REPLAY` | Saves the match to `data/replays/0123456.pb` when it ends (never uploaded) | local test |
+| `TEST_PORT_BASE` | First of the peers' ports (default 20010, peer N uses base + N), so local tests can run at once | local test |
 | `GGPO_TEST_LOG` | Logs `RBKTEST` lines: timesync skip record/replay, rollback loads, scene changes, relay forwards and loop drops, relay server use | any session |
 | `TEST_GGPO_DELAY` | Fixed input delay in frames instead of one derived from the ping test, so a large `GGPO_NETWORK_DELAY` means deep prediction rather than more delay | local test |
 | `TEST_FAKE_TIMESYNC` | Peer 0 takes a timesync skip every K frames (K = value), as a peer whose clock runs fast does. Peers on one machine rarely get them | local test |
