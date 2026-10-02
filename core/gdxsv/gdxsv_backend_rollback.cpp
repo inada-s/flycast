@@ -181,6 +181,14 @@ void GdxsvBackendRollback::OnMainUiLoop() {
 	static auto session_start_time = std::chrono::high_resolution_clock::now();
 	if (state_ == State::StartGGPOSession) {
 		NOTICE_LOG(COMMON, "StartGGPOSession");
+		// Local test only: live spectator uplink (ip:port) to a local lbs started with -spectator_test_session,
+		// from the peer StartLocalTest picked.
+		if (const char* lbs = is_local_test_ && matching_.spectator_uplink() ? getenv("TEST_SPECTATOR_LBS") : nullptr) {
+			const std::string addr(lbs);
+			const auto colon = addr.rfind(':');
+			spectator_uplink_.Start(addr.substr(0, colon), atoi(addr.substr(colon + 1).c_str()), matching_.battle_code(),
+									matching_.session_id(), false);
+		}
 		/*
 		if (matching_.peer_id() == 0) {
 			ping_pong_.DebugSetRtt(0, 1, 10);
@@ -353,7 +361,11 @@ void GdxsvBackendRollback::OnMainUiLoop() {
 		}
 
 		if (ok) {
-			const int delay = std::max<int>({2, config::GdxMinDelay.get(), static_cast<int>(max_rtt / 2.0 / 16.0 + 0.9999)});
+			int delay = std::max<int>({2, config::GdxMinDelay.get(), static_cast<int>(max_rtt / 2.0 / 16.0 + 0.9999)});
+			// Local test only: a fixed input delay, so a large GGPO_NETWORK_DELAY means deep prediction.
+			if (const char* fixed = is_local_test_ ? getenv("TEST_GGPO_DELAY") : nullptr) {
+				delay = atoi(fixed);
+			}
 			NOTICE_LOG(COMMON, "max_rtt=%.2f delay=%d", max_rtt, delay);
 			config::GGPOEnable.override(true);
 			config::GGPODelay.override(delay);
@@ -519,6 +531,11 @@ bool GdxsvBackendRollback::StartLocalTest(const char* param) {
 	matching.set_session_id(12345);
 	matching.set_ping_test_duration(7500);
 	matching.set_player_count(n);
+	// The peer lbs would ask to stream for live spectators: TEST_SPECTATOR_UPLINK=<peer number>, or "all" as clients
+	// from before lbs picked one did. Peer 1 by default.
+	const char* uplink = getenv("TEST_SPECTATOR_UPLINK");
+	matching.set_spectator_uplink(uplink != nullptr && std::string(uplink) == "all" ? true
+								  : me + 1 == (uplink != nullptr ? atoi(uplink) : 1));
 	for (int i = 0; i < n; i++) {
 		proto::PlayerAddress player{};
 		if (i < 2)
@@ -601,8 +618,11 @@ void GdxsvBackendRollback::Prepare(const proto::P2PMatching& matching, int port)
 		ping_pong_.AddRelay(r.ip(), r.ip6(), r.port(), r.token());
 	}
 	ping_pong_.Start(matching.session_id(), matching.peer_id(), port, matching.ping_test_duration());
-	spectator_uplink_.Start(gdxsv.lbs_net_.RemoteHost(), gdxsv.lbs_net_.RemotePort(), matching.battle_code(),
-							 matching.session_id(), matching.is_training_game());
+	// lbs asks one participant, the nearest, to stream inputs for live spectators.
+	if (matching.spectator_uplink()) {
+		spectator_uplink_.Start(gdxsv.lbs_net_.RemoteHost(), gdxsv.lbs_net_.RemotePort(), matching.battle_code(),
+								 matching.session_id(), matching.is_training_game());
+	}
 
 	report_.Clear();
 	report_.set_battle_code(matching.battle_code());
@@ -761,8 +781,11 @@ void GdxsvBackendRollback::FlushConfirmedToSpectatorUplink() {
 		++spectator_flushed_inputs_;
 	}
 
+	// Local test only: TEST_UPLINK_ROUND_DELAY=N sends round starts N frames late, so spectators reach StartMsg first.
+	static const int round_delay = getenv("TEST_UPLINK_ROUND_DELAY") ? atoi(getenv("TEST_UPLINK_ROUND_DELAY")) : 0;
+	const int round_confirmed_frame = is_local_test_ ? confirmed_frame - round_delay : confirmed_frame;
 	while (spectator_flushed_round_events_ < static_cast<int32_t>(start_msg_indexes_.size()) &&
-		   start_msg_indexes_[spectator_flushed_round_events_].first <= confirmed_frame) {
+		   start_msg_indexes_[spectator_flushed_round_events_].first <= round_confirmed_frame) {
 		const int idx = spectator_flushed_round_events_;
 		spectator_uplink_.PushRoundEvent(start_msg_indexes_[idx].second, static_cast<uint64_t>(start_msg_randoms_[idx].second));
 		++spectator_flushed_round_events_;
@@ -996,6 +1019,13 @@ u32 GdxsvBackendRollback::OnSockRead(u32 addr, u32 size) {
 		}
 
 		if (msg.Type() == McsMessage::KeyMsg1) {
+			// Local test only: TEST_FAKE_TIMESYNC=K makes peer 0 act as if GGPO asked it to slow down every K
+			// frames, as a peer whose clock runs fast does. Peers on one machine rarely get timesync skips.
+			static const int fake_timesync = getenv("TEST_FAKE_TIMESYNC") ? atoi(getenv("TEST_FAKE_TIMESYNC")) : 0;
+			if (is_local_test_ && fake_timesync > 0 && matching_.peer_id() == 0 && !ggpo::isInRollback() &&
+				frame % fake_timesync == 0 && ggpo::timeSyncFrames == 0) {
+				ggpo::timeSyncFrames = 1;
+			}
 			const int tsFrames = ggpo::timeSyncFrames;
 			if (!ggpo::isInRollback() && 0 < gdxsv_ReadMem16(DataStopCounter) && tsFrames > 0 && frame % 10 == 0) {
 				ggpo::timeSyncFrames.fetch_sub(1);

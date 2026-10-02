@@ -656,6 +656,7 @@ class P2PMatching PROTOBUF_FINAL :
     kPeerIdFieldNumber = 4,
     kPingTestDurationFieldNumber = 6,
     kIsTrainingGameFieldNumber = 7,
+    kSpectatorUplinkFieldNumber = 12,
   };
   // repeated .proto.BattleLogUser users = 9;
   int users_size() const;
@@ -788,6 +789,15 @@ class P2PMatching PROTOBUF_FINAL :
   void _internal_set_is_training_game(bool value);
   public:
 
+  // bool spectator_uplink = 12;
+  void clear_spectator_uplink();
+  bool spectator_uplink() const;
+  void set_spectator_uplink(bool value);
+  private:
+  bool _internal_spectator_uplink() const;
+  void _internal_set_spectator_uplink(bool value);
+  public:
+
   // @@protoc_insertion_point(class_scope:proto.P2PMatching)
  private:
   class _Internal;
@@ -805,6 +815,7 @@ class P2PMatching PROTOBUF_FINAL :
   ::PROTOBUF_NAMESPACE_ID::int32 peer_id_;
   ::PROTOBUF_NAMESPACE_ID::int32 ping_test_duration_;
   bool is_training_game_;
+  bool spectator_uplink_;
   mutable ::PROTOBUF_NAMESPACE_ID::internal::CachedSize _cached_size_;
   friend struct ::TableStruct_gdxsv_2eproto;
 };
@@ -6126,6 +6137,26 @@ inline const ::PROTOBUF_NAMESPACE_ID::RepeatedPtrField< ::proto::RelayServer >&
 P2PMatching::relays() const {
   // @@protoc_insertion_point(field_list:proto.P2PMatching.relays)
   return relays_;
+}
+
+// bool spectator_uplink = 12;
+inline void P2PMatching::clear_spectator_uplink() {
+  spectator_uplink_ = false;
+}
+inline bool P2PMatching::_internal_spectator_uplink() const {
+  return spectator_uplink_;
+}
+inline bool P2PMatching::spectator_uplink() const {
+  // @@protoc_insertion_point(field_get:proto.P2PMatching.spectator_uplink)
+  return _internal_spectator_uplink();
+}
+inline void P2PMatching::_internal_set_spectator_uplink(bool value) {
+  
+  spectator_uplink_ = value;
+}
+inline void P2PMatching::set_spectator_uplink(bool value) {
+  _internal_set_spectator_uplink(value);
+  // @@protoc_insertion_point(field_set:proto.P2PMatching.spectator_uplink)
 }
 
 // -------------------------------------------------------------------
