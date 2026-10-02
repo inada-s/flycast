@@ -6,8 +6,11 @@
     python tools/rbk_test/run_suite.py --list
 """
 import argparse
+import concurrent.futures
+import contextlib
 import json
 import os
+import queue
 import subprocess
 import sys
 import threading
@@ -220,9 +223,11 @@ def d1_fuzz(s: Settings) -> Result:
     sent = []
 
     def attack(m: Match):
+        base = lib.port_base()
+
         def body():
             if lib.wait_for_log(m, 1, "StartMsg Join", 120):
-                sent.append(fuzz.run(45))
+                sent.append(fuzz.run(45, base))
         threading.Thread(target=body, daemon=True).start()
 
     m = lib.run_match(s, "D1", [s.exe] * 4, DELAYS, on_start=attack)
@@ -262,7 +267,7 @@ def _with_relays(s: Settings, tag: str, count: int, test_relay: str, dual_stack:
 
     A dual-stack relay listens on every address (IPv4 and IPv6), and peers 0 and 1 reach it over IPv6 (::1).
     """
-    ports = [19879 + i for i in range(count)]
+    ports = [lib.relay_port_base() + i for i in range(count)]
     logs = [os.path.join(s.out, f"{tag}_relay{i}.log") for i in range(count)]
     relays = []
     try:
@@ -353,6 +358,9 @@ def d7_relay_lower_rtt_wins(s: Settings) -> Result:
     return verdict(bad, [summary(m)] + [p.strip() for p in picks[-1:]])
 
 
+# Cases that run release builds, which always use the default ports, so they never run alongside each other.
+DEFAULT_PORT_CASES = {"A3", "A4"}
+
 CASES: Dict[str, Tuple[str, Callable[[Settings], Result], int, bool]] = {
     # id: (title, function, rough minutes, long-running)
     "A1": ("basic 4-player match", a1_basic, 1, False),
@@ -393,6 +401,8 @@ def main() -> int:
     ap.add_argument("--cases", help="comma-separated case ids (default: all but long ones)")
     ap.add_argument("--long", action="store_true", help="include long-running cases")
     ap.add_argument("--list", action="store_true", help="list cases and exit")
+    ap.add_argument("--jobs", type=int, default=1,
+                    help="cases to run at once; each gets its own ports (TEST_PORT_BASE), A3/A4 share the default ones")
     a = ap.parse_args()
 
     if a.list:
@@ -417,17 +427,44 @@ def main() -> int:
 
     ids = a.cases.split(",") if a.cases else [c for c, v in CASES.items() if a.long or not v[3]]
     results = {}
-    for cid in ids:
+    print_lock = threading.Lock()
+    default_lane = threading.Lock()
+    free_bases = queue.Queue()
+    for slot in range(1, max(1, a.jobs) + 1):
+        free_bases.put(lib.DEFAULT_PORT_BASE + 100 * slot)
+
+    def run_case(cid: str) -> None:
         title, fn, minutes, _ = CASES[cid]
-        print(f"=== {cid} {title} (~{minutes} min)", flush=True)
-        try:
-            status, lines = fn(s)
-        except Exception as e:  # keep going; one broken case must not hide the rest
-            status, lines = FAIL, [f"harness error: {e!r}"]
+        default_ports = a.jobs <= 1 or cid in DEFAULT_PORT_CASES
+        base = lib.DEFAULT_PORT_BASE if default_ports else free_bases.get()
+        lane = default_lane if default_ports else contextlib.nullcontext()
+        with lane:
+            lib.set_port_base(base)
+            if a.jobs <= 1:
+                print(f"=== {cid} {title} (~{minutes} min)", flush=True)
+            try:
+                status, lines = fn(s)
+            except Exception as e:  # keep going; one broken case must not hide the rest
+                status, lines = FAIL, [f"harness error: {e!r}"]
+        if not default_ports:
+            free_bases.put(base)
         results[cid] = {"title": title, "status": status, "details": lines}
-        print(f"    {status}", flush=True)
-        for line in lines:
-            print(f"      {line}", flush=True)
+        with print_lock:
+            if a.jobs > 1:
+                print(f"=== {cid} {title} (~{minutes} min)", flush=True)
+            print(f"    {status}", flush=True)
+            for line in lines:
+                print(f"      {line}", flush=True)
+
+    if a.jobs <= 1:
+        for cid in ids:
+            run_case(cid)
+    else:
+        # Longest first, so the slowest case is not left running alone at the end.
+        order = sorted(ids, key=lambda c: -CASES[c][2])
+        with concurrent.futures.ThreadPoolExecutor(max_workers=a.jobs) as pool:
+            list(pool.map(run_case, order))
+        results = {cid: results[cid] for cid in ids}
 
     print("\n=== summary")
     for cid, r in results.items():

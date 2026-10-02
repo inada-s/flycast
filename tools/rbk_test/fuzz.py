@@ -13,7 +13,6 @@ import struct
 import time
 
 CONST_MAGIC, RELAY_MAGIC = 34046, 26315
-PORTS = [20010, 20011, 20012, 20013]  # local test ports, 20010 + peer
 
 
 def _hdr(type_, remote_endpoint, relay_to=0, org_type=0, relay_magic=0):
@@ -47,15 +46,15 @@ def _packet():
         + os.urandom(4 + random.randrange(600))
 
 
-def run(seconds: float) -> int:
-    """Send to every local test port over IPv4 and IPv6 for `seconds`. Returns the packet count."""
+def run(seconds: float, port_base: int = 20010) -> int:
+    """Send to every local test port (port_base + peer) over IPv4 and IPv6 for `seconds`. Returns the packet count."""
     s4 = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
     s6 = socket.socket(socket.AF_INET6, socket.SOCK_DGRAM)
     sent = 0
     end = time.time() + seconds
     while time.time() < end:
         pkt = _packet()
-        for port in PORTS:
+        for port in range(port_base, port_base + 4):
             for sock, host in ((s4, "127.0.0.1"), (s6, "::1")):
                 try:
                     sock.sendto(pkt, (host, port))
