@@ -28,7 +28,7 @@ THREADED_OFF = ["--config", "config:rend.ThreadedRendering=no"]
 LAST_FRAME_SLACK = 2
 
 
-def common(m: Match, peers=None) -> List[str]:
+def common(m: Match, peers=None, frame_slack: int = LAST_FRAME_SLACK) -> List[str]:
     """Checks every completed match must pass. Returns the failures."""
     peers = peers or m.peers
     bad = []
@@ -43,7 +43,7 @@ def common(m: Match, peers=None) -> List[str]:
             bad.append(f"p{p.index}: {e.strip()}")
     # Teardown timing can leave one peer a frame ahead in its last saved state; more than that is suspicious.
     frames = [p.last_frame for p in peers]
-    if max(frames) - min(frames) > LAST_FRAME_SLACK:
+    if max(frames) - min(frames) > frame_slack:
         bad.append("last frames differ: " + " ".join(f"p{p.index}={p.last_frame}" for p in peers))
     if len({tuple(p.win_teams) for p in peers}) > 1 or not peers[0].win_teams:
         bad.append("round winners differ or missing: " + " ".join(f"p{p.index}={p.win_teams}" for p in peers))
@@ -100,18 +100,26 @@ def a4_mixed_older(s: Settings) -> Result:
 
 # --- B. Rollback -------------------------------------------------------------
 
+# B1: peer 0 takes a timesync skip every 10 frames, and a fixed 3-frame input delay against 30-80ms latency
+# keeps the peers predicting, so rollbacks redo frames with skips in every match.
+B1_ENV = {"GGPO_TEST_LOG": "1", "TEST_FAKE_TIMESYNC": "10", "TEST_GGPO_DELAY": "3"}
+B1_DELAYS = [30, 50, 60, 80]
+B1_FRAME_SLACK = 10  # peers stop up to the prediction window apart
+
+
 def b1_skip_replay(s: Settings) -> Result:
     bad, notes, crossings = [], [], []
-    for seed in (11, 22, 33, 44, 55, 66):
-        m = lib.run_match(s, f"B1-{seed}", [s.exe] * 4, DELAYS, seed=seed, env={"GGPO_TEST_LOG": "1"})
-        bad += [f"seed {seed}: {b}" for b in common(m)]
+    for seed in (11, 22, 33):
+        m = lib.run_match(s, f"B1-{seed}", [s.exe] * 4, B1_DELAYS, seed=seed, env=B1_ENV)
+        bad += [f"seed {seed}: {b}" for b in common(m, frame_slack=B1_FRAME_SLACK)]
         for p in m.peers:
             for seek, frm, skip, replayed in lib.skip_crossings(p):
                 if skip > seek:
                     crossings.append((seed, p.index, seek, frm, skip, replayed))
     notes.append(f"rollbacks over a skip after the seek frame: {len(crossings)}")
-    for c in crossings:
+    for c in crossings[:5]:
         notes.append("  seed=%d p%d seek=%d from=%d skip=%d replayed=%s" % c)
+    for c in crossings:
         if not c[5]:
             bad.append("skip at frame %d not replayed (seed %d p%d)" % (c[4], c[0], c[1]))
     if not bad and not crossings:
@@ -359,7 +367,7 @@ CASES: Dict[str, Tuple[str, Callable[[Settings], Result], int, bool]] = {
     "A2": ("20-round match", a2_long, 21, True),
     "A3": ("mixed with --old-exe, both peer 0 sides", a3_mixed_old, 2, False),
     "A4": ("mixed with --older-exe, both peer 0 sides", a4_mixed_older, 2, False),
-    "B1": ("timesync skip replayed across a rollback", b1_skip_replay, 7, False),
+    "B1": ("timesync skip replayed across a rollback", b1_skip_replay, 5, False),
     "B2": ("threaded rendering, windowed, 3 rounds", b2_threaded, 4, False),
     "B3": ("threaded rendering off, windowed", b3_not_threaded, 2, False),
     "C1": ("peer drops mid-battle, windows stay responsive", c1_peer_drop, 3, False),
