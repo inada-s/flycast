@@ -24,4 +24,10 @@ void gdxsv_multi_pov_window_set_topmost(bool) {}
 
 void gdxsv_multi_pov_window_set_borderless(bool) {}
 
+void gdxsv_multi_pov_window_set_flat(bool) {}
+
 GdxsvMultiPovInsets gdxsv_multi_pov_window_frame_insets() { return {}; }
+
+int64_t gdxsv_multi_pov_window_native_handle() { return 0; }
+
+void gdxsv_multi_pov_window_stay_below(const int64_t*, int) {}

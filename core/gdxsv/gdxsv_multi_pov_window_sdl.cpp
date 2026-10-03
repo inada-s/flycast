@@ -135,3 +135,10 @@ void gdxsv_multi_pov_window_set_borderless(bool borderless) {
 	SDL_Window* w = Window();
 	if (w != nullptr) SDL_SetWindowBordered(w, borderless ? SDL_FALSE : SDL_TRUE);
 }
+
+// The window manager owns shadows and corners.
+void gdxsv_multi_pov_window_set_flat(bool) {}
+
+int64_t gdxsv_multi_pov_window_native_handle() { return 0; }
+
+void gdxsv_multi_pov_window_stay_below(const int64_t*, int) {}

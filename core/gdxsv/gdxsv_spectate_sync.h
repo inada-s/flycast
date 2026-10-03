@@ -11,9 +11,11 @@ class GdxsvSpectateSync {
    public:
 	~GdxsvSpectateSync();
 
-	// Joins the named group, claiming a slot. No-op if group is empty, which
-	// is how a lone spectator opts out.
+	// Joins the named group, claiming a slot. An empty group, which is how a
+	// lone spectator opts out, leaves the current one. So does another group:
+	// one process can host one four-screen session after another.
 	void Join(const std::string& group);
+	void Leave();
 	bool Active() const { return slot_ != nullptr; }
 
 	// Publishes the frame this instance has reached. `catching_up`: seeking or
@@ -37,4 +39,5 @@ class GdxsvSpectateSync {
 	void* map_ = nullptr;
 	size_t map_size_ = 0;
 	struct Slot* slot_ = nullptr;
+	std::string group_;
 };

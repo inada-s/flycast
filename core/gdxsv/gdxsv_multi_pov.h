@@ -10,6 +10,11 @@
 // (os_RunInstance) and drives playback and the window layout. The guests get
 // everything, the replay bytes included, through a file-backed shared memory
 // session (same technique as GdxsvSpectateSync).
+//
+// Live Spectate works the same way: only the host talks to LBS, and it relays
+// what it receives (the bootstrap header, inputs, round state and close)
+// through the session as it arrives. The session outlives a battle: the host
+// publishes the next one and the guests follow.
 
 constexpr int kGdxsvMultiPovScreens = 4;
 
@@ -53,6 +58,11 @@ struct GdxsvMultiPovPlayback {
 	bool key_display = false;
 	bool skip_ms_selection = false;
 	int32_t volume = 0;			  // aica.Volume
+
+	// Live: the host is chasing the live edge. Each screen then chases the
+	// edge of the relayed feed on its own, and the guests ignore the host's
+	// seeks, pause and speed.
+	bool live_following = false;
 };
 
 // ---- session ----------------------------------------------------------
@@ -61,6 +71,19 @@ std::string gdxsv_multi_pov_new_session_id();
 
 // Host: creates the session and publishes the serialised replay for the guests.
 bool gdxsv_multi_pov_host_create(const std::string& session_id, const std::vector<uint8_t>& replay);
+
+// Host: creates a live session on `battle_code`. The guests play what the
+// host relays through the feed below.
+bool gdxsv_multi_pov_host_create_live(const std::string& session_id, const std::string& battle_code);
+
+// Host: the live session moves on to another battle. Resets the start barrier.
+bool gdxsv_multi_pov_host_publish_live_battle(const std::string& battle_code);
+
+bool gdxsv_multi_pov_is_live();
+
+// Live session: the battle the host is on, and a generation bumped per
+// battle. False outside a live session, or while the host is rewriting it.
+bool gdxsv_multi_pov_read_live_battle(std::string& battle_code, uint32_t& generation);
 
 // Guest: attaches to the host's session. `screen` is 1..3 (2P..4P).
 bool gdxsv_multi_pov_guest_open(const std::string& session_id, int screen);
@@ -84,6 +107,8 @@ bool gdxsv_multi_pov_fetch_replay(std::vector<uint8_t>& out, int timeout_ms);
 // playback goes on regardless.
 
 bool gdxsv_multi_pov_guest_ready_and_wait(int timeout_ms);
+// Guest: counts as ready without waiting, for a screen that sits a battle out.
+void gdxsv_multi_pov_guest_ready();
 bool gdxsv_multi_pov_host_wait_for_guests(int expected_guests, int timeout_ms);
 
 // ---- per-frame publication --------------------------------------------
@@ -94,6 +119,11 @@ bool gdxsv_multi_pov_read_playback(GdxsvMultiPovPlayback& out);
 
 void gdxsv_multi_pov_publish_host_window(const GdxsvMultiPovHostWindow& window);
 bool gdxsv_multi_pov_read_host_window(GdxsvMultiPovHostWindow& out);
+
+// Guest: its native window, for the host to keep above its own. Host: all of
+// them by screen index, 0 where not published.
+void gdxsv_multi_pov_publish_guest_window(int64_t handle);
+void gdxsv_multi_pov_read_guest_windows(int64_t out[kGdxsvMultiPovScreens]);
 
 // Guest: the host closed the session or its process is gone.
 bool gdxsv_multi_pov_host_gone();
@@ -117,8 +147,20 @@ bool gdxsv_multi_pov_take_four_screen_request();
 // caller then plays single-screen.
 bool gdxsv_multi_pov_begin_host_session(const std::string& replay_source, std::vector<uint8_t>& replay_out);
 
-// Guest: joins the session named on the command line and fetches the replay.
-bool gdxsv_multi_pov_begin_guest_session(std::vector<uint8_t>& replay_out);
+// Host: opens a live session on `battle_code` and spawns the guests. The
+// caller checks that the battle has four players.
+bool gdxsv_multi_pov_begin_live_host_session(const std::string& battle_code);
+
+// What a guest plays: the host's replay, or a live battle.
+struct GdxsvMultiPovGuestStart {
+	std::vector<uint8_t> replay;
+	std::string live_battle_code;  // empty in a replay session
+	uint32_t live_generation = 0;
+};
+
+// Guest: joins the session named on the command line (once: a live guest
+// stays in it across battles) and reads what to play.
+bool gdxsv_multi_pov_begin_guest_session(GdxsvMultiPovGuestStart& out);
 
 // The POV this guest plays, from the command line. -1 when not a guest.
 int gdxsv_multi_pov_guest_pov();
@@ -129,3 +171,24 @@ std::string gdxsv_multi_pov_log_file_name();
 
 // Blocks at the start barrier for the other screens. No-op outside a session.
 void gdxsv_multi_pov_wait_at_start_barrier();
+// A guest that cannot play this battle releases the host from waiting for it.
+void gdxsv_multi_pov_skip_start_barrier();
+
+// ---- live feed ----------------------------------------------------------
+
+namespace proto { class BattleLogFile; }
+
+// Host: the battle's bootstrap header, as received from LBS (no inputs yet).
+bool gdxsv_multi_pov_feed_publish_header(const proto::BattleLogFile& header);
+
+// Host: whatever is new in `log`, the live log as received from LBS.
+// `backlog`: the host is still downloading the battle so far.
+void gdxsv_multi_pov_feed_publish(const proto::BattleLogFile& log, bool backlog);
+
+// Guest: waits for the current battle's header. False on timeout, or when
+// the host moves on or goes away first.
+bool gdxsv_multi_pov_feed_wait_header(proto::BattleLogFile* out, int timeout_ms);
+
+// Guest: folds what the host relayed into `log`, as
+// GdxsvSpectatorDownlink::DrainInto does. True when anything was folded in.
+bool gdxsv_multi_pov_feed_drain(proto::BattleLogFile* log, bool* backlog_pending);

@@ -1105,15 +1105,17 @@ void fetch_live_refresh() {
 
 // Moves a finished fetch into live_entries_ and frees the future for the next
 // poll. A failed fetch leaves the previous list up rather than emptying it.
-void live_harvest_fetch() {
+// True when a fetch landed.
+bool live_harvest_fetch() {
 	if (!fetch_live_entry_future_.valid() || !future_is_ready(fetch_live_entry_future_)) {
-		return;
+		return false;
 	}
 	if (fetch_live_entry_http_status == 200) {
 		live_entries_ = fetch_live_entry_future_.get();
 	}
 	live_first_load_ = false;
 	fetch_live_entry_future_ = std::shared_future<std::vector<LiveEntry>>();
+	return true;
 }
 
 // Viewer count for a battle being watched right now. Polled over HTTP, and
@@ -1351,16 +1353,38 @@ void gdxsv_replay_live_tab() {
 			{
 				const bool playable = ("dc" + std::to_string(gdxsv.Disk())) == selected->disk;
 				ImGui::BeginDisabled(pov_index == -1 || !playable);
-				if (ImGui::ButtonEx(pov_index == -1 ? ICON_FA_ARROW_POINTER "  Select a player" : ICON_FA_TOWER_BROADCAST "  Watch Live",
+				if (ImGui::ButtonEx(pov_index == -1 ? ICON_FA_ARROW_POINTER "  Select a player###live-single-screen"
+													: ICON_FA_TOWER_BROADCAST "  Watch Live###live-single-screen",
 									ScaledVec2(240, 50))) {
 					gdxsv_start_live_spectate(selected->battle_code, pov_index);
 				}
 				ImGui::EndDisabled();
+
+				// Four-screen viewing does not require a selected player.
+				const char* four_screen_hint = nullptr;
+				if (selected->users.size() != kGdxsvMultiPovScreens)
+					four_screen_hint = ICON_FA_TABLE_CELLS_LARGE "  4-player battles only";
+				else if (!gdxsv_multi_pov_window_available())
+					four_screen_hint = ICON_FA_TABLE_CELLS_LARGE "  4 screens unavailable";
+				ImGui::SameLine();
+				ImGui::BeginDisabled(!playable || four_screen_hint != nullptr);
+				const std::string four_screen_label =
+					std::string(four_screen_hint != nullptr ? four_screen_hint : ICON_FA_TABLE_CELLS_LARGE "  Watch Live (4 screens)") +
+					"###live-four-screen";
+				if (ImGui::ButtonEx(four_screen_label.c_str(), ScaledVec2(300, 50))) {
+					gdxsv_start_live_spectate(selected->battle_code, 0, true);
+				}
+				ImGui::EndDisabled();
+				if (four_screen_hint != nullptr && ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled))
+					ImGui::SetTooltip("%s", four_screen_hint);
+
 				if (!playable) {
-					ImGui::SameLine();
 					ImGui::AlignTextToFramePadding();
 					ImGui::TextDisabled("This battle is on %s.", disk_display_name(selected->disk));
 				}
+				OptionCheckbox("Watch the next live battle automatically", config::GdxLiveAutoNext,
+							   "When a battle ends, move on to another live battle, or wait for one to start. "
+							   "Exit from the pause menu to stop.");
 			}
 
 			// Same fields the replay detail lists, so the two read alike.
@@ -1844,17 +1868,138 @@ int gdxsv_live_viewer_count(const std::string& battle_code, bool force_refresh) 
 	return live_viewer_count_;
 }
 
-void gdxsv_start_live_spectate(const std::string& battle_code, int pov) {
+// ---- Live autoplay ----
+// One live battle after another, until the viewer exits from the pause menu
+// or cancels the wait between battles.
+struct LiveAutoplay {
+	bool active = false;
+	bool four_screen = false;
+	int pov = 0;
+	// Between battles: looking for the next one in /status.
+	bool waiting = false;
+	std::chrono::steady_clock::time_point wait_since;
+	// Watched or failed to start, so not picked again.
+	std::set<std::string> seen;
+	int watched = 0;
+};
+static LiveAutoplay live_autoplay_;
+
+// While waiting, /status is polled faster than the Live tab does.
+constexpr int kLiveAutoplayPollSeconds = 5;
+
+static bool hosting_live_four_screen() {
+	return gdxsv_multi_pov_current_role() == GdxsvMultiPovRole::Host && gdxsv_multi_pov_is_live();
+}
+
+static void live_autoplay_stop() {
+	if (live_autoplay_.active) NOTICE_LOG(COMMON, "live autoplay: stopped after %d battles", live_autoplay_.watched);
+	live_autoplay_ = {};
+	// Closing the session tells the guests to quit.
+	if (hosting_live_four_screen()) gdxsv_multi_pov_close();
+}
+
+void gdxsv_live_autoplay_begin(const std::string& battle_code, int pov, bool four_screen) {
+	live_autoplay_ = {};
+	if (!config::GdxLiveAutoNext) return;
+	live_autoplay_.active = true;
+	live_autoplay_.four_screen = four_screen;
+	live_autoplay_.pov = pov;
+	live_autoplay_.seen.insert(battle_code);
+	live_autoplay_.watched = 1;
+}
+
+// Starts one live battle from the lobby state. A four-screen host opens the
+// session for the first battle and moves the open one on for later battles.
+static bool start_live_battle(const std::string& battle_code, int pov, bool four_screen) {
 	if (gdxsv.IsSaveStateAllowed()) {
 		dc_savestate(90);
 	}
+	if (!gdxsv_ensure_replay_savestate(gdxsv.Disk())) return false;
 
-	if (gdxsv_ensure_replay_savestate(gdxsv.Disk())) {
-		dc_loadstate(99);
-		if (gdxsv.StartLiveSpectate(battle_code.c_str(), pov)) {
-			gui_state = GuiState::Closed;
+	if (four_screen) {
+		const bool moved_on = hosting_live_four_screen() ? gdxsv_multi_pov_host_publish_live_battle(battle_code)
+														 : gdxsv_multi_pov_begin_live_host_session(battle_code);
+		if (!moved_on) return false;
+		pov = 0;
+	}
+
+	dc_loadstate(99);
+	if (gdxsv.StartLiveSpectate(battle_code.c_str(), pov)) {
+		gui_state = GuiState::Closed;
+		return true;
+	}
+	dc_loadstate(90);
+	return false;
+}
+
+void gdxsv_start_live_spectate(const std::string& battle_code, int pov, bool four_screen) {
+	live_autoplay_stop();
+	if (start_live_battle(battle_code, pov, four_screen)) {
+		gdxsv_live_autoplay_begin(battle_code, pov, four_screen);
+	} else if (four_screen) {
+		gdxsv_multi_pov_close();
+	}
+}
+
+// The battle to move on to: a live one on this disk not watched yet, the most
+// recently started first, so it is watched from as near its start as possible.
+static const LiveEntry* live_autoplay_pick() {
+	const std::string disk = "dc" + std::to_string(gdxsv.Disk());
+	const LiveEntry* best = nullptr;
+	for (const auto& e : live_entries_) {
+		if (!e.live_spectate || e.disk != disk || live_autoplay_.seen.count(e.battle_code) != 0) continue;
+		if (live_autoplay_.four_screen && e.users.size() != kGdxsvMultiPovScreens) continue;
+		if (best == nullptr || best->updated_unix < e.updated_unix) best = &e;
+	}
+	return best;
+}
+
+static void live_autoplay_wait_dialog() {
+	const bool fetched = live_harvest_fetch();
+	const auto now = std::chrono::steady_clock::now();
+
+	// Only a fetch issued after the wait began can name the next battle:
+	// an older one may still list the battle that just ended as live.
+	if (fetched && live_autoplay_.wait_since <= live_last_fetch_) {
+		const LiveEntry* next = live_autoplay_pick();
+		INFO_LOG(COMMON, "live autoplay: %d battles in progress, %s", (int)live_entries_.size(),
+				 next != nullptr ? next->battle_code.c_str() : "none to watch");
+		if (next != nullptr) {
+			const std::string code = next->battle_code;
+			const int pov = next->users.size() <= static_cast<size_t>(live_autoplay_.pov) ? 0 : live_autoplay_.pov;
+			live_autoplay_.seen.insert(code);
+			NOTICE_LOG(COMMON, "live autoplay: moving on to %s", code.c_str());
+			if (start_live_battle(code, pov, live_autoplay_.four_screen)) {
+				live_autoplay_.waiting = false;
+				++live_autoplay_.watched;
+				return;
+			}
+			WARN_LOG(COMMON, "live autoplay: could not start %s", code.c_str());
 		}
 	}
+	const bool due = live_last_fetch_ < live_autoplay_.wait_since ||
+		kLiveAutoplayPollSeconds <= std::chrono::duration_cast<std::chrono::seconds>(now - live_last_fetch_).count();
+	if (!fetch_live_entry_future_.valid() && due) fetch_live_json();
+
+	centerNextWindow();
+	ImGui::SetNextWindowSize(ScaledVec2(420, 0));
+	ImGui::SetNextWindowBgAlpha(0.85f);
+	ImguiStyleVar _(ImGuiStyleVar_WindowPadding, ScaledVec2(20, 20));
+	if (ImGui::Begin("##gdxsv_live_autoplay", nullptr,
+					 ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_AlwaysAutoResize | ImGuiWindowFlags_NoMove)) {
+		ImGui::Text(ICON_FA_TOWER_BROADCAST "  Waiting for the next live battle...");
+		ImGui::NewLine();
+		const auto waited = std::chrono::duration_cast<std::chrono::seconds>(now - live_autoplay_.wait_since).count();
+		ImGui::TextDisabled("Battles watched: %d", live_autoplay_.watched);
+		ImGui::TextDisabled("Waiting for %lld:%02lld", (long long)(waited / 60), (long long)(waited % 60));
+		if (fetch_live_entry_http_status != 200 && !live_first_load_)
+			ImGui::TextDisabled("Last update failed (HTTP %d).", fetch_live_entry_http_status);
+		ImGui::NewLine();
+		if (ImGui::Button(ICON_FA_XMARK "  Stop", ScaledVec2(120, 40))) {
+			live_autoplay_stop();
+		}
+	}
+	ImGui::End();
 }
 
 // Fire-and-forget: notify server of replay play (HTTP replays only)
@@ -1880,6 +2025,7 @@ static void gdxsv_notify_replay_played(const std::string& replay_file) {
 }
 
 void gdxsv_start_replay(const std::string& replay_file, int pov, bool four_screen) {
+	live_autoplay_stop();
 	if (gdxsv.IsSaveStateAllowed()) {
 		dc_savestate(90);
 	}
@@ -1911,11 +2057,22 @@ void gdxsv_start_replay(const std::string& replay_file, int pov, bool four_scree
 	}
 }
 
-void gdxsv_end_replay(std::string error) {
+void gdxsv_end_replay(std::string error, bool user_exit) {
 	// Own the message: restoring the previous state resets the replay backend.
 	emu.stop();
 	dc_loadstate(90);
 	settings.input.fastForwardMode = false;
+
+	// A live battle that ended on its own: on to the next one. A battle that
+	// could not be played is skipped the same way.
+	if (live_autoplay_.active && !user_exit) {
+		if (!error.empty()) WARN_LOG(COMMON, "live autoplay: battle ended with an error: %s", error.c_str());
+		live_autoplay_.waiting = true;
+		live_autoplay_.wait_since = std::chrono::steady_clock::now();
+		gui_state = GuiState::GdxsvReplay;
+		return;
+	}
+	live_autoplay_stop();
 
 	// Reopen the browser; ImGui retains the tab that launched playback.
 	gui_state = GuiState::GdxsvReplay;
@@ -1925,6 +2082,11 @@ void gdxsv_end_replay(std::string error) {
 }
 
 void gdxsv_replay_select_dialog() {
+	if (live_autoplay_.waiting) {
+		live_autoplay_wait_dialog();
+		return;
+	}
+
 	// Discard outdated results between frames, once the old request is done.
 	// The next fetch snapshots all current filters; outdated results stay hidden.
 	if (replay_results_dirty &&

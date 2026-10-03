@@ -1,9 +1,11 @@
 // Host/guest orchestration for 4-player replay: loading the replay, spawning
 // the guests and the start barrier. The transport is in gdxsv_multi_pov.cpp.
 #include <algorithm>
+#include <chrono>
 #include <iterator>
 #include <cstdio>
 #include <string>
+#include <thread>
 #include <vector>
 
 #include "cfg/cfg.h"
@@ -172,20 +174,13 @@ std::string gdxsv_multi_pov_log_file_name() {
 	return "flycast-" + std::to_string(screen + 1) + "P.log";
 }
 
-bool gdxsv_multi_pov_begin_host_session(const std::string& replay_source, std::vector<uint8_t>& replay_out) {
-	g_spawned_guests = 0;
+static bool FourScreenWindowAvailable() {
+	if (gdxsv_multi_pov_window_available()) return true;
+	WARN_LOG(COMMON, "multi-pov: four-screen playback is unavailable without a supported desktop window");
+	return false;
+}
 
-	if (!gdxsv_multi_pov_window_available()) {
-		WARN_LOG(COMMON, "multi-pov: four-screen playback is unavailable without a supported desktop window");
-		return false;
-	}
-
-	if (!LoadReplaySource(replay_source, replay_out)) return false;
-	if (!IsFourPlayerBattle(replay_out)) return false;
-
-	const std::string session_id = gdxsv_multi_pov_new_session_id();
-	if (!gdxsv_multi_pov_host_create(session_id, replay_out)) return false;
-
+static void SpawnGuests(const std::string& session_id) {
 	// The host joins the same frame-sync group as its guests.
 	config::setTransient("gdxsv", "SpectateSyncGroup", session_id);
 
@@ -197,19 +192,62 @@ bool gdxsv_multi_pov_begin_host_session(const std::string& replay_source, std::v
 		++g_spawned_guests;
 	}
 	NOTICE_LOG(COMMON, "multi-pov: host session %s with %d guests", session_id.c_str(), g_spawned_guests);
+}
+
+bool gdxsv_multi_pov_begin_host_session(const std::string& replay_source, std::vector<uint8_t>& replay_out) {
+	g_spawned_guests = 0;
+
+	if (!FourScreenWindowAvailable()) return false;
+
+	if (!LoadReplaySource(replay_source, replay_out)) return false;
+	if (!IsFourPlayerBattle(replay_out)) return false;
+
+	const std::string session_id = gdxsv_multi_pov_new_session_id();
+	if (!gdxsv_multi_pov_host_create(session_id, replay_out)) return false;
+
+	SpawnGuests(session_id);
 	return true;
 }
 
-bool gdxsv_multi_pov_begin_guest_session(std::vector<uint8_t>& replay_out) {
+bool gdxsv_multi_pov_begin_live_host_session(const std::string& battle_code) {
+	g_spawned_guests = 0;
+
+	if (!FourScreenWindowAvailable()) return false;
+
+	const std::string session_id = gdxsv_multi_pov_new_session_id();
+	if (!gdxsv_multi_pov_host_create_live(session_id, battle_code)) return false;
+
+	SpawnGuests(session_id);
+	return true;
+}
+
+bool gdxsv_multi_pov_begin_guest_session(GdxsvMultiPovGuestStart& out) {
 	const int screen = gdxsv_multi_pov_guest_pov();
 	if (screen < 0) return false;
 
-	if (!gdxsv_multi_pov_guest_open(SessionId(), screen)) return false;
-	if (!gdxsv_multi_pov_fetch_replay(replay_out, kReplayFetchMs)) {
+	// A live guest stays in its session from one battle to the next.
+	if (gdxsv_multi_pov_current_role() != GdxsvMultiPovRole::Guest && !gdxsv_multi_pov_guest_open(SessionId(), screen))
+		return false;
+
+	out = {};
+	if (gdxsv_multi_pov_is_live()) {
+		// The host holds the seqlock for a few stores at most.
+		for (int i = 0; i < 1000; ++i) {
+			if (gdxsv_multi_pov_read_live_battle(out.live_battle_code, out.live_generation)) return true;
+			std::this_thread::sleep_for(std::chrono::milliseconds(1));
+		}
+		WARN_LOG(COMMON, "multi-pov: cannot read the live battle from the session");
+		return false;
+	}
+	if (!gdxsv_multi_pov_fetch_replay(out.replay, kReplayFetchMs)) {
 		gdxsv_multi_pov_close();
 		return false;
 	}
 	return true;
+}
+
+void gdxsv_multi_pov_skip_start_barrier() {
+	if (gdxsv_multi_pov_current_role() == GdxsvMultiPovRole::Guest) gdxsv_multi_pov_guest_ready();
 }
 
 void gdxsv_multi_pov_wait_at_start_barrier() {

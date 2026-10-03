@@ -144,6 +144,10 @@ void drawTakeoverInput(u16 target, u16 current) {
 void GdxsvBackendReplay::Reset() {
 	live_downlink_.Stop();
 	live_mode_ = false;
+	live_session_ = false;
+	exit_requested_ = false;
+	live_feeding_ = false;
+	live_from_host_ = false;
 	live_counter_reconstruction_ = false;
 	live_catching_up_ = true;
 	live_following_ = true;
@@ -229,6 +233,11 @@ void GdxsvBackendReplay::OnMainUiLoop() {
 		ctrl_input_release_pending_ = false;
 		ui_snapshot_.Publish({});
 		gdxsv.netmode_ = Gdxsv::NetMode::Offline;
+		// A live guest waits for the host's next battle (gdxsv_emu_hooks).
+		if (gdxsv_is_multi_pov_guest() && gdxsv_multi_pov_is_live()) {
+			NOTICE_LOG(COMMON, "multi-pov: guest live playback ended; waiting for the host");
+			return;
+		}
 		// A 4-player replay guest has no menu to go back to: it closes.
 		if (gdxsv_is_multi_pov_guest()) {
 			NOTICE_LOG(COMMON, "multi-pov: guest playback ended; closing this screen");
@@ -236,7 +245,7 @@ void GdxsvBackendReplay::OnMainUiLoop() {
 			dc_exit();
 			return;
 		}
-		gdxsv_end_replay(replay_error_);
+		gdxsv_end_replay(replay_error_, exit_requested_);
 		return;
 	}
 
@@ -355,7 +364,7 @@ void GdxsvBackendReplay::UpdateReplayFlow() {
 		if (ctrl_commands_.empty()) {
 			if (takeover_) {
 				ctrl_commands_.emplace_back(ReplayCtrlCommand::RetryTakeover);
-			} else if (config::GdxReplaySkipMsSelection && !live_mode_) {
+			} else if (config::GdxReplaySkipMsSelection && !live_session_) {
 				BeginLoadingHud();
 				ctrl_commands_.emplace_back(ReplayCtrlCommand::SeekToBriefing);
 			}
@@ -379,7 +388,7 @@ void GdxsvBackendReplay::UpdateReplayFlow() {
 			if (ctrl_commands_.empty()) {
 				if (takeover_) {
 					ctrl_commands_.emplace_back(ReplayCtrlCommand::RetryTakeover);
-				} else if (config::GdxReplaySkipMsSelection && !live_mode_) {
+				} else if (config::GdxReplaySkipMsSelection && !live_session_) {
 					BeginLoadingHud();
 					ctrl_commands_.emplace_back(ReplayCtrlCommand::SeekToBriefing);
 				}
@@ -789,6 +798,7 @@ void GdxsvBackendReplay::PublishMultiPovPlayback() {
 	st.key_display = config::GdxReplayKeyDisplay;
 	st.skip_ms_selection = config::GdxReplaySkipMsSelection;
 	st.volume = config::AudioVolume;
+	st.live_following = live_session_ && live_following_;
 	gdxsv_multi_pov_publish_playback(st);
 }
 
@@ -838,6 +848,16 @@ void GdxsvBackendReplay::FollowMultiPovHost() {
 	// The host's pause menu holds playback (OnSockRead delivers nothing while
 	// it is up). Set directly: the menu itself stays on the host's screen.
 	pause_menu_opend_ = st.menu_open;
+
+	// Live and following: every screen chases the live edge on its own, with
+	// its own catch-up seeks, so the host's position moves are not seeks to
+	// copy. Once the host leaves the edge, the guests follow it as in a replay.
+	if (live_session_ && st.live_following) {
+		multi_pov_seek_generation_ = st.seek_generation;
+		if (!live_following_ && !ui_commands_.contains(ReplayCtrlCommand::FollowLive))
+			ui_commands_.emplace_back(ReplayCtrlCommand::FollowLive);
+		return;
+	}
 
 	// Seeks first: a pause or speed change queued behind a jump that has not
 	// landed yet would otherwise be applied at the position being left.
@@ -921,11 +941,16 @@ void GdxsvBackendReplay::OnNextFrameInternal() {
 		// indistinguishable from waiting for data.
 		if (!catching_up) {
 			// Offline replay: past the allowed lead, wait for the others in
-			// earnest. See kSyncCatchUpWaitMs.
+			// earnest. See kSyncCatchUpWaitMs. So do the four screens of a
+			// live battle: they play one relayed feed, so the leader has the
+			// same data as the slowest and waiting cannot starve it.
 			int wait_ms = sync_max_wait_ms_;
-			if (!live_mode_) {
+			if (!live_mode_ || MultiPov()) {
 				const int lead_frames = spectate_sync_.LeadOverSlowest(static_cast<int32_t>(pos)) / kSyncSubFrames;
 				if (kSyncHoldLeadFrames < lead_frames) wait_ms = std::max(wait_ms, kSyncCatchUpWaitMs);
+				static int lead_log_counter = 0;
+				if (live_mode_ && ++lead_log_counter % 600 == 0)
+					NOTICE_LOG(COMMON, "spectate sync: live frame %d, lead %d frames", key_msg_count_, lead_frames);
 			}
 			spectate_sync_.WaitForPeers(static_cast<int32_t>(pos), wait_ms);
 		}
@@ -1332,7 +1357,7 @@ void GdxsvBackendReplay::OnNextFrameInternal() {
 			// this seek.
 			if (multi_pov_host_) multi_pov_system_move_ = true;
 
-			if (config::GdxReplaySkipMsSelection && !live_mode_) {
+			if (config::GdxReplaySkipMsSelection && !live_session_) {
 				briefing_start_frame_ = key_msg_count_;
 				briefing_start_frame_round_ = start_msg_count_;
 			}
@@ -1440,7 +1465,7 @@ void GdxsvBackendReplay::OnNextFrameInternal() {
 				if (multi_pov_host_) multi_pov_round_jump_ = true;
 				ctrl_commands_.emplace_back(ReplayCtrlCommand::SaveFirstFrame);
 				ctrl_commands_.emplace_back(ReplayCtrlCommand::SendStartMsg);
-				if (config::GdxReplaySkipMsSelection && !live_mode_) {
+				if (config::GdxReplaySkipMsSelection && !live_session_) {
 					BeginLoadingHud();
 					ctrl_commands_.emplace_back(ReplayCtrlCommand::SeekToBriefing);
 				}
@@ -1651,6 +1676,10 @@ bool GdxsvBackendReplay::StartLive(const std::string& host, const std::string& b
 		return false;
 	}
 
+	// 4-player live: the guests boot from the same header.
+	live_feeding_ = gdxsv_multi_pov_current_role() == GdxsvMultiPovRole::Host && gdxsv_multi_pov_is_live() &&
+		gdxsv_multi_pov_feed_publish_header(log_file_);
+
 	if (log_file_.users_size() <= pov) {
 		NOTICE_LOG(COMMON, "ReplayPOV %d does not exist: this battle has %d players", pov + 1, log_file_.users_size());
 		live_downlink_.Stop();
@@ -1665,6 +1694,28 @@ bool GdxsvBackendReplay::StartLive(const std::string& host, const std::string& b
 	// Only the first catch-up waits for the initial download to drain. Normal
 	// playback and later Live-button seeks retain their gap-based pacing.
 	live_mode_ = true;
+	live_session_ = true;
+	live_initial_catchup_ = true;
+	live_initial_backlog_ = true;
+	PublishUiState();
+	return true;
+}
+
+bool GdxsvBackendReplay::StartLiveFromHost(int pov) {
+	// The host bootstraps from LBS first, which can take its full timeout.
+	constexpr int kHeaderTimeoutMs = 20000;
+	if (!gdxsv_multi_pov_feed_wait_header(&log_file_, kHeaderTimeoutMs)) return false;
+
+	if (log_file_.users_size() <= pov) {
+		NOTICE_LOG(COMMON, "ReplayPOV %d does not exist: this battle has %d players", pov + 1, log_file_.users_size());
+		return false;
+	}
+	pov_ = pov;
+	if (!Start()) return false;
+
+	live_mode_ = true;
+	live_session_ = true;
+	live_from_host_ = true;
 	live_initial_catchup_ = true;
 	live_initial_backlog_ = true;
 	PublishUiState();
@@ -1757,6 +1808,7 @@ void GdxsvBackendReplay::ProcessUiCommands() {
 			pause_menu_opend_ = false;
 			break;
 		case ReplayCtrlCommand::ExitReplay:
+			exit_requested_ = true;
 			Stop();
 			break;
 		case ReplayCtrlCommand::TakeoverInput: {
@@ -1802,8 +1854,15 @@ void GdxsvBackendReplay::CheckLiveUpdate() {
 		return;
 	}
 
-	live_downlink_.DrainInto(&log_file_, live_initial_catchup_ ? &live_initial_backlog_ : nullptr);
-	live_downlink_.ReportAcked(log_file_.inputs_size(), live_initial_catchup_);
+	if (live_from_host_) {
+		gdxsv_multi_pov_feed_drain(&log_file_, live_initial_catchup_ ? &live_initial_backlog_ : nullptr);
+	} else {
+		const bool backlog_before = live_initial_catchup_ && live_initial_backlog_;
+		const bool applied = live_downlink_.DrainInto(&log_file_, live_initial_catchup_ ? &live_initial_backlog_ : nullptr);
+		live_downlink_.ReportAcked(log_file_.inputs_size(), live_initial_catchup_);
+		const bool backlog = live_initial_catchup_ && live_initial_backlog_;
+		if (live_feeding_ && (applied || backlog != backlog_before)) gdxsv_multi_pov_feed_publish(log_file_, backlog);
+	}
 
 	if (!log_file_.close_reason().empty()) {
 		// Battle ended - stop the downlink and let the normal exhaustion
@@ -1823,8 +1882,9 @@ void GdxsvBackendReplay::Stop() {
 	}
 	// A guest's volume followed the host's; back to the config file's.
 	if (multi_pov_guest_) config::AudioVolume.load();
-	// Closing the session tells the guests to quit.
-	if (multi_pov_host_) {
+	// Closing the session tells the guests to quit. A live session may go on
+	// to the next battle, so gdxsv_end_replay decides.
+	if (multi_pov_host_ && !live_session_) {
 		NOTICE_LOG(COMMON, "multi-pov: host replay stopped, closing the session");
 		gdxsv_multi_pov_close();
 		multi_pov_host_ = false;
@@ -2477,7 +2537,7 @@ void GdxsvBackendReplay::ProcessMcsMessage(const McsMessage& msg) {
 
 		ctrl_commands_.emplace_back(ReplayCtrlCommand::SaveFirstFrame);
 		ctrl_commands_.emplace_back(ReplayCtrlCommand::SendStartMsg);
-		if (config::GdxReplaySkipMsSelection && !live_mode_) {
+		if (config::GdxReplaySkipMsSelection && !live_session_) {
 			BeginLoadingHud();
 			ctrl_commands_.emplace_back(ReplayCtrlCommand::SeekToBriefing);
 		} else if (live_mode_ && start_msg_count_ == 1 && start_msg_count_ < log_file_.start_msg_indexes_size()) {
@@ -2833,7 +2893,7 @@ void GdxsvBackendReplay::GetControlTimelineBounds(int& timelineStart, int& timel
 
 	// Live never skips MS selection, so trimming the timeline to the briefing
 	// would leave the scrubber disagreeing with what is on screen.
-	if (config::GdxReplaySkipMsSelection && !live_mode_ && briefing_start_frame_ > timelineStart &&
+	if (config::GdxReplaySkipMsSelection && !live_session_ && briefing_start_frame_ > timelineStart &&
 		briefing_start_frame_ < timelineEnd && briefing_start_frame_round_ == start_msg_count_) {
 		timelineStart = briefing_start_frame_;
 	}

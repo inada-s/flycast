@@ -129,7 +129,9 @@ struct Header {
 	Slot slots[kMaxSlots];
 };
 
-GdxsvSpectateSync::~GdxsvSpectateSync() {
+GdxsvSpectateSync::~GdxsvSpectateSync() { Leave(); }
+
+void GdxsvSpectateSync::Leave() {
 	if (slot_ != nullptr) {
 		slot_->heartbeat_us.store(0);  // release the slot for the next run
 		slot_ = nullptr;
@@ -138,11 +140,13 @@ GdxsvSpectateSync::~GdxsvSpectateSync() {
 		UnmapShared(map_, map_size_);
 		map_ = nullptr;
 	}
+	group_.clear();
 }
 
 void GdxsvSpectateSync::Join(const std::string& group) {
+	if (slot_ != nullptr && group == group_) return;  // Start() can run more than once; one slot each
+	Leave();
 	if (group.empty()) return;
-	if (slot_ != nullptr) return;  // Start() can run more than once; one slot each
 
 	map_size_ = sizeof(Header);
 	void* m = MapShared(group, map_size_);
@@ -162,6 +166,7 @@ void GdxsvSpectateSync::Join(const std::string& group) {
 			h->slots[i].heartbeat_us.store(now);
 			h->slots[i].frame.store(0);
 			slot_ = &h->slots[i];
+			group_ = group;
 			NOTICE_LOG(COMMON, "spectate sync: reclaimed slot %d in group %s", i, group.c_str());
 			return;
 		}
@@ -173,6 +178,7 @@ void GdxsvSpectateSync::Join(const std::string& group) {
 			h->slots[i].heartbeat_us.store(now);
 			h->slots[i].frame.store(0);
 			slot_ = &h->slots[i];
+			group_ = group;
 			NOTICE_LOG(COMMON, "spectate sync: joined group %s in slot %d", group.c_str(), i);
 			return;
 		}
