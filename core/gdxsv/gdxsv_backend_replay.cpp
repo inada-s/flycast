@@ -798,7 +798,9 @@ void GdxsvBackendReplay::PublishMultiPovPlayback() {
 	st.key_display = config::GdxReplayKeyDisplay;
 	st.skip_ms_selection = config::GdxReplaySkipMsSelection;
 	st.volume = config::AudioVolume;
-	st.live_following = live_session_ && live_following_;
+	// Only while live: after the close the rest plays as a replay, and the
+	// viewer's seeks no longer clear live_following_.
+	st.live_following = live_mode_ && live_following_;
 	gdxsv_multi_pov_publish_playback(st);
 }
 
