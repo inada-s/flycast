@@ -15,22 +15,39 @@
 #include <unistd.h>
 #endif
 
+#include <algorithm>
 #include <atomic>
 #include <chrono>
 #include <cstring>
 #include <thread>
 
+#include "gdxsv.pb.h"
 #include "log/LogManager.h"
 #include "types.h"
 
 constexpr uint32_t kMagic = 0x4D505634;	 // "MPV4"
-constexpr uint32_t kVersion = 3;
+constexpr uint32_t kVersion = 4;
 
 // The replay payload follows the header at this offset.
 constexpr size_t kPayloadOffset = 4096;
 
 // Sanity cap on the replay size read from a header another process wrote.
 constexpr uint64_t kMaxReplayBytes = 256ull * 1024 * 1024;
+
+// Live session: room for the battle code in the header.
+constexpr size_t kLiveCodeWords = 8;
+constexpr size_t kMaxLiveCodeLen = kLiveCodeWords * sizeof(uint64_t);
+
+// Live session: what the host receives from LBS, relayed to the guests. The
+// bootstrap header (users, rule, patches), the round state and close as one
+// serialised BattleLogFile, and the inputs as they arrive.
+constexpr size_t kFeedHeaderOffset = kPayloadOffset;
+constexpr size_t kFeedHeaderCap = 256 * 1024;
+constexpr size_t kFeedRoundsOffset = kFeedHeaderOffset + kFeedHeaderCap;
+constexpr size_t kFeedRoundsCap = 64 * 1024;
+constexpr size_t kFeedInputsOffset = kFeedRoundsOffset + kFeedRoundsCap;
+constexpr int32_t kMaxFeedInputs = 1 << 20;  // hours of battle
+constexpr size_t kLiveSessionSize = kFeedInputsOffset + kMaxFeedInputs * sizeof(uint64_t);
 
 // "Gone" means the process is gone: a heartbeat cannot tell a busy host (one
 // loading a game holds its UI thread for seconds) from a dead one.
@@ -86,6 +103,7 @@ struct GdxsvMultiPovHeader {
 	std::atomic<uint32_t> key_display;
 	std::atomic<uint32_t> skip_ms_selection;
 	std::atomic<int32_t> volume;
+	std::atomic<uint32_t> live_following;
 	// The guests start before the host publishes; until then the fields
 	// above are zero and must not be followed.
 	std::atomic<uint32_t> playback_published;
@@ -96,69 +114,116 @@ struct GdxsvMultiPovHeader {
 	std::atomic<uint32_t> maximized;
 	std::atomic<uint32_t> fullscreen;
 	std::atomic<uint32_t> win_generation;
+	std::atomic<int64_t> guest_window[kGdxsvMultiPovScreens];
+
+	// Live session: the battle every screen watches. live_seq is a seqlock,
+	// odd while the host rewrites the code; seq / 2 is the battle generation.
+	std::atomic<uint32_t> live;
+	std::atomic<uint32_t> live_seq;
+	std::atomic<uint64_t> live_code[kLiveCodeWords];
+
+	// Live feed, written by the host. feed_generation names the battle
+	// generation the feed holds; feed_rounds_seq is a seqlock over the rounds blob.
+	std::atomic<uint32_t> feed_generation;
+	std::atomic<uint32_t> feed_header_size;
+	std::atomic<uint32_t> feed_header_ready;
+	std::atomic<uint32_t> feed_rounds_seq;
+	std::atomic<uint32_t> feed_rounds_size;
+	std::atomic<int32_t> feed_inputs;
+	std::atomic<uint32_t> feed_backlog;
 };
 
 static_assert(sizeof(GdxsvMultiPovHeader) <= kPayloadOffset, "header must fit before the payload");
 
+// Windows: a named section backed by the paging file, so nothing is written
+// to disk and it goes when the last process unmaps it. The guests are the
+// host's child processes, in its session, so "Local\\" reaches them.
+// POSIX: a file in /tmp, removed when the host closes the session.
 static std::string SessionPath(const std::string& session_id) {
 #ifdef _WIN32
-	char temp_dir[MAX_PATH];
-	if (GetTempPathA(MAX_PATH, temp_dir) == 0) return {};
-	return std::string(temp_dir) + "gdxsv_multi_pov_" + session_id;
+	return "Local\\gdxsv_multi_pov_" + session_id;
 #else
 	return "/tmp/gdxsv_multi_pov_" + session_id;
 #endif
 }
 
-// Maps the session file. `create` lays it out at `size`; otherwise it must
-// already be at least that big (reading past the end is a SIGBUS on POSIX).
-static void* MapSession(const std::string& path, size_t size, bool create) {
+// Creates the session at `size`, zero-filled. *handle: Windows, the section
+// handle the host keeps open, since the name goes with the last handle even
+// while views remain.
+static void* CreateSessionMap(const std::string& path, size_t size, void** handle) {
 #ifdef _WIN32
-	HANDLE file = CreateFileA(path.c_str(), GENERIC_READ | GENERIC_WRITE, FILE_SHARE_READ | FILE_SHARE_WRITE, nullptr,
-							  create ? CREATE_ALWAYS : OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, nullptr);
-	if (file == INVALID_HANDLE_VALUE) {
-		WARN_LOG(COMMON, "multi-pov: CreateFile failed %s (%lu)", path.c_str(), GetLastError());
-		return nullptr;
-	}
-	if (!create) {
-		LARGE_INTEGER on_disk{};
-		if (!GetFileSizeEx(file, &on_disk) || static_cast<uint64_t>(on_disk.QuadPart) < size) {
-			CloseHandle(file);
-			return nullptr;
-		}
-	}
-	HANDLE mapping = CreateFileMappingA(file, nullptr, PAGE_READWRITE, static_cast<DWORD>(static_cast<uint64_t>(size) >> 32),
-										static_cast<DWORD>(size & 0xffffffffu), nullptr);
+	HANDLE mapping = CreateFileMappingA(INVALID_HANDLE_VALUE, nullptr, PAGE_READWRITE,
+										static_cast<DWORD>(static_cast<uint64_t>(size) >> 32),
+										static_cast<DWORD>(size & 0xffffffffu), path.c_str());
 	if (mapping == nullptr) {
 		WARN_LOG(COMMON, "multi-pov: CreateFileMapping failed %s (%lu)", path.c_str(), GetLastError());
-		CloseHandle(file);
 		return nullptr;
 	}
 	void* m = MapViewOfFile(mapping, FILE_MAP_ALL_ACCESS, 0, 0, size);
-	CloseHandle(mapping);  // the view keeps the section alive
-	CloseHandle(file);
-	if (m == nullptr) WARN_LOG(COMMON, "multi-pov: MapViewOfFile failed (%lu)", GetLastError());
+	if (m == nullptr) {
+		WARN_LOG(COMMON, "multi-pov: MapViewOfFile failed (%lu)", GetLastError());
+		CloseHandle(mapping);
+		return nullptr;
+	}
+	*handle = mapping;
 	return m;
 #else
-	const int fd = open(path.c_str(), create ? (O_RDWR | O_CREAT | O_TRUNC) : O_RDWR, 0666);
+	(void)handle;
+	const int fd = open(path.c_str(), O_RDWR | O_CREAT | O_TRUNC, 0666);
 	if (fd < 0) {
 		WARN_LOG(COMMON, "multi-pov: open failed %s", path.c_str());
 		return nullptr;
 	}
-	if (create) {
-		if (ftruncate(fd, static_cast<off_t>(size)) != 0) {
-			WARN_LOG(COMMON, "multi-pov: ftruncate failed %s", path.c_str());
-			close(fd);
-			return nullptr;
-		}
-	} else {
-		struct stat st {};
-		if (fstat(fd, &st) != 0 || static_cast<uint64_t>(st.st_size) < size) {
-			close(fd);
-			return nullptr;
-		}
+	if (ftruncate(fd, static_cast<off_t>(size)) != 0) {
+		WARN_LOG(COMMON, "multi-pov: ftruncate failed %s", path.c_str());
+		close(fd);
+		return nullptr;
 	}
 	void* m = mmap(nullptr, size, PROT_READ | PROT_WRITE, MAP_SHARED, fd, 0);
+	close(fd);
+	if (m == MAP_FAILED) {
+		WARN_LOG(COMMON, "multi-pov: mmap failed %s", path.c_str());
+		return nullptr;
+	}
+	return m;
+#endif
+}
+
+// Maps an existing session whole. *size is what is mapped, at least the
+// header (reading past the end is a SIGBUS on POSIX).
+static void* OpenSessionMap(const std::string& path, size_t* size) {
+#ifdef _WIN32
+	HANDLE mapping = OpenFileMappingA(FILE_MAP_ALL_ACCESS, FALSE, path.c_str());
+	if (mapping == nullptr) {
+		WARN_LOG(COMMON, "multi-pov: OpenFileMapping failed %s (%lu)", path.c_str(), GetLastError());
+		return nullptr;
+	}
+	void* m = MapViewOfFile(mapping, FILE_MAP_ALL_ACCESS, 0, 0, 0);
+	CloseHandle(mapping);
+	if (m == nullptr) {
+		WARN_LOG(COMMON, "multi-pov: MapViewOfFile failed (%lu)", GetLastError());
+		return nullptr;
+	}
+	MEMORY_BASIC_INFORMATION info{};
+	if (VirtualQuery(m, &info, sizeof(info)) == 0 || info.RegionSize < kPayloadOffset) {
+		UnmapViewOfFile(m);
+		return nullptr;
+	}
+	*size = info.RegionSize;
+	return m;
+#else
+	const int fd = open(path.c_str(), O_RDWR);
+	if (fd < 0) {
+		WARN_LOG(COMMON, "multi-pov: open failed %s", path.c_str());
+		return nullptr;
+	}
+	struct stat st {};
+	if (fstat(fd, &st) != 0 || static_cast<uint64_t>(st.st_size) < kPayloadOffset) {
+		close(fd);
+		return nullptr;
+	}
+	*size = static_cast<size_t>(st.st_size);
+	void* m = mmap(nullptr, *size, PROT_READ | PROT_WRITE, MAP_SHARED, fd, 0);
 	close(fd);
 	if (m == MAP_FAILED) {
 		WARN_LOG(COMMON, "multi-pov: mmap failed %s", path.c_str());
@@ -178,28 +243,25 @@ static void UnmapSession(void* m, size_t size) {
 #endif
 }
 
-static uint64_t SessionFileSize(const std::string& path) {
-#ifdef _WIN32
-	WIN32_FILE_ATTRIBUTE_DATA attr{};
-	if (!GetFileAttributesExA(path.c_str(), GetFileExInfoStandard, &attr)) return 0;
-	return (static_cast<uint64_t>(attr.nFileSizeHigh) << 32) | attr.nFileSizeLow;
-#else
-	struct stat st {};
-	if (stat(path.c_str(), &st) != 0) return 0;
-	return static_cast<uint64_t>(st.st_size);
-#endif
-}
-
 // This process's session: at most one per process.
 struct GdxsvMultiPovSession {
 	GdxsvMultiPovRole role = GdxsvMultiPovRole::None;
 	int screen = -1;
 	void* map = nullptr;
+	void* map_handle = nullptr;  // host on Windows: keeps the section's name
 	size_t map_size = 0;
 	std::string path;
 
 	GdxsvMultiPovHeader* header() const { return static_cast<GdxsvMultiPovHeader*>(map); }
 	uint8_t* payload() const { return static_cast<uint8_t*>(map) + kPayloadOffset; }
+	uint8_t* at(size_t offset) const { return static_cast<uint8_t*>(map) + offset; }
+
+	// Live feed. Host: what is already published. Guest: the generation it
+	// plays and the rounds blob it last applied.
+	int32_t feed_published_inputs = 0;
+	std::string feed_published_rounds;
+	uint32_t feed_generation = 0;
+	uint32_t feed_applied_rounds_seq = 0;
 };
 
 static GdxsvMultiPovSession g_session;
@@ -215,24 +277,22 @@ std::string gdxsv_multi_pov_new_session_id() {
 	return std::to_string(CurrentPid()) + "_" + std::to_string(now);
 }
 
-bool gdxsv_multi_pov_host_create(const std::string& session_id, const std::vector<uint8_t>& replay) {
-	if (session_id.empty()) return false;
-	if (replay.empty() || kMaxReplayBytes < replay.size()) {
-		WARN_LOG(COMMON, "multi-pov: refusing to publish a %zu byte replay", replay.size());
-		return false;
-	}
+// Lays out a fresh session of `size` bytes with this process as its host.
+static bool CreateHostSession(const std::string& session_id, size_t size) {
 	gdxsv_multi_pov_close();
 
 	const std::string path = SessionPath(session_id);
 	if (path.empty()) return false;
 
-	const size_t size = kPayloadOffset + replay.size();
-	void* m = MapSession(path, size, true);
+	void* handle = nullptr;
+	void* m = CreateSessionMap(path, size, &handle);
 	if (m == nullptr) return false;
 
+	g_session = {};
 	g_session.role = GdxsvMultiPovRole::Host;
 	g_session.screen = 0;
 	g_session.map = m;
+	g_session.map_handle = handle;
 	g_session.map_size = size;
 	g_session.path = path;
 
@@ -241,7 +301,18 @@ bool gdxsv_multi_pov_host_create(const std::string& session_id, const std::vecto
 	h->version.store(kVersion, std::memory_order_relaxed);
 	h->total_size.store(size, std::memory_order_relaxed);
 	h->host_pid.store(CurrentPid(), std::memory_order_relaxed);
+	return true;
+}
 
+bool gdxsv_multi_pov_host_create(const std::string& session_id, const std::vector<uint8_t>& replay) {
+	if (session_id.empty()) return false;
+	if (replay.empty() || kMaxReplayBytes < replay.size()) {
+		WARN_LOG(COMMON, "multi-pov: refusing to publish a %zu byte replay", replay.size());
+		return false;
+	}
+	if (!CreateHostSession(session_id, kPayloadOffset + replay.size())) return false;
+
+	GdxsvMultiPovHeader* h = g_session.header();
 	std::memcpy(g_session.payload(), replay.data(), replay.size());
 	h->replay_size.store(replay.size(), std::memory_order_relaxed);
 	h->replay_ready.store(1, std::memory_order_release);
@@ -249,6 +320,82 @@ bool gdxsv_multi_pov_host_create(const std::string& session_id, const std::vecto
 
 	NOTICE_LOG(COMMON, "multi-pov: host published %zu replay bytes to session %s", replay.size(), session_id.c_str());
 	return true;
+}
+
+static void WriteLiveBattle(GdxsvMultiPovHeader* h, const std::string& battle_code) {
+	uint64_t words[kLiveCodeWords] = {};
+	std::memcpy(words, battle_code.data(), std::min(battle_code.size(), kMaxLiveCodeLen));
+	const uint32_t seq = h->live_seq.load(std::memory_order_relaxed);
+	h->live_seq.store(seq + 1, std::memory_order_relaxed);
+	std::atomic_thread_fence(std::memory_order_release);
+	for (size_t i = 0; i < kLiveCodeWords; ++i) h->live_code[i].store(words[i], std::memory_order_relaxed);
+	h->live_seq.store(seq + 2, std::memory_order_release);
+}
+
+bool gdxsv_multi_pov_host_create_live(const std::string& session_id, const std::string& battle_code) {
+	if (session_id.empty() || battle_code.empty() || kMaxLiveCodeLen < battle_code.size()) return false;
+	if (!CreateHostSession(session_id, kLiveSessionSize)) return false;
+
+	GdxsvMultiPovHeader* h = g_session.header();
+	h->live.store(1, std::memory_order_relaxed);
+	WriteLiveBattle(h, battle_code);
+	h->feed_generation.store(h->live_seq.load(std::memory_order_relaxed) / 2, std::memory_order_relaxed);
+	h->magic.store(kMagic, std::memory_order_release);
+
+	NOTICE_LOG(COMMON, "multi-pov: host opened live session %s for %s", session_id.c_str(), battle_code.c_str());
+	return true;
+}
+
+bool gdxsv_multi_pov_host_publish_live_battle(const std::string& battle_code) {
+	GdxsvMultiPovHeader* h = g_session.header();
+	if (h == nullptr || g_session.role != GdxsvMultiPovRole::Host || h->live.load(std::memory_order_relaxed) == 0)
+		return false;
+	if (battle_code.empty() || kMaxLiveCodeLen < battle_code.size()) return false;
+
+	// A new battle starts over: a fresh start barrier, and no playback to
+	// follow until the host publishes its own.
+	h->playback_published.store(0, std::memory_order_relaxed);
+	h->ready_mask.store(0, std::memory_order_relaxed);
+	h->go.store(0, std::memory_order_relaxed);
+	// The feed starts over too, before the guests can see the new battle.
+	h->feed_header_ready.store(0, std::memory_order_relaxed);
+	h->feed_inputs.store(0, std::memory_order_relaxed);
+	h->feed_backlog.store(1, std::memory_order_relaxed);
+	// An empty rounds blob, or a guest of the new battle would start it with
+	// the previous battle's round starts and seeds.
+	const uint32_t rounds_seq = h->feed_rounds_seq.load(std::memory_order_relaxed);
+	h->feed_rounds_seq.store(rounds_seq + 1, std::memory_order_relaxed);
+	h->feed_rounds_size.store(0, std::memory_order_relaxed);
+	h->feed_rounds_seq.store(rounds_seq + 2, std::memory_order_release);
+	g_session.feed_published_inputs = 0;
+	g_session.feed_published_rounds.clear();
+	WriteLiveBattle(h, battle_code);
+	h->feed_generation.store(h->live_seq.load(std::memory_order_relaxed) / 2, std::memory_order_release);
+	NOTICE_LOG(COMMON, "multi-pov: live session moves on to %s, generation %u", battle_code.c_str(),
+			   h->live_seq.load(std::memory_order_relaxed) / 2);
+	return true;
+}
+
+bool gdxsv_multi_pov_is_live() {
+	const GdxsvMultiPovHeader* h = g_session.header();
+	return h != nullptr && h->live.load(std::memory_order_relaxed) != 0;
+}
+
+bool gdxsv_multi_pov_read_live_battle(std::string& battle_code, uint32_t& generation) {
+	const GdxsvMultiPovHeader* h = g_session.header();
+	if (h == nullptr || h->live.load(std::memory_order_relaxed) == 0) return false;
+
+	const uint32_t before = h->live_seq.load(std::memory_order_acquire);
+	if (before & 1) return false;
+	uint64_t words[kLiveCodeWords];
+	for (size_t i = 0; i < kLiveCodeWords; ++i) words[i] = h->live_code[i].load(std::memory_order_relaxed);
+	std::atomic_thread_fence(std::memory_order_acquire);
+	if (h->live_seq.load(std::memory_order_relaxed) != before) return false;
+
+	const char* chars = reinterpret_cast<const char*>(words);
+	battle_code.assign(chars, strnlen(chars, kMaxLiveCodeLen));
+	generation = before / 2;
+	return !battle_code.empty();
 }
 
 bool gdxsv_multi_pov_guest_open(const std::string& session_id, int screen) {
@@ -262,27 +409,25 @@ bool gdxsv_multi_pov_guest_open(const std::string& session_id, int screen) {
 	const std::string path = SessionPath(session_id);
 	if (path.empty()) return false;
 
-	// The host lays the whole file out before spawning anyone.
-	const uint64_t on_disk = SessionFileSize(path);
-	if (on_disk < kPayloadOffset) {
-		WARN_LOG(COMMON, "multi-pov: session %s is not ready (%llu bytes)", session_id.c_str(), (unsigned long long)on_disk);
-		return false;
-	}
-
-	void* m = MapSession(path, static_cast<size_t>(on_disk), false);
+	// The host lays the whole session out before spawning anyone.
+	size_t mapped = 0;
+	void* m = OpenSessionMap(path, &mapped);
 	if (m == nullptr) return false;
 
 	GdxsvMultiPovHeader* h = static_cast<GdxsvMultiPovHeader*>(m);
-	if (h->magic.load(std::memory_order_acquire) != kMagic || h->version.load(std::memory_order_acquire) != kVersion) {
+	const uint64_t total = h->total_size.load(std::memory_order_acquire);
+	if (h->magic.load(std::memory_order_acquire) != kMagic || h->version.load(std::memory_order_acquire) != kVersion ||
+		total < kPayloadOffset || mapped < total) {
 		WARN_LOG(COMMON, "multi-pov: session %s has a bad header", session_id.c_str());
-		UnmapSession(m, static_cast<size_t>(on_disk));
+		UnmapSession(m, mapped);
 		return false;
 	}
 
+	g_session = {};
 	g_session.role = GdxsvMultiPovRole::Guest;
 	g_session.screen = screen;
 	g_session.map = m;
-	g_session.map_size = static_cast<size_t>(on_disk);
+	g_session.map_size = static_cast<size_t>(total);
 	g_session.path = path;
 	g_session.header()->guest_pid[screen].store(CurrentPid(), std::memory_order_release);
 
@@ -299,10 +444,18 @@ void gdxsv_multi_pov_close() {
 	GdxsvMultiPovHeader* h = g_session.header();
 	if (g_session.role == GdxsvMultiPovRole::Host) {
 		h->host_closed.store(1, std::memory_order_release);
+#ifndef _WIN32
+		// The guests keep their mappings; nobody opens it again.
+		unlink(g_session.path.c_str());
+#endif
 	} else if (0 <= g_session.screen && g_session.screen < kGdxsvMultiPovScreens) {
 		h->guest_pid[g_session.screen].store(0, std::memory_order_release);
 	}
 	UnmapSession(g_session.map, g_session.map_size);
+#ifdef _WIN32
+	if (g_session.map_handle != nullptr) CloseHandle(static_cast<HANDLE>(g_session.map_handle));
+#endif
+	g_session.map_handle = nullptr;
 	g_session.map = nullptr;
 	g_session.map_size = 0;
 	g_session.role = GdxsvMultiPovRole::None;
@@ -340,17 +493,29 @@ bool gdxsv_multi_pov_fetch_replay(std::vector<uint8_t>& out, int timeout_ms) {
 	return true;
 }
 
+void gdxsv_multi_pov_guest_ready() {
+	GdxsvMultiPovHeader* h = g_session.header();
+	if (h == nullptr || g_session.role != GdxsvMultiPovRole::Guest) return;
+	h->ready_mask.fetch_or(1u << g_session.screen, std::memory_order_acq_rel);
+}
+
 bool gdxsv_multi_pov_guest_ready_and_wait(int timeout_ms) {
 	GdxsvMultiPovHeader* h = g_session.header();
 	if (h == nullptr || g_session.role != GdxsvMultiPovRole::Guest) return false;
 
-	h->ready_mask.fetch_or(1u << g_session.screen, std::memory_order_acq_rel);
+	gdxsv_multi_pov_guest_ready();
 
+	// Live: the host may give up on this battle and move on to another.
+	const uint32_t live_seq = h->live_seq.load(std::memory_order_acquire);
 	const auto waiting_since = std::chrono::steady_clock::now();
 	const auto deadline = waiting_since + std::chrono::milliseconds(timeout_ms);
 	while (h->go.load(std::memory_order_acquire) == 0) {
 		if (!HostAlive(h)) {
 			WARN_LOG(COMMON, "multi-pov: host went away before the start signal");
+			return false;
+		}
+		if (h->live_seq.load(std::memory_order_acquire) != live_seq) {
+			WARN_LOG(COMMON, "multi-pov: host moved on before the start signal");
 			return false;
 		}
 		if (deadline <= std::chrono::steady_clock::now()) {
@@ -382,12 +547,26 @@ bool gdxsv_multi_pov_host_wait_for_guests(int expected_guests, int timeout_ms) {
 		return true;
 	}
 
+	// A guest that has joined and then exited (a crash) is not waited for.
+	const auto gone_guests = [h]() {
+		int n = 0;
+		for (int i = 1; i < kGdxsvMultiPovScreens; ++i) {
+			const int32_t pid = h->guest_pid[i].load(std::memory_order_acquire);
+			if (pid != 0 && !ProcessAlive(pid) && (h->ready_mask.load(std::memory_order_acquire) & (1u << i)) == 0) ++n;
+		}
+		return n;
+	};
+
 	const auto waiting_since = std::chrono::steady_clock::now();
 	const auto deadline = waiting_since + std::chrono::milliseconds(timeout_ms);
 	bool all_in = false;
-	while (std::chrono::steady_clock::now() < deadline) {
+	for (int i = 0; std::chrono::steady_clock::now() < deadline; ++i) {
 		if (expected_guests <= ReadyGuestCount()) {
 			all_in = true;
+			break;
+		}
+		if (i % 10 == 0 && expected_guests <= ReadyGuestCount() + gone_guests()) {
+			WARN_LOG(COMMON, "multi-pov: %d guests have exited; starting without them", gone_guests());
 			break;
 		}
 		std::this_thread::sleep_for(std::chrono::milliseconds(20));
@@ -414,6 +593,7 @@ void gdxsv_multi_pov_publish_playback(const GdxsvMultiPovPlayback& state) {
 	h->key_display.store(state.key_display ? 1u : 0u, std::memory_order_relaxed);
 	h->skip_ms_selection.store(state.skip_ms_selection ? 1u : 0u, std::memory_order_relaxed);
 	h->volume.store(state.volume, std::memory_order_relaxed);
+	h->live_following.store(state.live_following ? 1u : 0u, std::memory_order_relaxed);
 	// Last, so a guest that sees the generation sees the target with it.
 	h->seek_generation.store(state.seek_generation, std::memory_order_release);
 	h->playback_published.store(1, std::memory_order_release);
@@ -434,6 +614,7 @@ bool gdxsv_multi_pov_read_playback(GdxsvMultiPovPlayback& out) {
 	out.key_display = h->key_display.load(std::memory_order_relaxed) != 0;
 	out.skip_ms_selection = h->skip_ms_selection.load(std::memory_order_relaxed) != 0;
 	out.volume = h->volume.load(std::memory_order_relaxed);
+	out.live_following = h->live_following.load(std::memory_order_relaxed) != 0;
 	return true;
 }
 
@@ -471,9 +652,161 @@ bool gdxsv_multi_pov_read_host_window(GdxsvMultiPovHostWindow& out) {
 	return true;
 }
 
+void gdxsv_multi_pov_publish_guest_window(int64_t handle) {
+	GdxsvMultiPovHeader* h = g_session.header();
+	if (h == nullptr || g_session.role != GdxsvMultiPovRole::Guest) return;
+	h->guest_window[g_session.screen].store(handle, std::memory_order_release);
+}
+
+void gdxsv_multi_pov_read_guest_windows(int64_t out[kGdxsvMultiPovScreens]) {
+	const GdxsvMultiPovHeader* h = g_session.header();
+	for (int i = 0; i < kGdxsvMultiPovScreens; ++i)
+		out[i] = h == nullptr ? 0 : h->guest_window[i].load(std::memory_order_acquire);
+}
+
 bool gdxsv_multi_pov_host_gone() {
 	const GdxsvMultiPovHeader* h = g_session.header();
 	if (h == nullptr) return false;
 	return !HostAlive(h);
 }
 
+// ---- live feed ----------------------------------------------------------
+
+static bool HostingLiveFeed() {
+	const GdxsvMultiPovHeader* h = g_session.header();
+	return h != nullptr && g_session.role == GdxsvMultiPovRole::Host && h->live.load(std::memory_order_relaxed) != 0 &&
+		   kLiveSessionSize <= g_session.map_size;
+}
+
+static uint32_t CurrentLiveGeneration(const GdxsvMultiPovHeader* h) {
+	return h->live_seq.load(std::memory_order_acquire) / 2;
+}
+
+bool gdxsv_multi_pov_feed_publish_header(const proto::BattleLogFile& header) {
+	if (!HostingLiveFeed()) return false;
+	GdxsvMultiPovHeader* h = g_session.header();
+	const std::string bytes = header.SerializeAsString();
+	if (kFeedHeaderCap < bytes.size()) {
+		WARN_LOG(COMMON, "multi-pov: live header of %zu bytes does not fit the session", bytes.size());
+		return false;
+	}
+	std::memcpy(g_session.at(kFeedHeaderOffset), bytes.data(), bytes.size());
+	h->feed_header_size.store(static_cast<uint32_t>(bytes.size()), std::memory_order_relaxed);
+	h->feed_header_ready.store(1, std::memory_order_release);
+	return true;
+}
+
+void gdxsv_multi_pov_feed_publish(const proto::BattleLogFile& log, bool backlog) {
+	if (!HostingLiveFeed()) return;
+	GdxsvMultiPovHeader* h = g_session.header();
+
+	// Inputs before the rounds blob: a guest that sees the close has every input.
+	const int32_t n = std::min(log.inputs_size(), kMaxFeedInputs);
+	if (g_session.feed_published_inputs < n) {
+		uint64_t* dst = reinterpret_cast<uint64_t*>(g_session.at(kFeedInputsOffset));
+		for (int32_t i = g_session.feed_published_inputs; i < n; ++i) dst[i] = log.inputs(i);
+		h->feed_inputs.store(n, std::memory_order_release);
+		g_session.feed_published_inputs = n;
+	}
+
+	proto::BattleLogFile rounds;
+	rounds.mutable_start_msg_indexes()->CopyFrom(log.start_msg_indexes());
+	rounds.mutable_start_msg_randoms()->CopyFrom(log.start_msg_randoms());
+	rounds.mutable_round_data()->CopyFrom(log.round_data());
+	rounds.set_close_reason(log.close_reason());
+	rounds.set_disconnect_user_index(log.disconnect_user_index());
+	std::string bytes = rounds.SerializeAsString();
+	if (bytes != g_session.feed_published_rounds && bytes.size() <= kFeedRoundsCap) {
+		const uint32_t seq = h->feed_rounds_seq.load(std::memory_order_relaxed);
+		h->feed_rounds_seq.store(seq + 1, std::memory_order_relaxed);
+		std::atomic_thread_fence(std::memory_order_release);
+		std::memcpy(g_session.at(kFeedRoundsOffset), bytes.data(), bytes.size());
+		h->feed_rounds_size.store(static_cast<uint32_t>(bytes.size()), std::memory_order_relaxed);
+		h->feed_rounds_seq.store(seq + 2, std::memory_order_release);
+		g_session.feed_published_rounds = std::move(bytes);
+	}
+
+	h->feed_backlog.store(backlog ? 1u : 0u, std::memory_order_relaxed);
+}
+
+bool gdxsv_multi_pov_feed_wait_header(proto::BattleLogFile* out, int timeout_ms) {
+	const GdxsvMultiPovHeader* h = g_session.header();
+	if (h == nullptr || g_session.role != GdxsvMultiPovRole::Guest || h->live.load(std::memory_order_relaxed) == 0 ||
+		g_session.map_size < kLiveSessionSize)
+		return false;
+
+	const uint32_t generation = CurrentLiveGeneration(h);
+	const auto deadline = std::chrono::steady_clock::now() + std::chrono::milliseconds(timeout_ms);
+	for (int i = 0;; ++i) {
+		if (CurrentLiveGeneration(h) != generation) {
+			WARN_LOG(COMMON, "multi-pov: host moved on before this battle's header");
+			return false;
+		}
+		if (h->feed_header_ready.load(std::memory_order_acquire) != 0 &&
+			h->feed_generation.load(std::memory_order_acquire) == generation) {
+			const uint32_t size = h->feed_header_size.load(std::memory_order_relaxed);
+			if (kFeedHeaderCap < size || !out->ParseFromArray(g_session.at(kFeedHeaderOffset), static_cast<int>(size))) {
+				WARN_LOG(COMMON, "multi-pov: bad live header from the host");
+				return false;
+			}
+			g_session.feed_generation = generation;
+			g_session.feed_applied_rounds_seq = 0;
+			return true;
+		}
+		if (deadline <= std::chrono::steady_clock::now()) {
+			WARN_LOG(COMMON, "multi-pov: no live header from the host within %d ms", timeout_ms);
+			return false;
+		}
+		if (i % 64 == 0 && !HostAlive(h)) return false;
+		std::this_thread::sleep_for(std::chrono::milliseconds(2));
+	}
+}
+
+bool gdxsv_multi_pov_feed_drain(proto::BattleLogFile* log, bool* backlog_pending) {
+	const GdxsvMultiPovHeader* h = g_session.header();
+	if (h == nullptr || g_session.role != GdxsvMultiPovRole::Guest || g_session.map_size < kLiveSessionSize) return false;
+	const auto same_battle = [h]() {
+		return CurrentLiveGeneration(h) == g_session.feed_generation &&
+			   h->feed_generation.load(std::memory_order_acquire) == g_session.feed_generation;
+	};
+	// Another battle's feed: the tick moves this screen on to it.
+	if (!same_battle()) return false;
+
+	// The rounds blob first: once it carries the close, the inputs read below are complete.
+	bool have_rounds = false;
+	proto::BattleLogFile rounds;
+	const uint32_t seq = h->feed_rounds_seq.load(std::memory_order_acquire);
+	if ((seq & 1) == 0 && seq != g_session.feed_applied_rounds_seq) {
+		const uint32_t size = h->feed_rounds_size.load(std::memory_order_relaxed);
+		if (size <= kFeedRoundsCap) {
+			std::string bytes(reinterpret_cast<const char*>(g_session.at(kFeedRoundsOffset)), size);
+			std::atomic_thread_fence(std::memory_order_acquire);
+			if (h->feed_rounds_seq.load(std::memory_order_relaxed) == seq && rounds.ParseFromString(bytes)) have_rounds = true;
+		}
+	}
+
+	std::vector<uint64_t> inputs;
+	const int32_t have = log->inputs_size();
+	const int32_t n = std::min(h->feed_inputs.load(std::memory_order_acquire), kMaxFeedInputs);
+	if (have < n) {
+		const uint64_t* src = reinterpret_cast<const uint64_t*>(g_session.at(kFeedInputsOffset));
+		inputs.assign(src + have, src + n);
+	}
+
+	// The host may have moved on while this was being read.
+	if (!same_battle()) return false;
+
+	for (const uint64_t input : inputs) log->add_inputs(input);
+	if (have_rounds) {
+		g_session.feed_applied_rounds_seq = seq;
+		log->mutable_start_msg_indexes()->CopyFrom(rounds.start_msg_indexes());
+		log->mutable_start_msg_randoms()->CopyFrom(rounds.start_msg_randoms());
+		log->mutable_round_data()->CopyFrom(rounds.round_data());
+		if (!rounds.close_reason().empty() && log->close_reason().empty()) {
+			log->set_close_reason(rounds.close_reason());
+			log->set_disconnect_user_index(rounds.disconnect_user_index());
+		}
+	}
+	if (backlog_pending != nullptr) *backlog_pending = h->feed_backlog.load(std::memory_order_relaxed) != 0;
+	return !inputs.empty() || have_rounds;
+}

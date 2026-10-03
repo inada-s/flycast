@@ -163,3 +163,63 @@ void gdxsv_multi_pov_window_set_borderless(bool borderless) {
 	SetWindowPos(hwnd, nullptr, 0, 0, 0, 0,
 				 SWP_NOMOVE | SWP_NOSIZE | SWP_NOZORDER | SWP_NOACTIVATE | SWP_FRAMECHANGED);
 }
+
+// dwmapi is loaded at run time: the attributes below are Windows 11 only,
+// and an older DWM just rejects them.
+static void SetDwmAttribute(HWND hwnd, DWORD attribute, const void* value, DWORD size) {
+	using DwmSetWindowAttributeFn = HRESULT(WINAPI*)(HWND, DWORD, LPCVOID, DWORD);
+	static const DwmSetWindowAttributeFn set_attribute = []() -> DwmSetWindowAttributeFn {
+		HMODULE dwmapi = LoadLibraryA("dwmapi.dll");
+		if (dwmapi == nullptr) return nullptr;
+		return reinterpret_cast<DwmSetWindowAttributeFn>(GetProcAddress(dwmapi, "DwmSetWindowAttribute"));
+	}();
+	if (set_attribute != nullptr) set_attribute(hwnd, attribute, value, size);
+}
+
+void gdxsv_multi_pov_window_set_flat(bool flat) {
+	HWND hwnd = Hwnd();
+	if (hwnd == nullptr) return;
+
+	// Values from dwmapi.h, which older SDKs lack. The shadow cannot go
+	// without changing how the title bar is drawn; see
+	// gdxsv_multi_pov_window_stay_below for that.
+	constexpr DWORD kCornerPreference = 33;		 // DWMWA_WINDOW_CORNER_PREFERENCE
+	constexpr DWORD kBorderColor = 34;			 // DWMWA_BORDER_COLOR
+	const DWORD corner = flat ? 1 : 0;			 // DWMWCP_DONOTROUND : DWMWCP_DEFAULT
+	const DWORD border = flat ? 0xFFFFFFFE : 0xFFFFFFFF;  // DWMWA_COLOR_NONE : DWMWA_COLOR_DEFAULT
+
+	SetDwmAttribute(hwnd, kCornerPreference, &corner, sizeof(corner));
+	SetDwmAttribute(hwnd, kBorderColor, &border, sizeof(border));
+}
+
+int64_t gdxsv_multi_pov_window_native_handle() {
+	return static_cast<int64_t>(reinterpret_cast<intptr_t>(Hwnd()));
+}
+
+void gdxsv_multi_pov_window_stay_below(const int64_t* windows, int count) {
+	HWND hwnd = Hwnd();
+	if (hwnd == nullptr) return;
+	// A guest stops pumping messages while it waits for the host to catch up
+	// (WaitForMultiPovHost), so the requests are posted, never waited on, and
+	// not repeated every frame while one may still be queued.
+	static DWORD last_request = 0;
+	const DWORD now = GetTickCount();
+	if (now - last_request < 250) return;
+	for (int i = 0; i < count; ++i) {
+		HWND guest = reinterpret_cast<HWND>(static_cast<intptr_t>(windows[i]));
+		if (guest == nullptr || !IsWindow(guest)) continue;
+		bool above = false;
+		for (HWND w = GetWindow(hwnd, GW_HWNDPREV); w != nullptr; w = GetWindow(w, GW_HWNDPREV)) {
+			if (w == guest) {
+				above = true;
+				break;
+			}
+		}
+		if (above) continue;
+		// Directly above the host: anything else keeps its place.
+		HWND over_host = GetWindow(hwnd, GW_HWNDPREV);
+		SetWindowPos(guest, over_host != nullptr ? over_host : HWND_TOP, 0, 0, 0, 0,
+					 SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE | SWP_NOOWNERZORDER | SWP_ASYNCWINDOWPOS);
+		last_request = now;
+	}
+}

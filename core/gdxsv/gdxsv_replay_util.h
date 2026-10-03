@@ -19,10 +19,14 @@ std::string gdxsv_replay_dir();
 std::string gdxsv_save_replay_file(const proto::BattleLogFile& log, const std::string& dir, const std::string& filename);
 
 void gdxsv_start_replay(const std::string& replay_path, int pov, bool four_screen);
-void gdxsv_start_live_spectate(const std::string& battle_code, int pov);
+// Live autoplay (gdxsv:LiveAutoNext) carries on from this battle to the next.
+void gdxsv_start_live_spectate(const std::string& battle_code, int pov, bool four_screen = false);
+// For a live battle started elsewhere (the command line).
+void gdxsv_live_autoplay_begin(const std::string& battle_code, int pov, bool four_screen);
 
 // Viewers watching battle_code right now. Never blocks: returns the last known
 // value and refreshes in the background. force_refresh skips the interval.
 int gdxsv_live_viewer_count(const std::string& battle_code, bool force_refresh = false);
-void gdxsv_end_replay(std::string error = {});
+// user_exit: the viewer left from the pause menu, which also ends Live autoplay.
+void gdxsv_end_replay(std::string error = {}, bool user_exit = false);
 void gdxsv_replay_select_dialog();

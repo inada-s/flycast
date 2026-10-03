@@ -41,8 +41,11 @@ int64_t NowUs() {
 // Shared memory every instance in the group maps by name. Zero-filled on
 // creation on both platforms, so an uninitialised header reads as 0.
 //
-// Both platforms back this with a real file that outlives the group, which is
-// why Join reclaims a slot by pid - a killed instance leaves its slot behind.
+// Both platforms back this with a real file. On Windows every member holds it
+// open as a temporary, delete-on-close file, so it stays in memory and goes
+// with the last member, killed or not; on POSIX the last member to leave
+// removes it. A killed instance can still leave its slot behind in a group
+// that lives on, which is why Join reclaims a slot by pid.
 // Windows previously used an anonymous section named under "Local\\", but that
 // namespace is scoped to the creating process's session; instances launched
 // as separate child processes (e.g. one per spectator POV, spawned by a
@@ -50,16 +53,28 @@ int64_t NowUs() {
 // silently gets its own private, zero-filled section instead of sharing one -
 // no error, just two peers that never see each other. A real file sidesteps
 // session scoping entirely.
-void* MapShared(const std::string& group, size_t size) {
+std::string SharedPath(const std::string& group) {
 #ifdef _WIN32
 	char temp_dir[MAX_PATH];
-	if (GetTempPathA(MAX_PATH, temp_dir) == 0) {
+	if (GetTempPathA(MAX_PATH, temp_dir) == 0) return {};
+	return std::string(temp_dir) + "gdxsv_spec_sync_" + group;
+#else
+	return "/tmp/gdxsv_spec_sync_" + group;
+#endif
+}
+
+// *file: Windows, the handle that keeps the delete-on-close file alive while
+// this member is in the group.
+void* MapShared(const std::string& group, size_t size, void** file) {
+#ifdef _WIN32
+	const std::string path = SharedPath(group);
+	if (path.empty()) {
 		WARN_LOG(COMMON, "spectate sync: GetTempPath failed");
 		return nullptr;
 	}
-	const std::string path = std::string(temp_dir) + "gdxsv_spec_sync_" + group;
-	HANDLE hFile = CreateFileA(path.c_str(), GENERIC_READ | GENERIC_WRITE, FILE_SHARE_READ | FILE_SHARE_WRITE, nullptr,
-								OPEN_ALWAYS, FILE_ATTRIBUTE_NORMAL, nullptr);
+	HANDLE hFile = CreateFileA(path.c_str(), GENERIC_READ | GENERIC_WRITE | DELETE,
+								FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, nullptr, OPEN_ALWAYS,
+								FILE_ATTRIBUTE_TEMPORARY | FILE_FLAG_DELETE_ON_CLOSE, nullptr);
 	if (hFile == INVALID_HANDLE_VALUE) {
 		WARN_LOG(COMMON, "spectate sync: CreateFile failed %s", path.c_str());
 		return nullptr;
@@ -71,12 +86,17 @@ void* MapShared(const std::string& group, size_t size) {
 		return nullptr;
 	}
 	void* m = MapViewOfFile(h, FILE_MAP_ALL_ACCESS, 0, 0, size);
-	CloseHandle(h);		 // the mapped view keeps the section alive
-	CloseHandle(hFile);	 // ditto
-	if (m == nullptr) WARN_LOG(COMMON, "spectate sync: MapViewOfFile failed");
+	CloseHandle(h);	 // the mapped view keeps the section alive
+	if (m == nullptr) {
+		WARN_LOG(COMMON, "spectate sync: MapViewOfFile failed");
+		CloseHandle(hFile);
+		return nullptr;
+	}
+	*file = hFile;
 	return m;
 #else
-	const std::string path = "/tmp/gdxsv_spec_sync_" + group;
+	(void)file;
+	const std::string path = SharedPath(group);
 	const int fd = open(path.c_str(), O_RDWR | O_CREAT, 0666);
 	if (fd < 0) {
 		WARN_LOG(COMMON, "spectate sync: open failed %s", path.c_str());
@@ -129,23 +149,44 @@ struct Header {
 	Slot slots[kMaxSlots];
 };
 
-GdxsvSpectateSync::~GdxsvSpectateSync() {
+GdxsvSpectateSync::~GdxsvSpectateSync() { Leave(); }
+
+void GdxsvSpectateSync::Leave() {
+	bool last = false;
 	if (slot_ != nullptr) {
 		slot_->heartbeat_us.store(0);  // release the slot for the next run
 		slot_ = nullptr;
+		const Header* h = static_cast<const Header*>(map_);
+		const int64_t now = NowUs();
+		last = true;
+		for (int i = 0; i < kMaxSlots; ++i) {
+			const int64_t hb = h->slots[i].heartbeat_us.load();
+			if (hb != 0 && now - hb <= kSlotStaleUs) last = false;
+		}
 	}
 	if (map_ != nullptr) {
 		UnmapShared(map_, map_size_);
 		map_ = nullptr;
 	}
+#ifdef _WIN32
+	(void)last;
+	if (file_ != nullptr) {
+		CloseHandle(static_cast<HANDLE>(file_));  // the last member's close deletes it
+		file_ = nullptr;
+	}
+#else
+	if (last && !group_.empty()) unlink(SharedPath(group_).c_str());
+#endif
+	group_.clear();
 }
 
 void GdxsvSpectateSync::Join(const std::string& group) {
+	if (slot_ != nullptr && group == group_) return;  // Start() can run more than once; one slot each
+	Leave();
 	if (group.empty()) return;
-	if (slot_ != nullptr) return;  // Start() can run more than once; one slot each
 
 	map_size_ = sizeof(Header);
-	void* m = MapShared(group, map_size_);
+	void* m = MapShared(group, map_size_, &file_);
 	if (m == nullptr) return;
 	map_ = m;
 
@@ -162,6 +203,7 @@ void GdxsvSpectateSync::Join(const std::string& group) {
 			h->slots[i].heartbeat_us.store(now);
 			h->slots[i].frame.store(0);
 			slot_ = &h->slots[i];
+			group_ = group;
 			NOTICE_LOG(COMMON, "spectate sync: reclaimed slot %d in group %s", i, group.c_str());
 			return;
 		}
@@ -173,6 +215,7 @@ void GdxsvSpectateSync::Join(const std::string& group) {
 			h->slots[i].heartbeat_us.store(now);
 			h->slots[i].frame.store(0);
 			slot_ = &h->slots[i];
+			group_ = group;
 			NOTICE_LOG(COMMON, "spectate sync: joined group %s in slot %d", group.c_str(), i);
 			return;
 		}

@@ -177,3 +177,14 @@ void gdxsv_multi_pov_window_set_borderless(bool borderless) {
 						NSWindowStyleMaskResizable;
 	}
 }
+
+void gdxsv_multi_pov_window_set_flat(bool flat) {
+	NSWindow* win = CocoaWindow();
+	if (win == nil) return;
+	win.hasShadow = !flat;
+}
+
+// hasShadow = NO already drops the shadow.
+int64_t gdxsv_multi_pov_window_native_handle() { return 0; }
+
+void gdxsv_multi_pov_window_stay_below(const int64_t*, int) {}

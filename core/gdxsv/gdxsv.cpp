@@ -1056,7 +1056,21 @@ bool Gdxsv::StartLiveSpectate(const char *battle_code, int pov) {
 	return false;
 }
 
-void Gdxsv::StopReplay() { replay_net_.Stop(); }
+bool Gdxsv::StartLiveFromHost(int pov) {
+	replay_net_.Reset();
+
+	if (replay_net_.StartLiveFromHost(pov)) {
+		netmode_ = NetMode::Replay;
+		return true;
+	}
+
+	return false;
+}
+
+void Gdxsv::StopReplay() {
+	replay_net_.Stop();
+	netmode_ = NetMode::Offline;
+}
 
 bool Gdxsv::StartRollbackTest(const char *param) {
 	rollback_net_.Reset();

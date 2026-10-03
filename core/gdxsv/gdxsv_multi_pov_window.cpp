@@ -31,6 +31,7 @@ static GdxsvMultiPovRect g_fullscreen_restore;
 static void SaveHostWindow() {
 	if (!g_host_window_restore) {
 		g_host_window_restore = gdxsv_multi_pov_window_get_state();
+		gdxsv_multi_pov_window_set_flat(true);
 #ifdef USE_SDL
 		sdl_preserve_window_state(true);
 #endif
@@ -124,6 +125,10 @@ static void TickHost() {
 
 	// Every frame, so a guest that is still booting reads the current layout.
 	gdxsv_multi_pov_publish_host_window(hw);
+
+	int64_t guests[kGdxsvMultiPovScreens];
+	gdxsv_multi_pov_read_guest_windows(guests);
+	gdxsv_multi_pov_window_stay_below(guests + 1, kGdxsvMultiPovScreens - 1);
 }
 
 static void TickGuest() {
@@ -132,6 +137,8 @@ static void TickGuest() {
 
 	if (!g_borderless_done) {
 		gdxsv_multi_pov_window_set_borderless(true);
+		gdxsv_multi_pov_window_set_flat(true);
+		gdxsv_multi_pov_publish_guest_window(gdxsv_multi_pov_window_native_handle());
 		g_borderless_done = true;
 	}
 
@@ -187,6 +194,7 @@ void gdxsv_multi_pov_window_tick() {
 		// Session over: undo the temporary grid layout on the UI thread.
 		if (g_fullscreen) LeaveFullscreen();
 		if (g_host_window_restore) {
+			gdxsv_multi_pov_window_set_flat(false);
 			gdxsv_multi_pov_window_restore_state(*g_host_window_restore);
 			g_host_window_restore.reset();
 #ifdef USE_SDL

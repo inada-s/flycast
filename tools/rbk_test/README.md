@@ -101,6 +101,26 @@ input later on some peers than on others: the game sends a KeyMsg1 between round
 a timesync skip on it never records it. lbs used to merge all peers and got the next round's start
 wrong then. Add `TEST_UPLINK_ROUND_DELAY=180` to make spectators wait at StartMsg for the round start
 (`StartMsg held` in their log); `--spectators 1:0,3:120` adds one that joins mid-match.
+`--spectator-extra "--config gdxsv:ReplayFourScreen=yes"` makes the spectator a four-screen host.
+
+## Live autoplay
+
+lbs never closes a `-spectator_test_session`, so moving on from one battle to the next needs
+`fake_live_lbs.py`: it serves a replay over lbs's spectator UDP channel as a series of live battles
+in real time, closes each at its end, and answers `/status` for the Live tab.
+
+```
+python tools/rbk_test/fake_live_lbs.py --replay tools/rbk_test/out/<tag>_header.pb.live.pb --battles 3 --max-frames 5300 --overlap 60
+flycast --config gdxsv:server=127.0.0.1 --config gdxsv:LiveApiUrl=http://127.0.0.1:3390 \
+    --config gdxsv:spectate=9000000 --config gdxsv:ReplayFourScreen=yes --config gdxsv:LiveAutoNext=yes <rom>
+```
+
+`--max-frames 5300` cuts each battle in round 3's MS selection, like a disconnect between rounds;
+`--overlap` starts the next battle while one is still on, `--gap` after it ends instead.
+Give several `--replay`s to serve them in turn: battles that differ catch state carried over from
+the previous one. The replay
+must come from a local test (an lbs recording from `live_rig.py` works), so the bootstrap savestate
+and rule match.
 
 ## Not covered here
 

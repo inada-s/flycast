@@ -41,6 +41,9 @@ class GdxsvBackendReplay {
 	// buffer replay - except it holds at the live edge for more data instead
 	// of stopping when it catches up.
 	bool StartLive(const std::string& host, const std::string& battle_code, int pov);
+	// 4-player Live Spectate guest: plays the battle the host relays through
+	// the session instead of talking to LBS.
+	bool StartLiveFromHost(int pov);
 	void Stop();
 
 	// Network Backend Interface
@@ -245,6 +248,19 @@ class GdxsvBackendReplay {
 	// Replays a match that is still being played: live_downlink_ feeds log_file_
 	// as frames arrive, instead of it being read whole from a file up front.
 	bool live_mode_ = false;
+	// Set by StartLive and kept after the battle closes, unlike live_mode_:
+	// what Live always does, such as playing the MS selection, holds to the end.
+	bool live_session_ = false;
+	// The viewer left playback from the pause menu, as opposed to it ending.
+	bool exit_requested_ = false;
+	// 4-player live: the host relays what live_downlink_ receives to the
+	// guests, which read it from the session instead.
+	bool live_feeding_ = false;
+	// Emulated frames since the game last took an input, after the first round
+	// start. See kMaxFramesWithoutInput.
+	int frames_without_input_ = 0;
+	int frames_without_input_key_ = -1;
+	bool live_from_host_ = false;
 	// Enabled only by a live round jump, retained while that stream drains.
 	bool live_counter_reconstruction_ = false;
 	GdxsvSpectatorDownlink live_downlink_;

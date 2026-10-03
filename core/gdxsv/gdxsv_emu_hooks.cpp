@@ -42,6 +42,11 @@ static void p2p_connection_toast();
 
 std::atomic<int> gdxsv_frame_period_trim_us{0};
 
+// Live 4-screen guest: the host's battle generation this screen is on, and
+// whether it is sitting that battle out.
+static uint32_t g_live_guest_generation = 0;
+static bool g_live_guest_idle = false;
+
 bool gdxsv_enabled() { return gdxsv.Enabled(); }
 
 bool gdxsv_is_multi_pov_guest() { return 0 <= gdxsv_multi_pov_guest_pov(); }
@@ -153,18 +158,39 @@ void gdxsv_emu_end_frame() {
 	}
 }
 
-// A guest closes when its host is closed or killed. Must run on the UI
-// thread: dc_exit() joins the emulation thread.
+// A guest closes when its host is closed or killed, and in a live session
+// moves on to the host's next battle. Must run on the UI thread: dc_exit()
+// joins the emulation thread.
 static void gdxsv_multi_pov_tick() {
 	if (gdxsv_multi_pov_current_role() != GdxsvMultiPovRole::Guest) return;
-	if (!gdxsv_multi_pov_host_gone()) return;
-	NOTICE_LOG(COMMON, "multi-pov: host is gone, closing this screen");
-	gdxsv_multi_pov_close();
-	// The savestate reset lifts memwatch's page protection before the unload
-	// writes into guest memory from this thread.
-	emu.stop();
-	gdxsv_save_state.Reset();
-	dc_exit();
+	if (gdxsv_multi_pov_host_gone()) {
+		NOTICE_LOG(COMMON, "multi-pov: host is gone, closing this screen");
+		gdxsv_multi_pov_close();
+		// The savestate reset lifts memwatch's page protection before the unload
+		// writes into guest memory from this thread.
+		emu.stop();
+		gdxsv_save_state.Reset();
+		dc_exit();
+		return;
+	}
+	if (!gdxsv_multi_pov_is_live()) return;
+
+	std::string battle_code;
+	uint32_t generation = 0;
+	if (gdxsv_multi_pov_read_live_battle(battle_code, generation) && generation != g_live_guest_generation) {
+		NOTICE_LOG(COMMON, "multi-pov: host moved on to %s", battle_code.c_str());
+		emu.stop();
+		gdxsv_save_state.Reset();
+		gdxsv.StopReplay();
+		// The slot-99 hook starts the new battle.
+		dc_loadstate(99);
+		if (!g_live_guest_idle) emu.start();
+		return;
+	}
+
+	// Between battles: nothing runs, so nothing paces the UI loop either.
+	if (g_live_guest_idle && emu.running()) emu.stop();
+	if (!emu.running()) std::this_thread::sleep_for(std::chrono::milliseconds(16));
 }
 
 void gdxsv_emu_next_frame() {
@@ -230,15 +256,42 @@ void gdxsv_emu_loadstate(int slot) {
 		}
 
 		if (!spectate.empty() && slot == 99) {
+			// One shot, like the four-screen request: Live autoplay loads
+			// slot 99 again for every battle it moves on to.
+			if (config::isTransient("gdxsv", "spectate")) config::setTransient("gdxsv", "spectate", "");
 			auto spectate_pov = config::loadInt("gdxsv", "ReplayPOV", 1);
-			gdxsv.StartLiveSpectate(spectate.c_str(), spectate_pov - 1);
+			if (gdxsv_multi_pov_take_four_screen_request() && !gdxsv_headless()) {
+				if (gdxsv_multi_pov_begin_live_host_session(spectate)) {
+					if (gdxsv.StartLiveSpectate(spectate.c_str(), 0)) {
+						NOTICE_LOG(COMMON, "multi-pov: hosting live %s from the command line", spectate.c_str());
+						gdxsv_live_autoplay_begin(spectate, 0, true);
+						return;
+					}
+					ERROR_LOG(COMMON, "multi-pov: could not start the hosted live battle; closing the session");
+					gdxsv_multi_pov_close();
+				}
+			}
+			if (gdxsv.StartLiveSpectate(spectate.c_str(), spectate_pov - 1))
+				gdxsv_live_autoplay_begin(spectate, spectate_pov - 1, false);
 		}
 
-		// 4-player replay guest: the replay comes from the host.
+		// 4-player replay guest: the replay, or the live battle, comes from the host.
 		const int multi_pov = gdxsv_multi_pov_guest_pov();
 		if (0 <= multi_pov && slot == 99) {
-			std::vector<u8> buf;
-			if (gdxsv_multi_pov_begin_guest_session(buf) && gdxsv.StartReplayBuffer(buf, multi_pov)) {
+			GdxsvMultiPovGuestStart start;
+			const bool joined = gdxsv_multi_pov_begin_guest_session(start);
+			if (joined && !start.live_battle_code.empty()) {
+				// A live guest that cannot start this battle waits for the next.
+				g_live_guest_generation = start.live_generation;
+				g_live_guest_idle = !gdxsv.StartLiveFromHost(multi_pov);
+				if (g_live_guest_idle) {
+					WARN_LOG(COMMON, "multi-pov: guest %dP cannot watch %s; waiting for the next battle", multi_pov + 1,
+							 start.live_battle_code.c_str());
+					gdxsv_multi_pov_skip_start_barrier();
+				} else {
+					NOTICE_LOG(COMMON, "multi-pov: guest %dP watching %s live", multi_pov + 1, start.live_battle_code.c_str());
+				}
+			} else if (joined && gdxsv.StartReplayBuffer(start.replay, multi_pov)) {
 				NOTICE_LOG(COMMON, "multi-pov: guest %dP playing from the host's replay", multi_pov + 1);
 			} else {
 				ERROR_LOG(COMMON, "multi-pov: guest %dP could not start; closing this screen", multi_pov + 1);

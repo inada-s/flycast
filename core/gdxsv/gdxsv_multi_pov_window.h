@@ -52,6 +52,17 @@ void gdxsv_multi_pov_window_set_topmost(bool topmost);
 
 void gdxsv_multi_pov_window_set_borderless(bool borderless);
 
+// Drops the rounded corners (and on macOS the shadow) the desktop draws
+// around the window, which would clip and spill over the neighbouring quadrants.
+void gdxsv_multi_pov_window_set_flat(bool flat);
+
+// This window, for another screen to order its own against. 0 where unused.
+int64_t gdxsv_multi_pov_window_native_handle();
+
+// Host (Windows): keeps the guests' windows above its own, so the shadow DWM
+// draws around the host's framed window falls under them. No-op elsewhere.
+void gdxsv_multi_pov_window_stay_below(const int64_t* windows, int count);
+
 // The window frame around the content area, in pixels per side.
 struct GdxsvMultiPovInsets {
 	int32_t left = 0, top = 0, right = 0, bottom = 0;

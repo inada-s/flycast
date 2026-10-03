@@ -59,6 +59,7 @@ class Gdxsv {
 	bool StartReplayFile(const char* path, int pov);
 	bool StartReplayBuffer(const std::vector<u8>& buf, int pov);
 	bool StartLiveSpectate(const char* battle_code, int pov);
+	bool StartLiveFromHost(int pov);
 	void StopReplay();
 	bool StartRollbackTest(const char* param);
 	void WritePatch();
