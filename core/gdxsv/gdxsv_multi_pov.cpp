@@ -135,65 +135,95 @@ struct GdxsvMultiPovHeader {
 
 static_assert(sizeof(GdxsvMultiPovHeader) <= kPayloadOffset, "header must fit before the payload");
 
+// Windows: a named section backed by the paging file, so nothing is written
+// to disk and it goes when the last process unmaps it. The guests are the
+// host's child processes, in its session, so "Local\\" reaches them.
+// POSIX: a file in /tmp, removed when the host closes the session.
 static std::string SessionPath(const std::string& session_id) {
 #ifdef _WIN32
-	char temp_dir[MAX_PATH];
-	if (GetTempPathA(MAX_PATH, temp_dir) == 0) return {};
-	return std::string(temp_dir) + "gdxsv_multi_pov_" + session_id;
+	return "Local\\gdxsv_multi_pov_" + session_id;
 #else
 	return "/tmp/gdxsv_multi_pov_" + session_id;
 #endif
 }
 
-// Maps the session file. `create` lays it out at `size`; otherwise it must
-// already be at least that big (reading past the end is a SIGBUS on POSIX).
-static void* MapSession(const std::string& path, size_t size, bool create) {
+// Creates the session at `size`, zero-filled. *handle: Windows, the section
+// handle the host keeps open, since the name goes with the last handle even
+// while views remain.
+static void* CreateSessionMap(const std::string& path, size_t size, void** handle) {
 #ifdef _WIN32
-	HANDLE file = CreateFileA(path.c_str(), GENERIC_READ | GENERIC_WRITE, FILE_SHARE_READ | FILE_SHARE_WRITE, nullptr,
-							  create ? CREATE_ALWAYS : OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, nullptr);
-	if (file == INVALID_HANDLE_VALUE) {
-		WARN_LOG(COMMON, "multi-pov: CreateFile failed %s (%lu)", path.c_str(), GetLastError());
-		return nullptr;
-	}
-	if (!create) {
-		LARGE_INTEGER on_disk{};
-		if (!GetFileSizeEx(file, &on_disk) || static_cast<uint64_t>(on_disk.QuadPart) < size) {
-			CloseHandle(file);
-			return nullptr;
-		}
-	}
-	HANDLE mapping = CreateFileMappingA(file, nullptr, PAGE_READWRITE, static_cast<DWORD>(static_cast<uint64_t>(size) >> 32),
-										static_cast<DWORD>(size & 0xffffffffu), nullptr);
+	HANDLE mapping = CreateFileMappingA(INVALID_HANDLE_VALUE, nullptr, PAGE_READWRITE,
+										static_cast<DWORD>(static_cast<uint64_t>(size) >> 32),
+										static_cast<DWORD>(size & 0xffffffffu), path.c_str());
 	if (mapping == nullptr) {
 		WARN_LOG(COMMON, "multi-pov: CreateFileMapping failed %s (%lu)", path.c_str(), GetLastError());
-		CloseHandle(file);
 		return nullptr;
 	}
 	void* m = MapViewOfFile(mapping, FILE_MAP_ALL_ACCESS, 0, 0, size);
-	CloseHandle(mapping);  // the view keeps the section alive
-	CloseHandle(file);
-	if (m == nullptr) WARN_LOG(COMMON, "multi-pov: MapViewOfFile failed (%lu)", GetLastError());
+	if (m == nullptr) {
+		WARN_LOG(COMMON, "multi-pov: MapViewOfFile failed (%lu)", GetLastError());
+		CloseHandle(mapping);
+		return nullptr;
+	}
+	*handle = mapping;
 	return m;
 #else
-	const int fd = open(path.c_str(), create ? (O_RDWR | O_CREAT | O_TRUNC) : O_RDWR, 0666);
+	(void)handle;
+	const int fd = open(path.c_str(), O_RDWR | O_CREAT | O_TRUNC, 0666);
 	if (fd < 0) {
 		WARN_LOG(COMMON, "multi-pov: open failed %s", path.c_str());
 		return nullptr;
 	}
-	if (create) {
-		if (ftruncate(fd, static_cast<off_t>(size)) != 0) {
-			WARN_LOG(COMMON, "multi-pov: ftruncate failed %s", path.c_str());
-			close(fd);
-			return nullptr;
-		}
-	} else {
-		struct stat st {};
-		if (fstat(fd, &st) != 0 || static_cast<uint64_t>(st.st_size) < size) {
-			close(fd);
-			return nullptr;
-		}
+	if (ftruncate(fd, static_cast<off_t>(size)) != 0) {
+		WARN_LOG(COMMON, "multi-pov: ftruncate failed %s", path.c_str());
+		close(fd);
+		return nullptr;
 	}
 	void* m = mmap(nullptr, size, PROT_READ | PROT_WRITE, MAP_SHARED, fd, 0);
+	close(fd);
+	if (m == MAP_FAILED) {
+		WARN_LOG(COMMON, "multi-pov: mmap failed %s", path.c_str());
+		return nullptr;
+	}
+	return m;
+#endif
+}
+
+// Maps an existing session whole. *size is what is mapped, at least the
+// header (reading past the end is a SIGBUS on POSIX).
+static void* OpenSessionMap(const std::string& path, size_t* size) {
+#ifdef _WIN32
+	HANDLE mapping = OpenFileMappingA(FILE_MAP_ALL_ACCESS, FALSE, path.c_str());
+	if (mapping == nullptr) {
+		WARN_LOG(COMMON, "multi-pov: OpenFileMapping failed %s (%lu)", path.c_str(), GetLastError());
+		return nullptr;
+	}
+	void* m = MapViewOfFile(mapping, FILE_MAP_ALL_ACCESS, 0, 0, 0);
+	CloseHandle(mapping);
+	if (m == nullptr) {
+		WARN_LOG(COMMON, "multi-pov: MapViewOfFile failed (%lu)", GetLastError());
+		return nullptr;
+	}
+	MEMORY_BASIC_INFORMATION info{};
+	if (VirtualQuery(m, &info, sizeof(info)) == 0 || info.RegionSize < kPayloadOffset) {
+		UnmapViewOfFile(m);
+		return nullptr;
+	}
+	*size = info.RegionSize;
+	return m;
+#else
+	const int fd = open(path.c_str(), O_RDWR);
+	if (fd < 0) {
+		WARN_LOG(COMMON, "multi-pov: open failed %s", path.c_str());
+		return nullptr;
+	}
+	struct stat st {};
+	if (fstat(fd, &st) != 0 || static_cast<uint64_t>(st.st_size) < kPayloadOffset) {
+		close(fd);
+		return nullptr;
+	}
+	*size = static_cast<size_t>(st.st_size);
+	void* m = mmap(nullptr, *size, PROT_READ | PROT_WRITE, MAP_SHARED, fd, 0);
 	close(fd);
 	if (m == MAP_FAILED) {
 		WARN_LOG(COMMON, "multi-pov: mmap failed %s", path.c_str());
@@ -213,23 +243,12 @@ static void UnmapSession(void* m, size_t size) {
 #endif
 }
 
-static uint64_t SessionFileSize(const std::string& path) {
-#ifdef _WIN32
-	WIN32_FILE_ATTRIBUTE_DATA attr{};
-	if (!GetFileAttributesExA(path.c_str(), GetFileExInfoStandard, &attr)) return 0;
-	return (static_cast<uint64_t>(attr.nFileSizeHigh) << 32) | attr.nFileSizeLow;
-#else
-	struct stat st {};
-	if (stat(path.c_str(), &st) != 0) return 0;
-	return static_cast<uint64_t>(st.st_size);
-#endif
-}
-
 // This process's session: at most one per process.
 struct GdxsvMultiPovSession {
 	GdxsvMultiPovRole role = GdxsvMultiPovRole::None;
 	int screen = -1;
 	void* map = nullptr;
+	void* map_handle = nullptr;  // host on Windows: keeps the section's name
 	size_t map_size = 0;
 	std::string path;
 
@@ -265,13 +284,15 @@ static bool CreateHostSession(const std::string& session_id, size_t size) {
 	const std::string path = SessionPath(session_id);
 	if (path.empty()) return false;
 
-	void* m = MapSession(path, size, true);
+	void* handle = nullptr;
+	void* m = CreateSessionMap(path, size, &handle);
 	if (m == nullptr) return false;
 
 	g_session = {};
 	g_session.role = GdxsvMultiPovRole::Host;
 	g_session.screen = 0;
 	g_session.map = m;
+	g_session.map_handle = handle;
 	g_session.map_size = size;
 	g_session.path = path;
 
@@ -382,20 +403,17 @@ bool gdxsv_multi_pov_guest_open(const std::string& session_id, int screen) {
 	const std::string path = SessionPath(session_id);
 	if (path.empty()) return false;
 
-	// The host lays the whole file out before spawning anyone.
-	const uint64_t on_disk = SessionFileSize(path);
-	if (on_disk < kPayloadOffset) {
-		WARN_LOG(COMMON, "multi-pov: session %s is not ready (%llu bytes)", session_id.c_str(), (unsigned long long)on_disk);
-		return false;
-	}
-
-	void* m = MapSession(path, static_cast<size_t>(on_disk), false);
+	// The host lays the whole session out before spawning anyone.
+	size_t mapped = 0;
+	void* m = OpenSessionMap(path, &mapped);
 	if (m == nullptr) return false;
 
 	GdxsvMultiPovHeader* h = static_cast<GdxsvMultiPovHeader*>(m);
-	if (h->magic.load(std::memory_order_acquire) != kMagic || h->version.load(std::memory_order_acquire) != kVersion) {
+	const uint64_t total = h->total_size.load(std::memory_order_acquire);
+	if (h->magic.load(std::memory_order_acquire) != kMagic || h->version.load(std::memory_order_acquire) != kVersion ||
+		total < kPayloadOffset || mapped < total) {
 		WARN_LOG(COMMON, "multi-pov: session %s has a bad header", session_id.c_str());
-		UnmapSession(m, static_cast<size_t>(on_disk));
+		UnmapSession(m, mapped);
 		return false;
 	}
 
@@ -403,7 +421,7 @@ bool gdxsv_multi_pov_guest_open(const std::string& session_id, int screen) {
 	g_session.role = GdxsvMultiPovRole::Guest;
 	g_session.screen = screen;
 	g_session.map = m;
-	g_session.map_size = static_cast<size_t>(on_disk);
+	g_session.map_size = static_cast<size_t>(total);
 	g_session.path = path;
 	g_session.header()->guest_pid[screen].store(CurrentPid(), std::memory_order_release);
 
@@ -420,10 +438,18 @@ void gdxsv_multi_pov_close() {
 	GdxsvMultiPovHeader* h = g_session.header();
 	if (g_session.role == GdxsvMultiPovRole::Host) {
 		h->host_closed.store(1, std::memory_order_release);
+#ifndef _WIN32
+		// The guests keep their mappings; nobody opens it again.
+		unlink(g_session.path.c_str());
+#endif
 	} else if (0 <= g_session.screen && g_session.screen < kGdxsvMultiPovScreens) {
 		h->guest_pid[g_session.screen].store(0, std::memory_order_release);
 	}
 	UnmapSession(g_session.map, g_session.map_size);
+#ifdef _WIN32
+	if (g_session.map_handle != nullptr) CloseHandle(static_cast<HANDLE>(g_session.map_handle));
+#endif
+	g_session.map_handle = nullptr;
 	g_session.map = nullptr;
 	g_session.map_size = 0;
 	g_session.role = GdxsvMultiPovRole::None;

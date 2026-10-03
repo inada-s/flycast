@@ -40,4 +40,5 @@ class GdxsvSpectateSync {
 	size_t map_size_ = 0;
 	struct Slot* slot_ = nullptr;
 	std::string group_;
+	void* file_ = nullptr;  // Windows: keeps the group's delete-on-close file
 };
