@@ -361,6 +361,12 @@ bool gdxsv_multi_pov_host_publish_live_battle(const std::string& battle_code) {
 	h->feed_header_ready.store(0, std::memory_order_relaxed);
 	h->feed_inputs.store(0, std::memory_order_relaxed);
 	h->feed_backlog.store(1, std::memory_order_relaxed);
+	// An empty rounds blob, or a guest of the new battle would start it with
+	// the previous battle's round starts and seeds.
+	const uint32_t rounds_seq = h->feed_rounds_seq.load(std::memory_order_relaxed);
+	h->feed_rounds_seq.store(rounds_seq + 1, std::memory_order_relaxed);
+	h->feed_rounds_size.store(0, std::memory_order_relaxed);
+	h->feed_rounds_seq.store(rounds_seq + 2, std::memory_order_release);
 	g_session.feed_published_inputs = 0;
 	g_session.feed_published_rounds.clear();
 	WriteLiveBattle(h, battle_code);
@@ -541,12 +547,26 @@ bool gdxsv_multi_pov_host_wait_for_guests(int expected_guests, int timeout_ms) {
 		return true;
 	}
 
+	// A guest that has joined and then exited (a crash) is not waited for.
+	const auto gone_guests = [h]() {
+		int n = 0;
+		for (int i = 1; i < kGdxsvMultiPovScreens; ++i) {
+			const int32_t pid = h->guest_pid[i].load(std::memory_order_acquire);
+			if (pid != 0 && !ProcessAlive(pid) && (h->ready_mask.load(std::memory_order_acquire) & (1u << i)) == 0) ++n;
+		}
+		return n;
+	};
+
 	const auto waiting_since = std::chrono::steady_clock::now();
 	const auto deadline = waiting_since + std::chrono::milliseconds(timeout_ms);
 	bool all_in = false;
-	while (std::chrono::steady_clock::now() < deadline) {
+	for (int i = 0; std::chrono::steady_clock::now() < deadline; ++i) {
 		if (expected_guests <= ReadyGuestCount()) {
 			all_in = true;
+			break;
+		}
+		if (i % 10 == 0 && expected_guests <= ReadyGuestCount() + gone_guests()) {
+			WARN_LOG(COMMON, "multi-pov: %d guests have exited; starting without them", gone_guests());
 			break;
 		}
 		std::this_thread::sleep_for(std::chrono::milliseconds(20));
