@@ -116,7 +116,9 @@ flycast --config gdxsv:server=127.0.0.1 --config gdxsv:LiveApiUrl=http://127.0.0
 ```
 
 `--max-frames 5300` cuts each battle in round 3's MS selection, like a disconnect between rounds;
-`--overlap` starts the next battle while one is still on, `--gap` after it ends instead. The replay
+`--overlap` starts the next battle while one is still on, `--gap` after it ends instead.
+Give several `--replay`s to serve them in turn: battles that differ catch state carried over from
+the previous one. The replay
 must come from a local test (an lbs recording from `live_rig.py` works), so the bootstrap savestate
 and rule match.
 

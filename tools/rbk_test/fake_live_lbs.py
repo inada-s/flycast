@@ -236,7 +236,7 @@ def make_handler(battles, subs, lock, disk):
 
 def main():
     ap = argparse.ArgumentParser()
-    ap.add_argument("--replay", required=True)
+    ap.add_argument("--replay", required=True, nargs="+", help="one or more replays, used in turn")
     ap.add_argument("--battles", type=int, default=3)
     ap.add_argument("--max-frames", type=int, default=0, help="cut each battle after this many inputs")
     ap.add_argument("--lead", type=float, default=0.0, help="seconds a battle is already in when it starts")
@@ -247,13 +247,17 @@ def main():
     ap.add_argument("--http-port", type=int, default=3390)
     a = ap.parse_args()
 
-    log = pb.BattleLogFile()
-    with open(a.replay, "rb") as fp:
-        log.ParseFromString(fp.read())
+    logs = []
+    for path in a.replay:
+        log = pb.BattleLogFile()
+        with open(path, "rb") as fp:
+            log.ParseFromString(fp.read())
+        logs.append(log)
 
     battles = []
     t = time.time() + a.first
     for i in range(a.battles):
+        log = logs[i % len(logs)]
         b = Battle(str(9000000 + i), log, a.max_frames, t, a.lead)
         battles.append(b)
         print(f"battle {b.code}: {len(log.users)} players, {b.total} inputs, rounds at {b.starts}, "
@@ -265,7 +269,7 @@ def main():
     sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
     sock.bind(("0.0.0.0", a.udp_port))
     threading.Thread(target=udp_loop, args=(sock, battles, subs, lock), daemon=True).start()
-    server = ThreadingHTTPServer(("127.0.0.1", a.http_port), make_handler(battles, subs, lock, log.game_disk))
+    server = ThreadingHTTPServer(("127.0.0.1", a.http_port), make_handler(battles, subs, lock, logs[0].game_disk))
     print(f"udp :{a.udp_port}, http://127.0.0.1:{a.http_port}/status", flush=True)
     server.serve_forever()
 
