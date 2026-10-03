@@ -199,6 +199,12 @@ int64_t gdxsv_multi_pov_window_native_handle() {
 void gdxsv_multi_pov_window_stay_below(const int64_t* windows, int count) {
 	HWND hwnd = Hwnd();
 	if (hwnd == nullptr) return;
+	// A guest stops pumping messages while it waits for the host to catch up
+	// (WaitForMultiPovHost), so the requests are posted, never waited on, and
+	// not repeated every frame while one may still be queued.
+	static DWORD last_request = 0;
+	const DWORD now = GetTickCount();
+	if (now - last_request < 250) return;
 	for (int i = 0; i < count; ++i) {
 		HWND guest = reinterpret_cast<HWND>(static_cast<intptr_t>(windows[i]));
 		if (guest == nullptr || !IsWindow(guest)) continue;
@@ -213,6 +219,7 @@ void gdxsv_multi_pov_window_stay_below(const int64_t* windows, int count) {
 		// Directly above the host: anything else keeps its place.
 		HWND over_host = GetWindow(hwnd, GW_HWNDPREV);
 		SetWindowPos(guest, over_host != nullptr ? over_host : HWND_TOP, 0, 0, 0, 0,
-					 SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE | SWP_NOOWNERZORDER);
+					 SWP_NOMOVE | SWP_NOSIZE | SWP_NOACTIVATE | SWP_NOOWNERZORDER | SWP_ASYNCWINDOWPOS);
+		last_request = now;
 	}
 }
