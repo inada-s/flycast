@@ -256,6 +256,10 @@ class GdxsvBackendReplay {
 	// 4-player live: the host relays what live_downlink_ receives to the
 	// guests, which read it from the session instead.
 	bool live_feeding_ = false;
+	// Emulated frames since the game last took an input, after the first round
+	// start. See kMaxFramesWithoutInput.
+	int frames_without_input_ = 0;
+	int frames_without_input_key_ = -1;
 	bool live_from_host_ = false;
 	// Enabled only by a live round jump, retained while that stream drains.
 	bool live_counter_reconstruction_ = false;

@@ -78,8 +78,13 @@ public:
 		offset &= ~PAGE_MASK;
 	    auto rv = pages.try_emplace(offset);
 	    if (!rv.second)
-	      // already saved
+	    {
+	      // Already saved, yet it faulted: something protected the page again
+	      // (gdxsv). Returning without unprotecting faults on the same write
+	      // forever, as the code-protection handler may consider it unprotected.
+	      static_cast<T&>(*this).unprotectMem(offset, PAGE_SIZE);
 	      return true;
+	    }
 	    Page& page = rv.first->second;
 	    memcpy(&page.data[0], static_cast<T&>(*this).getMemPage(offset), PAGE_SIZE);
 		static_cast<T&>(*this).unprotectMem(offset, PAGE_SIZE);

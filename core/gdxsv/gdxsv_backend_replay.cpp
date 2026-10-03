@@ -148,6 +148,8 @@ void GdxsvBackendReplay::Reset() {
 	exit_requested_ = false;
 	live_feeding_ = false;
 	live_from_host_ = false;
+	frames_without_input_ = 0;
+	frames_without_input_key_ = -1;
 	live_counter_reconstruction_ = false;
 	live_catching_up_ = true;
 	live_following_ = true;
@@ -594,6 +596,11 @@ constexpr auto kLiveInitialQuietWait = std::chrono::seconds(1);
 
 constexpr int kSyncSubFrames = 1024;  // ~17s of stall before it could overflow
 
+// The game takes an input every frame or so, and at most about 430 frames
+// apart in normal play (measured over real 5-round battles, MS selection
+// included). Four times that is no longer a pause in the battle.
+constexpr int kMaxFramesWithoutInput = 1800;
+
 // 4-player replay: a host position move larger than this (or backwards) in
 // one frame is a seek the guests must follow.
 constexpr int kMultiPovSeekSlack = 60;
@@ -745,6 +752,21 @@ void GdxsvBackendReplay::OnNextFrame() {
 	if (state_ != State::End) {
 		UpdateReplayFlow();
 		OnNextFrameInternal();
+	}
+	// A battle that ended while the game waited for a player, e.g. one who
+	// dropped out in MS selection, leaves the game waiting for good: it never
+	// asks for the inputs left in the log, so the end of the log is never
+	// reached. Not while live: there the next input may just not be here yet.
+	if (state_ == State::McsInBattle && 0 < start_msg_count_ && !live_mode_ && !takeover_ && !ctrl_pause_ &&
+		!pause_menu_opend_) {
+		if (key_msg_count_ != frames_without_input_key_) {
+			frames_without_input_key_ = key_msg_count_;
+			frames_without_input_ = 0;
+		} else if (kMaxFramesWithoutInput <= ++frames_without_input_) {
+			NOTICE_LOG(COMMON, "No input taken for %d frames at %d/%d: ending the replay", frames_without_input_,
+					   key_msg_count_, log_file_.inputs_size());
+			Stop();
+		}
 	}
 	if (live_counter_reconstruction_ && !takeover_ && state_ == State::McsInBattle && gdxsv.Disk() != 0)
 		gdxsv_round_counters::Restore(log_file_, -1, gdxsv.Disk());
@@ -1903,7 +1925,11 @@ void GdxsvBackendReplay::Stop() {
 	takeover_input_buf_.clear();
 	SDL_ShowCursor(SDL_ENABLE);
 	rend_enable_renderer(true);
-	gdxsv_save_state.EndUsing();
+	// Lift the page protection while memwatch still handles it. Disabled with
+	// pages still protected, the game's next write to one faults over and over
+	// (bm_RamWriteAccess takes it but does not unprotect), and emu.stop() never
+	// returns. The game keeps running until the UI thread stops it.
+	gdxsv_save_state.Reset();
 	gdxsv.key_display_.enabled(false);
 	state_ = State::End;
 	emu.getSh4Executor()->Stop(); // Fix fastForwardMode hang
