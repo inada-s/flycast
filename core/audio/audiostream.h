@@ -16,6 +16,10 @@ public:
 	virtual u32 push(const void *data, u32 frames, bool wait) = 0;
 	virtual void term() {}
 
+	// Frames queued for output and the most the queue holds, for audio rate
+	// control. False if the backend cannot tell.
+	virtual bool getQueueLevel(u32& queued, u32& capacity) { return false; }
+
 	struct Option {
 		std::string name;
 		std::string caption;
@@ -85,6 +89,9 @@ class RingBuffer
 	}
 
 public:
+	u32 size() { return readSize(); }
+	u32 capacity() const { return buffer.empty() ? 0 : (u32)buffer.size() - 1; }
+
 	bool write(const u8 *data, u32 size)
 	{
 		if (size > writeSize())

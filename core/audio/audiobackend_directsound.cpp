@@ -165,6 +165,13 @@ public:
 		return 1;
 	}
 
+	bool getQueueLevel(u32& queued, u32& capacity) override
+	{
+		queued = ringBuffer.size() / 4;
+		capacity = ringBuffer.capacity() / 4;
+		return true;
+	}
+
 	void term() override
 	{
 		audioThreadRunning = false;
