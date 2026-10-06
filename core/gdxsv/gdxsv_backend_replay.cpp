@@ -1901,6 +1901,7 @@ void GdxsvBackendReplay::Stop() {
 	live_initial_catchup_ = false;
 	config::FixedFrequency.load();
 	config::LimitFPS.load();
+	settings.gdxsv.audioRateControl = false;
 	if (MultiPov()) {
 		settings.gdxsv.audioScale = 0.f;
 		settings.input.fastForwardMode = false;
@@ -2062,6 +2063,7 @@ bool GdxsvBackendReplay::Start() {
 		// frequency, Live Spectate came out of each loading screen ~2s further
 		// behind the players and never made it up.
 		config::LimitFPS.override(false);
+		settings.gdxsv.audioRateControl = true;
 	}
 	gdxsv_frame_period_trim_us = 0;
 

@@ -189,6 +189,14 @@ public:
 		return 1;
 	}
 
+	bool getQueueLevel(u32& queued, u32& capacity) override
+	{
+		const int size = BUFSIZE;
+		queued = (samples_wptr - samples_rptr + size) % size / 4;
+		capacity = BUFSIZE / 4 - 1;
+		return true;
+	}
+
 	void term() override
 	{
 		AudioOutputUnitStop(audioUnit);

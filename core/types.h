@@ -227,6 +227,7 @@ struct settings_t
 		const u32 *renderOnlyFuncs; // Output-only functions skipped while the render call runs on skip frames
 		u32 renderOnlyFuncCount;
 		float audioScale;           // Extra output gain 0..1 (0 = none); 4-player replay
+		bool audioRateControl;      // Resample output to the rate the emulator actually runs at; replay
 	} gdxsv;
 
 	bool disableRenderer;

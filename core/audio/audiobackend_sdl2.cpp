@@ -149,6 +149,14 @@ public:
 		return 1;
 	}
 
+	bool getQueueLevel(u32& queued, u32& capacity) override
+	{
+		std::lock_guard<std::mutex> _(stream_mutex);
+		queued = sample_count;
+		capacity = sample_buffer_size;
+		return true;
+	}
+
 	void term() override
 	{
 		if (audiodev)
