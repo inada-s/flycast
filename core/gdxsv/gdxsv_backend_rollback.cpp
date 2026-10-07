@@ -209,6 +209,7 @@ void GdxsvBackendRollback::OnMainUiLoop() {
 		// relay servers: peer 0 picks the second and peer 1 reaches peer 0 through the first, so they must settle.
 		// TEST_RELAY=fair gives peer 0 two ways to peer 3 that both beat the direct path: through peer 1 (50 ms) and
 		// through the relay server (~35 ms here). The faster one, the server, must win.
+		// TEST_RELAY=nat: peer 1 reaches only peer 3 (see StartLocalTest), and the way through peer 3 is slow.
 		const char* test_relay = is_local_test_ ? getenv("TEST_RELAY") : nullptr;
 		if (test_relay != nullptr && std::string(test_relay).rfind("server", 0) == 0) {
 			const bool two = std::string(test_relay) == "server2";
@@ -228,6 +229,14 @@ void GdxsvBackendRollback::OnMainUiLoop() {
 				ping_pong_.DebugSetRtt(0, 1, 10);
 				ping_pong_.DebugSetRtt(1, 3, 40);
 				ping_pong_.DebugSetRtt(0, 3, 200);
+			}
+			NOTICE_LOG(COMMON, "TEST_RELAY=%s", test_relay);
+		} else if (test_relay != nullptr && std::string(test_relay) == "nat") {
+			if (matching_.peer_id() == 1) {
+				ping_pong_.DebugSetRtt(3, 0, 100);
+				ping_pong_.DebugSetRtt(3, 2, 100);
+			} else if (matching_.peer_id() != 3) {
+				ping_pong_.DebugSetRtt(3, 1, 100);
 			}
 			NOTICE_LOG(COMMON, "TEST_RELAY=%s", test_relay);
 		} else if (test_relay != nullptr) {
@@ -588,6 +597,16 @@ bool GdxsvBackendRollback::StartLocalTest(const char* param) {
 				server.set_ip6(ip6);
 			}
 			matching.mutable_relays()->Add(std::move(server));
+		}
+	}
+
+	// TEST_RELAY=nat: peer 1 reaches only peer 3, as behind a symmetric NAT.
+	if (const char* test_relay = getenv("TEST_RELAY"); test_relay != nullptr && std::string(test_relay) == "nat") {
+		if (me == 1) {
+			ping_pong_.DebugBlockPeer(0);
+			ping_pong_.DebugBlockPeer(2);
+		} else if (me == 0 || me == 2) {
+			ping_pong_.DebugBlockPeer(1);
 		}
 	}
 

@@ -10,6 +10,7 @@ target_include_directories(${PROJECT_NAME} PUBLIC inc)
 target_sources(${PROJECT_NAME} PRIVATE
         src/CheatManagerTest.cpp
         src/ConfigFileTest.cpp
+        src/GdxsvPingPongTest.cpp
         src/GdxsvSpectatorTest.cpp
         src/GdxsvReplayUiTest.cpp
         src/GdxsvReplayInputTest.cpp

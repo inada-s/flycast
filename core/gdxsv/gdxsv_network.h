@@ -137,11 +137,15 @@ class UdpPingPong {
 	void GetRttMatrix(uint8_t matrix[N][N]);
 	// matrix[peer][relay] is the RTT from the peer to the relay, 0 when unknown.
 	void GetRelayRttMatrix(uint8_t matrix[N][MAX_RELAYS]);
+	// Also takes the rows of peers we never reach directly, from a peer that does.
+	static void MergeRelayRtt(uint8_t dst[N][MAX_RELAYS], const uint8_t src[N][MAX_RELAYS], int self, int from);
 	int RelayCount();
 	void PrintRttMatrix();
 	void DebugUnreachable(uint8_t peer_id, uint8_t remote_peer_id);
 	void DebugSetRtt(uint8_t peer_id, uint8_t remote_peer_id, uint8_t rtt);
 	void DebugSetRelayRtt(uint8_t peer_id, int relay_idx, uint8_t rtt);
+	// Kept across Reset, so it can be set before Prepare.
+	void DebugBlockPeer(uint8_t remote_peer_id);
 
    private:
 	static const uint32_t MAGIC = 2205246188;
@@ -208,6 +212,7 @@ class UdpPingPong {
 	void OnRelayPong(const RelayPacket &recv, uint32_t session_id, bool from_v6);
 
 	std::atomic<bool> running_;
+	std::atomic<uint8_t> blocked_peers_{0};
 	std::chrono::high_resolution_clock::time_point start_time_;
 	UdpClient client_ = UdpClient{};
 

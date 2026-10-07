@@ -262,7 +262,7 @@ def d3_relay_loop(s: Settings) -> Result:
     return verdict(bad, ["session start is expected to time out: peers 0 and 1 cannot reach peer 3"])
 
 
-def _with_relays(s: Settings, tag: str, count: int, test_relay: str, dual_stack: bool = False):
+def _with_relays(s: Settings, tag: str, count: int, test_relay: str, dual_stack: bool = False, exes=None):
     """Run a match with local relay servers (gdxsv relay). Returns the match and each relay's log.
 
     A dual-stack relay listens on every address (IPv4 and IPv6), and peers 0 and 1 reach it over IPv6 (::1).
@@ -281,7 +281,7 @@ def _with_relays(s: Settings, tag: str, count: int, test_relay: str, dual_stack:
                "TEST_RELAY_TOKEN": "1234", "GGPO_TEST_LOG": "1"}
         if dual_stack:
             env["TEST_RELAY_IPV6"] = "::1"
-        m = lib.run_match(s, tag, [s.exe] * 4, [16] * 4, env=env)
+        m = lib.run_match(s, tag, exes or [s.exe] * 4, [16] * 4, env=env)
     finally:
         for r in relays:
             lib.kill(r.pid)
@@ -358,6 +358,33 @@ def d7_relay_lower_rtt_wins(s: Settings) -> Result:
     return verdict(bad, [summary(m)] + [p.strip() for p in picks[-1:]])
 
 
+def d8_relay_server_symmetric_nat(s: Settings) -> Result:
+    if not s.relay_exe:
+        return SKIP, ["no gdxsv binary (--relay-exe)"]
+    m, _ = _with_relays(s, "D8", 1, "nat")
+    bad = common(m)
+    picks = []
+    for src, dst in ((0, 1), (2, 1), (1, 0), (1, 2)):
+        lines = [l.strip() for l in m.peers[src].log.splitlines() if f"Peer{dst} " in l and "Relay:" in l]
+        picks += lines[-1:]
+        if not lines or "Relay:2" not in lines[-1]:
+            bad.append(f"p{src + 1} did not reach p{dst + 1} through the relay server: " + (lines[-1] if lines else f"no Peer{dst} line"))
+    notes = [summary(m)] + picks
+    if s.old_exe:
+        # The NAT peer on the previous release learns no relay RTTs from peer 3, so it starts through peer 3 and
+        # must move to the relay server once packets from peers 1 and 3 reach it that way.
+        m, _ = _with_relays(s, "D8-old", 1, "nat", exes=[s.exe, s.old_exe, s.exe, s.exe])
+        bad += [f"old: {b}" for b in common(m)]
+        for src in (0, 2):
+            lines = [l.strip() for l in m.peers[src].log.splitlines() if "Peer1 " in l and "Relay:" in l]
+            if not lines or "Relay:2" not in lines[-1]:
+                bad.append(f"old: p{src + 1} did not reach p2 through the relay server")
+        if "RBKTEST relay server path" not in m.peers[1].log:
+            bad.append("old: p2 did not answer through the relay server")
+        notes.append("old: " + summary(m))
+    return verdict(bad, notes)
+
+
 # Cases that run release builds, which always use the default ports, so they never run alongside each other.
 DEFAULT_PORT_CASES = {"A3", "A4"}
 
@@ -380,6 +407,7 @@ CASES: Dict[str, Tuple[str, Callable[[Settings], Result], int, bool]] = {
     "D5": ("two relay servers, peers settle on the earlier one", d5_relay_servers_settle, 1, False),
     "D6": ("relay server between IPv6 and IPv4 peers", d6_relay_server_ipv6, 1, False),
     "D7": ("relaying peer and relay server: the lower RTT wins", d7_relay_lower_rtt_wins, 1, False),
+    "D8": ("symmetric NAT peer reached through the relay server", d8_relay_server_symmetric_nat, 1, False),
 }
 
 
