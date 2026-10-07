@@ -925,6 +925,10 @@ void UdpPingPong::Start(uint32_t session_id, uint8_t peer_id, int port, int dura
 					continue;
 				}
 
+				if (blocked_peers_ & (1 << recv.from_peer_id)) {
+					continue;
+				}
+
 				if (recv.type == PING) {
 					DEBUG_LOG(COMMON, "Recv PING from %d", recv.from_peer_id);
 					std::lock_guard<std::recursive_mutex> lock(mutex_);
@@ -985,9 +989,7 @@ void UdpPingPong::Start(uint32_t session_id, uint8_t peer_id, int port, int dura
 							rtt_matrix_[recv.from_peer_id][j] = recv.rtt_matrix[recv.from_peer_id][j];
 						}
 						if (has_relay_rtt) {
-							for (int k = 0; k < MAX_RELAYS; k++) {
-								relay_rtt_matrix_[recv.from_peer_id][k] = buf.peer.relay_rtt_matrix[recv.from_peer_id][k];
-							}
+							MergeRelayRtt(relay_rtt_matrix_, buf.peer.relay_rtt_matrix, peer_id, recv.from_peer_id);
 						}
 					}
 
@@ -1173,6 +1175,17 @@ bool UdpPingPong::GetRelayAddress(int relay_idx, sockaddr_storage *use, sockaddr
 	return best != -1;
 }
 
+void UdpPingPong::MergeRelayRtt(uint8_t dst[N][MAX_RELAYS], const uint8_t src[N][MAX_RELAYS], int self, int from) {
+	for (int p = 0; p < N; p++) {
+		if (p == self) continue;
+		for (int k = 0; k < MAX_RELAYS; k++) {
+			if (p == from || src[p][k] != 0) {
+				dst[p][k] = src[p][k];
+			}
+		}
+	}
+}
+
 void UdpPingPong::GetRelayRttMatrix(uint8_t matrix[N][MAX_RELAYS]) {
 	std::lock_guard<std::recursive_mutex> lock(mutex_);
 	memcpy(matrix, relay_rtt_matrix_, sizeof(relay_rtt_matrix_));
@@ -1268,6 +1281,8 @@ void UdpPingPong::DebugUnreachable(uint8_t peer_id, uint8_t remote_peer_id) {
 		}
 	}
 }
+
+void UdpPingPong::DebugBlockPeer(uint8_t remote_peer_id) { blocked_peers_ |= 1 << remote_peer_id; }
 
 void UdpPingPong::DebugSetRelayRtt(uint8_t peer_id, int relay_idx, uint8_t rtt) {
 	std::lock_guard<std::recursive_mutex> lock(mutex_);
