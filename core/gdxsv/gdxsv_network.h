@@ -137,17 +137,14 @@ class UdpPingPong {
 	void GetRttMatrix(uint8_t matrix[N][N]);
 	// matrix[peer][relay] is the RTT from the peer to the relay, 0 when unknown.
 	void GetRelayRttMatrix(uint8_t matrix[N][MAX_RELAYS]);
-	// Takes the relay RTTs a pong from peer `from` carries: its own row as is, and every other peer's known
-	// (non-zero) row, so a peer we never reach directly (symmetric NAT) still gets its relay RTTs through
-	// one we do. Our own row stays as we measured it.
+	// Also takes the rows of peers we never reach directly, from a peer that does.
 	static void MergeRelayRtt(uint8_t dst[N][MAX_RELAYS], const uint8_t src[N][MAX_RELAYS], int self, int from);
 	int RelayCount();
 	void PrintRttMatrix();
 	void DebugUnreachable(uint8_t peer_id, uint8_t remote_peer_id);
 	void DebugSetRtt(uint8_t peer_id, uint8_t remote_peer_id, uint8_t rtt);
 	void DebugSetRelayRtt(uint8_t peer_id, int relay_idx, uint8_t rtt);
-	// Local test only: ignore every ping and pong from the peer, as with a symmetric NAT between us. Kept across
-	// Reset, so it can be set before Prepare starts the ping thread.
+	// Kept across Reset, so it can be set before Prepare.
 	void DebugBlockPeer(uint8_t remote_peer_id);
 
    private:

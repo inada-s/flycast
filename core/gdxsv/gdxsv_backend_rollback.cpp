@@ -209,9 +209,7 @@ void GdxsvBackendRollback::OnMainUiLoop() {
 		// relay servers: peer 0 picks the second and peer 1 reaches peer 0 through the first, so they must settle.
 		// TEST_RELAY=fair gives peer 0 two ways to peer 3 that both beat the direct path: through peer 1 (50 ms) and
 		// through the relay server (~35 ms here). The faster one, the server, must win.
-		// TEST_RELAY=nat (with TEST_RELAY_SERVER): peer 1 reaches only peer 3 during the ping test (see StartLocalTest),
-		// and the way through peer 3 is made slow, so peers 0 and 2 and peer 1 must use the relay server between them,
-		// which they only can once peer 3 has passed on the relay RTTs.
+		// TEST_RELAY=nat: peer 1 reaches only peer 3 (see StartLocalTest), and the way through peer 3 is slow.
 		const char* test_relay = is_local_test_ ? getenv("TEST_RELAY") : nullptr;
 		if (test_relay != nullptr && std::string(test_relay).rfind("server", 0) == 0) {
 			const bool two = std::string(test_relay) == "server2";
@@ -602,7 +600,7 @@ bool GdxsvBackendRollback::StartLocalTest(const char* param) {
 		}
 	}
 
-	// TEST_RELAY=nat: peer 1 never reaches peers 0 and 2 directly, only peer 3, as behind a symmetric NAT.
+	// TEST_RELAY=nat: peer 1 reaches only peer 3, as behind a symmetric NAT.
 	if (const char* test_relay = getenv("TEST_RELAY"); test_relay != nullptr && std::string(test_relay) == "nat") {
 		if (me == 1) {
 			ping_pong_.DebugBlockPeer(0);
