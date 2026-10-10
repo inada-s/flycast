@@ -1,5 +1,14 @@
 # Flycast
 
+> **gdxsv fork.** This is Flycast for [gdxsv](https://github.com/inada-s/gdxsv), the online service of
+> Mobile Suit Gundam: Federation vs. Zeon DX. What it changes from upstream:
+>
+> | Document | Contents |
+> |---|---|
+> | [docs/gdxsv/features.md](docs/gdxsv/features.md) | every added feature, how to turn it on, its tests |
+> | [docs/gdxsv/options.md](docs/gdxsv/options.md) | every added setting, command-line key and environment variable |
+> | [docs/gdxsv/upstream.md](docs/gdxsv/upstream.md) | the fork point, added code, changed upstream files and why |
+
 [![Android CI](https://github.com/flyinghead/flycast/actions/workflows/android.yml/badge.svg)](https://github.com/flyinghead/flycast/actions/workflows/android.yml)
 [![C/C++ CI](https://github.com/flyinghead/flycast/actions/workflows/c-cpp.yml/badge.svg)](https://github.com/flyinghead/flycast/actions/workflows/c-cpp.yml)
 [![Nintendo Switch CI](https://github.com/flyinghead/flycast/actions/workflows/switch.yml/badge.svg)](https://github.com/flyinghead/flycast/actions/workflows/switch.yml)
