@@ -21,6 +21,7 @@ using namespace Xbyak::util;
 #include "oslib/unwind_info.h"
 #include "oslib/virtmem.h"
 #include "cfg/option.h"
+#include "gdxsv/gdxsv_sh4_hooks.h"
 
 static void (*mainloop)();
 static void (*handleException)();
@@ -141,7 +142,7 @@ static void * DYNACALL x64LinkBlock(X64BlockInfo *block, u32 which)
 	if (mmu_enabled() || !Sh4cntx.CpuRunning)
 		return nullptr;
 	const u32 target = which == 0 ? block->BranchBlock : block->NextBlock;
-	if (!bm_gdxsvLinkable(target))
+	if (!gdxsv_sh4_linkable(target))
 	{
 		block->linkCode[which] = X64BlockInfo::NoLink;
 		return nullptr;
@@ -701,14 +702,14 @@ public:
 			return;
 		Xbyak::Label notInRender, fast, done;
 
-		mov(rax, (uintptr_t)bm_gdxsvRenderReturnPtr());
+		mov(rax, (uintptr_t)gdxsv_sh4_render_return_ptr());
 		cmp(dword[rax], 0);
 		je(notInRender);
 		// inside the render call: the target may be an output-only function entry
 		mov(eax, edx);
 		shr(eax, 1);
 		and_(eax, 4095);
-		mov(rcx, (uintptr_t)bm_gdxsvRenderOnlyMaskPtr());
+		mov(rcx, (uintptr_t)gdxsv_sh4_render_only_mask_ptr());
 		bt(qword[rcx], rax);
 		jc(done, T_NEAR);
 		L(notInRender);

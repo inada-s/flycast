@@ -4,7 +4,6 @@
 */
 
 #include <algorithm>
-#include <iterator>
 #include <set>
 #include <map>
 #include "blockmanager.h"
@@ -17,6 +16,7 @@
 #include "hw/sh4/sh4_sched.h"
 #include "hw/sh4/modules/mmu.h"
 #include "oslib/virtmem.h"
+#include "gdxsv/gdxsv_sh4_hooks.h"
 
 #if defined(__unix__) && defined(DYNA_OPROF)
 #include <opagent.h>
@@ -53,86 +53,11 @@ static DynarecCodeEntryPtr DYNACALL bm_GetCode(u32 addr)
 	return rv;
 }
 
-// gdxsv: on skip frames (rollback resimulation, replay seek) the game's render call still runs, because
-// object draw callbacks inside it update state that game logic reads. Only the disk's output-only functions
-// (settings.gdxsv.renderOnlyFuncs) return at their entry, from the render call until it returns.
-static u32 gdxsvRenderReturn;
-
-// Bit (addr >> 1) & 4095 is set for the listed functions, so most addresses are rejected with one bit test.
-// The x64 dynarec reads it too.
-static u64 gdxsvRenderOnlyMask[64];
-static const u32 *gdxsvRenderOnlyMaskFor;
-
-static void gdxsvUpdateRenderOnlyMask()
-{
-	if (gdxsvRenderOnlyMaskFor == settings.gdxsv.renderOnlyFuncs)
-		return;
-	std::fill(std::begin(gdxsvRenderOnlyMask), std::end(gdxsvRenderOnlyMask), 0);
-	for (u32 i = 0; i < settings.gdxsv.renderOnlyFuncCount; i++)
-	{
-		const u32 bit = (settings.gdxsv.renderOnlyFuncs[i] >> 1) & 4095;
-		gdxsvRenderOnlyMask[bit / 64] |= 1ull << (bit % 64);
-	}
-	gdxsvRenderOnlyMaskFor = settings.gdxsv.renderOnlyFuncs;
-}
-
-static bool gdxsvIsRenderOnlyFunc(u32 addr)
-{
-	gdxsvUpdateRenderOnlyMask();
-	const u32 bit = (addr >> 1) & 4095;
-	if (((gdxsvRenderOnlyMask[bit / 64] >> (bit % 64)) & 1) == 0)
-		return false;
-	for (u32 i = 0; i < settings.gdxsv.renderOnlyFuncCount; i++)
-		if (settings.gdxsv.renderOnlyFuncs[i] == addr)
-			return true;
-	return false;
-}
-
-u32 *bm_gdxsvRenderReturnPtr()
-{
-	return &gdxsvRenderReturn;
-}
-
-u64 *bm_gdxsvRenderOnlyMaskPtr()
-{
-	gdxsvUpdateRenderOnlyMask();
-	return gdxsvRenderOnlyMask;
-}
-
-// A dynarec may link a block straight to the block at addr only if bm_GetCodeByVAddr has nothing to do
-// there: the gdxsv render call site, its return address and the output-only function entries must go
-// through it.
-bool bm_gdxsvLinkable(u32 addr)
-{
-	const u32 base = settings.gdxsv.skipRenderingBaseAddr;
-	if (base == 0)
-		return true;
-	if (addr == base || addr == base + 4)
-		return false;
-	return !gdxsvIsRenderOnlyFunc(addr);
-}
-
 // addr must be a virtual address
 // This returns an executable address
 DynarecCodeEntryPtr DYNACALL bm_GetCodeByVAddr(u32 addr)
 {
-	if (settings.gdxsv.skipRenderingAddr == 0) {
-		if (gdxsvRenderReturn != 0)
-			gdxsvRenderReturn = 0;
-	}
-	else if (addr == settings.gdxsv.skipRenderingAddr) {
-		gdxsvUpdateRenderOnlyMask();
-		gdxsvRenderReturn = addr + 4;
-	}
-	else if (gdxsvRenderReturn != 0) {
-		if (gdxsvIsRenderOnlyFunc(addr)) {
-			Sh4cntx.pc = Sh4cntx.pr;
-			addr = Sh4cntx.pc;
-		}
-		if (addr == gdxsvRenderReturn)
-			gdxsvRenderReturn = 0;
-	}
-
+	addr = gdxsv_sh4_code_addr(addr);
 	if (!mmu_enabled())
 		return bm_GetCode(addr);
 

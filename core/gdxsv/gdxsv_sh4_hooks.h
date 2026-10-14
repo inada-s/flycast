@@ -6,3 +6,20 @@
 // Called by the SH4 block decoder after it sets a block's cycle count.
 // Slow idle loop hack: the game's idle loop block costs more cycles.
 void gdxsv_sh4_block_cycles(u32 addr, u32& guest_cycles);
+
+// Skip-frame rendering: on skip frames (rollback resimulation, replay seek) the game's render call still runs,
+// because object draw callbacks inside it update state that game logic reads. Only the disk's output-only
+// functions (settings.gdxsv.renderOnlyFuncs) return at their entry, from the render call until it returns.
+
+// Called by bm_GetCodeByVAddr before the lookup. Returns the address to run (pc = pr for a skipped function).
+u32 gdxsv_sh4_code_addr(u32 addr);
+
+// A dynarec may link a block straight to the block at addr only if gdxsv_sh4_code_addr has nothing to do
+// there: the render call site, its return address and the output-only function entries must go through it.
+bool gdxsv_sh4_linkable(u32 addr);
+
+// For dynarecs that check dynamic branch targets in generated code.
+// Return address of the running render call, 0 outside it.
+u32* gdxsv_sh4_render_return_ptr();
+// Bit (addr >> 1) & 4095 is set for the output-only functions.
+u64* gdxsv_sh4_render_only_mask_ptr();
