@@ -323,6 +323,8 @@ target_sources(${PROJECT_NAME} PRIVATE
 		core/gdxsv/gdxsv_translation_patch.inc
 		core/gdxsv/gdxsv_update.cpp
 		core/gdxsv/gdxsv_update.h
+		core/gdxsv/gdxsv_upnp.cpp
+		core/gdxsv/gdxsv_upnp.h
 		core/gdxsv/lbs_message.h
 		core/gdxsv/libs.h
 		core/gdxsv/mcs_message.h)

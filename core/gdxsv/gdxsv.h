@@ -11,7 +11,7 @@
 #include "gdxsv_key_display.h"
 #include "gdxsv_projectile_view.h"
 #include "gdxsv_slowdown.h"
-#include "network/miniupnp.h"
+#include "gdxsv_upnp.h"
 #include "types.h"
 
 class Gdxsv {
@@ -66,7 +66,7 @@ class Gdxsv {
 	int Disk() const { return disk_; }
 	void InvalidateWidescreenPatch() { widescreen_viewport_width_ = 0; }
 	std::string UserId() const { return user_id_; }
-	MiniUPnP& UPnP() { return upnp_; }
+	GdxsvUPnP& UPnP() { return upnp_; }
 
    private:
 	static std::string GenerateLoginKey();
@@ -100,7 +100,7 @@ class Gdxsv {
 	std::shared_future<std::pair<bool, std::string>> public_ipv4_, public_ipv6_;
 	std::shared_future<P2PFeasibility> p2p_feasibility_result_;
 
-	MiniUPnP upnp_;
+	GdxsvUPnP upnp_;
 	GdxsvBackendTcp lbs_net_;
 	GdxsvBackendUdp udp_net_;
 	GdxsvBackendReplay replay_net_;

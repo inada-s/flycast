@@ -38,7 +38,7 @@ bool MiniUPnP::Init()
 	if (devlist == nullptr)
 	{
 		snprintf(lastError, sizeof(lastError), "UPnP discover failed: error %d", error);
-		WARN_LOG(NETWORK, lastError);
+		WARN_LOG(NETWORK, "%s", lastError);
 		return false;
 	}
 #if MINIUPNPC_API_VERSION >= 18
@@ -50,7 +50,7 @@ bool MiniUPnP::Init()
 	if (error != 1)
 	{
 		snprintf(lastError, sizeof(lastError), "Internet Gateway not found: error %d", error);
-		WARN_LOG(NETWORK, lastError);
+		WARN_LOG(NETWORK, "%s", lastError);
 		return false;
 	}
 	initialized = true;
@@ -86,7 +86,7 @@ bool MiniUPnP::AddPortMapping(int port, bool tcp)
 	if (error != 0)
 	{
 		snprintf(lastError, sizeof(lastError), "Port %d redirection failed: error %d", port, error);
-		WARN_LOG(NETWORK, lastError);
+		WARN_LOG(NETWORK, "%s", lastError);
 		return false;
 	}
 	{
@@ -95,28 +95,5 @@ bool MiniUPnP::AddPortMapping(int port, bool tcp)
 	}
 	DEBUG_LOG(NETWORK, "MiniUPnP: forwarding %s port %d", tcp ? "TCP" : "UDP", port);
 	return true;
-}
-
-bool MiniUPnP::CheckPortMapping(int port, bool tcp)
-{
-	if (!initialized && !Init())
-		return false;
-
-	char internalClient[40];
-	char internalPort[10];
-	char duration[10];
-	char description[80];
-	char enabled[10];
-
-	int error = UPNP_GetSpecificPortMappingEntry(urls.controlURL, data.first.servicetype,
-		std::to_string(port).c_str(), tcp ? "TCP" : "UDP", nullptr,
-		internalClient, internalPort, description, enabled, duration);
-
-	if (error == 0) {
-		// Mapping exists. Check if it's for our IP.
-		return strcmp(internalClient, lanAddress) == 0;
-	}
-
-	return false;
 }
 #endif

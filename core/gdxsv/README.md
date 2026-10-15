@@ -34,6 +34,7 @@ options and changed upstream files: `docs/gdxsv/`.
 | `gdxsv.pb.cc/.h` | protobuf messages shared with the server (generated) |
 | `lbs_message.h`, `mcs_message.h` | LBS and MCS message formats and readers |
 | `gdxsv_network.cpp/.h` | sockets, UDP remotes, relay ping and selection |
+| `gdxsv_upnp.cpp/.h` | `MiniUPnP` plus the port-mapping check and addresses the P2P status uses |
 | `juice_helper.c/.h` | STUN binding request and response (from libjuice) |
 | `gdxsv_backend_tcp.cpp/.h` | TCP backend: the lobby (LBS) connection |
 | `gdxsv_backend_udp.cpp/.h` | UDP backend: MCS over UDP |

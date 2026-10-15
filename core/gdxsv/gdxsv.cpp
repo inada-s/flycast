@@ -409,12 +409,12 @@ std::vector<u8> Gdxsv::GeneratePlatformInfoPacket() {
 		
 		if (!res.upnp_result.empty() && upnp_.isInitialized()) {
 			ss << "upnp_result=" << res.upnp_result << "\n";
-			ss << "upnp_local_ip=" << upnp_.localAddress() << "\n";
-			ss << "upnp_public_ip=" << upnp_.externalAddress() << "\n";
-			ss << "upnp_local_ip_differ=" << static_cast<int>(lbs_net_.LocalIP() != std::string(upnp_.localAddress())) << "\n";
+			ss << "upnp_local_ip=" << upnp_.LocalAddress() << "\n";
+			ss << "upnp_public_ip=" << upnp_.ExternalAddress() << "\n";
+			ss << "upnp_local_ip_differ=" << static_cast<int>(lbs_net_.LocalIP() != std::string(upnp_.LocalAddress())) << "\n";
 			if (public_ipv4_.valid()) {
 				if (public_ipv4_.get().first) {
-					ss << "upnp_public_ip_differ=" << static_cast<int>(public_ipv4_.get().second != std::string(upnp_.externalAddress()))
+					ss << "upnp_public_ip_differ=" << static_cast<int>(public_ipv4_.get().second != std::string(upnp_.ExternalAddress()))
 					<< "\n";
 				}
 			}
