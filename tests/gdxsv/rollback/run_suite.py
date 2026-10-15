@@ -27,7 +27,7 @@ Result = Tuple[str, List[str]]
 
 DELAYS = [16, 16, 16, 100]           # one slow sender: rollbacks and timesync on everyone
 DELAYS_SPREAD = [50, 16, 80, 100]    # windowed runs: rollbacks on every peer
-THREADED_OFF = ["--config", "config:rend.ThreadedRendering=no"]
+THREADED_OFF = ["config:rend.ThreadedRendering=no"]
 LAST_FRAME_SLACK = 2
 
 
@@ -131,7 +131,7 @@ def b2_threaded(s: Settings) -> Result:
 
 
 def b3_not_threaded(s: Settings) -> Result:
-    m = lib.run_match(s, "B3", [s.exe] * 4, DELAYS_SPREAD, headless=False, extra=THREADED_OFF)
+    m = lib.run_match(s, "B3", [s.exe] * 4, DELAYS_SPREAD, headless=False, config=THREADED_OFF)
     # This harness produces no rollbacks with threaded rendering off (old builds too), so only completion is checked.
     return verdict(common(m), [summary(m)])
 

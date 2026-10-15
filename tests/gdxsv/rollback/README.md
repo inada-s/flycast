@@ -22,8 +22,9 @@ python tests/gdxsv/rollback/run_suite.py --rom ... --jobs 3                  # c
   release and one before it. Pass `--old-exe` / `--older-exe` to use local builds instead. Without
   them, A3/A4 are skipped.
 - The pre-battle savestate (`gdx-disc2_99.state`) is taken from `work/state` and downloaded if missing.
-- Output goes to `tests/gdxsv/rollback/out/<case>/p1..p4/` (`flycast.log`, `data/hashlog.txt`). The copied
-  executables are deleted after each match. `out/summary.json` holds the results.
+- Output goes to `tests/gdxsv/rollback/out/<case>/p1..p4/` (on Windows: `flycast.log`, `data/hashlog.txt`;
+  the layout per OS is in `tests/gdxsv/lib/emu.py`). Copied executables (Windows) are deleted after each
+  match. `out/summary.json` holds the results.
 - The whole default set takes about 30 minutes. Windowed cases (B2, B3, C1, C3) open four emulator
   windows, and audio is muted. C1 is Windows only.
 - The exit code is 1 if any case fails. `INCONCLUSIVE` means the situation a case looks for did not

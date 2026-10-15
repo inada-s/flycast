@@ -30,8 +30,6 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import rbk_lib as lib  # noqa: E402
 
 LUA = os.path.join(lib.HERE, "live_det.lua")
-# LuaFileName is resolved against each instance's directory, out/<tag>/<instance>.
-LUA_REL = "../../live_det.lua"
 LBS_PORT = 9876
 
 
@@ -81,53 +79,36 @@ def start_lbs(gdxsv_exe, header, log_path):
                             stdout=out, stderr=subprocess.STDOUT)
 
 
-def start_spectator(s, base, index, pov, extra):
+def start_spectator(s, base, index, pov, config):
     d = os.path.join(base, f"s{index}")
-    shutil.rmtree(d, ignore_errors=True)
-    os.makedirs(os.path.join(d, "data"), exist_ok=True)
-    shutil.copy(s.exe, os.path.join(d, lib.EXE_NAME))
-    for f in glob.glob(os.path.join(s.state_dir, "*.state")):
-        shutil.copy(f, os.path.join(d, "data"))
-    args = [os.path.join(d, lib.EXE_NAME),
-            "--config", "config:aica.Volume=0",
-            "--config", "gdxsv:ReplayFourScreen=no",
-            "--config", "gdxsv:server=127.0.0.1",
-            "--config", "gdxsv:spectate=0123456",
-            "--config", f"gdxsv:ReplayPOV={pov}",
-            "--config", f"config:LuaFileName={LUA_REL}",
-            "--config", "log:Verbosity=3",
-            "--config", "log:LogToFile=1",
-            "--config", f"window:left={40 + (index % 2) * 660}", "--config", f"window:top={40 + (index // 2) * 520}",
-            "--config", "window:width=640", "--config", "window:height=480"] + extra + [s.rom]
-    return d, subprocess.Popen(args, cwd=d, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    inst = lib.emu.launch(s.exe, s.rom, d, headless=False, state_dir=s.state_dir, lua=LUA, config=[
+        "config:aica.Volume=0",
+        "gdxsv:ReplayFourScreen=no",
+        "gdxsv:server=127.0.0.1",
+        "gdxsv:spectate=0123456",
+        f"gdxsv:ReplayPOV={pov}",
+        "log:Verbosity=3",
+        "log:LogToFile=1",
+        f"window:left={40 + (index % 2) * 660}", f"window:top={40 + (index // 2) * 520}",
+        "window:width=640", "window:height=480"] + config)
+    return d, inst
 
 
 def play_replay(s, base, name, replay, pov, timeout=900):
     """Play a replay headless with the probe; its det.txt is the reference state."""
     d = os.path.join(base, name)
-    shutil.rmtree(d, ignore_errors=True)
-    os.makedirs(os.path.join(d, "data"), exist_ok=True)
-    shutil.copy(s.exe, os.path.join(d, lib.EXE_NAME))
-    for f in glob.glob(os.path.join(s.state_dir, "*.state")):
-        shutil.copy(f, os.path.join(d, "data"))
-    args = [os.path.join(d, lib.EXE_NAME),
-            "--config", "config:aica.Volume=0",
-            "--config", "gdxsv:ReplayFourScreen=no",
-            "--config", "gdxsv:headless=yes",
-            "--config", f"gdxsv:replay={os.path.abspath(replay)}",
-            "--config", f"gdxsv:ReplayPOV={pov}",
-            "--config", f"config:LuaFileName={LUA_REL}",
-            "--config", "log:Verbosity=3",
-            "--config", "log:LogToFile=1", s.rom]
-    p = subprocess.Popen(args, cwd=d, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    inst = lib.emu.launch(s.exe, s.rom, d, state_dir=s.state_dir, lua=LUA, config=[
+        "config:aica.Volume=0",
+        "gdxsv:ReplayFourScreen=no",
+        f"gdxsv:replay={os.path.abspath(replay)}",
+        f"gdxsv:ReplayPOV={pov}",
+        "log:Verbosity=3",
+        "log:LogToFile=1"])
     try:
-        p.wait(timeout=timeout)
+        inst.proc.wait(timeout=timeout)
     except subprocess.TimeoutExpired:
-        lib.kill(p.pid)
-    try:
-        os.remove(os.path.join(d, lib.EXE_NAME))
-    except OSError:
-        pass
+        inst.kill()
+    inst.remove_exe()
     return d
 
 
@@ -200,12 +181,10 @@ def main():
     env = {"VITAL": a.vital, "MAXREBATTLE": a.rounds, "RBK_SAVE_REPLAY": "1"}
     if a.input_delay:
         env["TEST_GGPO_DELAY"] = a.input_delay
-    shutil.copy(LUA, os.path.join(a.out, "live_det.lua"))
-    extra = ["--config", f"config:LuaFileName={LUA_REL}"]
     base = os.path.join(a.out, a.tag)
 
     if a.make_header:
-        m = lib.run_match(s, a.tag, [s.exe] * lib.N, delays, seed=a.seed, env=env, extra=extra, timeout=a.timeout)
+        m = lib.run_match(s, a.tag, [s.exe] * lib.N, delays, seed=a.seed, env=env, lua=LUA, timeout=a.timeout)
         print("elapsed", round(m.elapsed), "timed_out", m.timed_out, "stalled", m.stalled)
         print("header:", os.path.join(base, "p1", "data", "replays", "0123456.pb"))
         return 0
@@ -220,18 +199,18 @@ def main():
     env["TEST_SPECTATOR_LBS"] = f"127.0.0.1:{LBS_PORT}"
     specs = []
     plan = [tuple(int(x) for x in p.split(":")) for p in a.spectators.split(",") if p]
-    spec_extra = a.spectator_extra.split() if a.spectator_extra else []
+    spec_config = [x for x in a.spectator_extra.split() if x != "--config"] if a.spectator_extra else []
 
     def on_start(_match):
         def launch():
             t0 = time.time()
             for i, (pov, delay) in enumerate(sorted(plan, key=lambda p: p[1])):
                 time.sleep(max(0, delay - (time.time() - t0)))
-                specs.append(start_spectator(s, base, i + 1, pov, spec_extra))
+                specs.append(start_spectator(s, base, i + 1, pov, spec_config))
         threading.Thread(target=launch, daemon=True).start()
 
     try:
-        m = lib.run_match(s, a.tag, [s.exe] * lib.N, delays, seed=a.seed, env=env, extra=extra,
+        m = lib.run_match(s, a.tag, [s.exe] * lib.N, delays, seed=a.seed, env=env, lua=LUA,
                           timeout=a.timeout, on_start=on_start)
         print("match elapsed", round(m.elapsed), "timed_out", m.timed_out, "stalled", m.stalled)
         for p in m.peers:
@@ -240,7 +219,7 @@ def main():
         time.sleep(15)
     finally:
         for _, p in specs:
-            lib.kill(p.pid)
+            p.kill()
         lbs.terminate()
 
     uplinks = []

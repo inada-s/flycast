@@ -28,7 +28,7 @@ upstream ([flyinghead/flycast](https://github.com/flyinghead/flycast)
 | `core/deps/protobuf-3.13.0/` | protobuf runtime (`gdxsv.pb.cc`) |
 | `resources/i18n-gdxsv/` | UI translations of the gdxsv pages |
 | `tests/src/Gdxsv*.cpp`, `tests/src/test_stubs.cpp` | unit tests |
-| `tests/gdxsv/rollback/` | rollback and live spectating rigs |
+| `tests/gdxsv/` | e2e tests: `lib/` (launching instances, hash logs), `rollback/` (rollback and live spectating rigs) |
 | `run.py`, `.github/workflows/run-game.yml` | several local instances; the same on a self-hosted runner |
 | `gdxsv-format.sh`, `.github/pull.yml` | clang-format of gdxsv files; upstream sync bot config |
 

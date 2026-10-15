@@ -1,25 +1,24 @@
 """Shared helpers for the rollback netcode test suite (see README.md).
 
 Each match runs four flycast instances as a local rollback test
-(gdxsv:rbk_test=N/4). Every peer gets its own working directory under the
-output directory, with a copy of its executable and the pre-battle savestate.
+(gdxsv:rbk_test=N/4), each in its own directory under the output directory
+(tests/gdxsv/lib/emu.py).
 """
-import glob
 import os
-import re
 import shutil
-import subprocess
+import re
 import sys
 import threading
 import time
-import urllib.request
 from dataclasses import dataclass, field
 from typing import Dict, List, Optional
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 REPO = os.path.abspath(os.path.join(HERE, "..", "..", ".."))
-IS_WINDOWS = os.name == "nt"
-EXE_NAME = "flycast.exe" if IS_WINDOWS else "flycast"
+sys.path.insert(0, os.path.join(HERE, ".."))
+from lib import emu, hashlog  # noqa: E402
+from lib.emu import IS_WINDOWS, EXE_NAME, ERROR_RE, kill, ensure_state, fetch_release  # noqa: E402,F401
+
 N = 4
 DEFAULT_PORT_BASE = 20010  # the peers' ports: base + peer. Release builds always use this one.
 
@@ -38,10 +37,6 @@ def set_port_base(base: int) -> None:
 def relay_port_base() -> int:
     """First port for local relay servers, apart from every other thread's."""
     return 19879 + (port_base() - DEFAULT_PORT_BASE) // 10
-STATE_URL = "https://storage.googleapis.com/gdxsv/misc/{name}"
-
-# Log lines that mean something broke, whatever the case.
-ERROR_RE = re.compile(r"GGPO error|Exception|\[GPF\]|Assertion|Flycast has stopped")
 
 
 @dataclass
@@ -58,36 +53,28 @@ class Settings:
 @dataclass
 class Peer:
     index: int  # 1-based
-    dir: str
+    inst: emu.Instance
     exit_code: Optional[int] = None
 
     @property
+    def dir(self) -> str:
+        return self.inst.dir
+
+    @property
     def log(self) -> str:
-        try:
-            with open(os.path.join(self.dir, "flycast.log"), encoding="utf-8", errors="replace") as f:
-                return f.read()
-        except OSError:
-            return ""
+        return self.inst.log
 
     @property
     def hashlog(self) -> List[int]:
-        try:
-            with open(os.path.join(self.dir, "data", "hashlog.txt"), encoding="utf-8", errors="replace") as f:
-                return [int(l.split()[0]) for l in f if l.split() and l.split()[0].lstrip("-").isdigit()]
-        except OSError:
-            return []
+        return hashlog.frames(self.inst.hashlog_path)
 
     @property
     def last_frame(self) -> int:
-        frames = self.hashlog
-        return frames[-1] if frames else -1
+        return hashlog.last_frame(self.inst.hashlog_path)
 
     @property
     def rolled_back_frames(self) -> int:
-        seen, dup = set(), set()
-        for f in self.hashlog:
-            (dup if f in seen else seen).add(f)
-        return len(dup)
+        return hashlog.rolled_back(self.inst.hashlog_path)
 
     @property
     def finished(self) -> bool:
@@ -95,7 +82,7 @@ class Peer:
 
     @property
     def errors(self) -> List[str]:
-        return [l for l in self.log.splitlines() if ERROR_RE.search(l)]
+        return self.inst.errors
 
     @property
     def win_teams(self) -> List[str]:
@@ -120,162 +107,98 @@ class Match:
     elapsed: float = 0.0
 
 
-def ensure_state(state_dir: str, rom: str) -> None:
-    """The local test boots from <rom name>_99.state; fetch it once if missing."""
-    os.makedirs(state_dir, exist_ok=True)
-    name = os.path.splitext(os.path.basename(rom))[0] + "_99.state"
-    path = os.path.join(state_dir, name)
-    if not os.path.isfile(path):
-        print(f"downloading {name}")
-        urllib.request.urlretrieve(STATE_URL.format(name=name), path)
-
-
-def fetch_release(tag: str, out: str) -> str:
-    """Download a gdxsv release build with the GitHub CLI and return its executable."""
-    dest = os.path.join(out, "releases", tag)
-    exe = os.path.join(dest, "flycast-gdxsv.exe" if IS_WINDOWS else "flycast-gdxsv")
-    if not os.path.isfile(exe):
-        os.makedirs(dest, exist_ok=True)
-        asset = "flycast-gdxsv-windows.zip" if IS_WINDOWS else "flycast-gdxsv-linux-x86_64.zip"
-        subprocess.run(["gh", "release", "download", tag, "-R", "inada-s/flycast", "-p", asset, "-D", dest,
-                        "--clobber"], check=True)
-        shutil.unpack_archive(os.path.join(dest, asset), dest)
-    return exe
-
-
 def run_match(s: Settings, tag: str, exes: List[str], delays: List[int], seed: int = 55,
-              env: Optional[Dict[str, str]] = None, headless: bool = True, extra: Optional[List[str]] = None,
-              timeout: int = 900, stall_sec: int = 20, on_start=None, keep_exe: bool = False) -> Match:
+              env: Optional[Dict[str, str]] = None, headless: bool = True, config: Optional[List[str]] = None,
+              lua: Optional[str] = None, timeout: int = 900, stall_sec: int = 20, on_start=None,
+              keep_exe: bool = False) -> Match:
     """Run one 4-player local match and wait for it to end.
 
     A peer whose hashlog frame stops moving for stall_sec, before it reports
     the local test finished, counts as stalled and ends the match. on_start is
-    called with the Match once every peer has been launched.
+    called with the Match once every peer has been launched. config: more
+    "section:key=value" entries; lua: a script every peer loads.
     """
     base = os.path.join(s.out, tag)
-    shutil.rmtree(base, ignore_errors=True)
     match = Match(tag)
-    procs = []
+    if os.path.isdir(base):
+        shutil.rmtree(base, ignore_errors=True)
     for i in range(N):
-        d = os.path.join(base, f"p{i + 1}")
-        os.makedirs(os.path.join(d, "data"), exist_ok=True)
-        shutil.copy(exes[i], os.path.join(d, EXE_NAME))
-        for f in glob.glob(os.path.join(s.state_dir, "*.state")):
-            shutil.copy(f, os.path.join(d, "data"))
-        args = [os.path.join(d, EXE_NAME),
-                "--config", "config:aica.Volume=0",
-                "--config", "gdxsv:hashlog=yes",
-                "--config", "gdxsv:ReplayFourScreen=no",
-                "--config", f"gdxsv:rbk_test={i + 1}/{N}",
-                "--config", f"gdxsv:rand_input={seed}",
-                "--config", "log:Verbosity=3",
-                "--config", "log:LogToFile=1"]
-        if headless:
-            args += ["--config", "gdxsv:headless=yes"]
-        else:
-            args += ["--config", f"window:left={40 + (i % 2) * 660}", "--config", f"window:top={40 + (i // 2) * 520}",
-                     "--config", "window:width=640", "--config", "window:height=480"]
-        args += (extra or []) + [s.rom]
-        penv = os.environ.copy()
-        penv.update(env or {})
+        cfg = ["config:aica.Volume=0",
+               "gdxsv:hashlog=yes",
+               "gdxsv:ReplayFourScreen=no",
+               f"gdxsv:rbk_test={i + 1}/{N}",
+               f"gdxsv:rand_input={seed}",
+               "log:Verbosity=3",
+               "log:LogToFile=1"]
+        if not headless:
+            cfg += [f"window:left={40 + (i % 2) * 660}", f"window:top={40 + (i // 2) * 520}",
+                    "window:width=640", "window:height=480"]
+        cfg += config or []
+        penv = dict(env or {})
         penv["GGPO_NETWORK_DELAY"] = str(delays[i])
         if port_base() != DEFAULT_PORT_BASE:
             penv["TEST_PORT_BASE"] = str(port_base())
-        procs.append(subprocess.Popen(args, cwd=d, env=penv, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL))
-        match.peers.append(Peer(i + 1, d))
+        inst = emu.launch(exes[i], s.rom, os.path.join(base, f"p{i + 1}"), config=cfg, env=penv,
+                          headless=headless, state_dir=s.state_dir, lua=lua)
+        match.peers.append(Peer(i + 1, inst))
 
     if on_start:
         on_start(match)
 
     start = time.time()
     progress = [(-1, start)] * N
-    while any(p.poll() is None for p in procs):
+    while any(p.inst.poll() is None for p in match.peers):
         now = time.time()
         if now - start > timeout:
             match.timed_out = True
             break
-        for i, p in enumerate(procs):
-            peer = match.peers[i]
+        for i, peer in enumerate(match.peers):
             fr = peer.last_frame
             if fr != progress[i][0]:
                 progress[i] = (fr, now)
-            elif p.poll() is None and fr > 0 and not peer.finished and now - progress[i][1] > stall_sec:
+            elif peer.inst.poll() is None and fr > 0 and not peer.finished and now - progress[i][1] > stall_sec:
                 match.stalled.append(f"p{i + 1}@{fr}")
         if match.stalled:
             break
         time.sleep(1)
-    for p in procs:
-        if p.poll() is None:
-            kill(p.pid)
+    for peer in match.peers:
+        peer.inst.kill()
     match.elapsed = time.time() - start
-    for i, p in enumerate(procs):
-        p.wait()
-        match.peers[i].exit_code = p.returncode
+    for peer in match.peers:
+        peer.inst.proc.wait()
+        peer.exit_code = peer.inst.proc.returncode
         if not keep_exe:
-            try:
-                os.remove(os.path.join(match.peers[i].dir, EXE_NAME))
-            except OSError:
-                pass
+            peer.inst.remove_exe()
     return match
 
 
-def kill(pid: int) -> None:
-    if IS_WINDOWS:
-        subprocess.run(["taskkill", "/F", "/T", "/PID", str(pid)], capture_output=True)
-    else:
-        try:
-            os.kill(pid, 9)
-        except OSError:
-            pass
-
-
 def kill_peer(match: Match, index: int) -> None:
-    """Kill one peer, found by the executable path in its working directory."""
-    target = os.path.join(match.peers[index - 1].dir, EXE_NAME)
-    if IS_WINDOWS:
-        ps = (f"Get-CimInstance Win32_Process -Filter \"Name='{EXE_NAME}'\" | "
-              f"Where-Object {{ $_.ExecutablePath -eq '{target}' }} | ForEach-Object {{ Stop-Process -Id $_.ProcessId -Force }}")
-        subprocess.run(["powershell", "-NoProfile", "-Command", ps], capture_output=True)
-    else:
-        subprocess.run(["pkill", "-9", "-f", target], capture_output=True)
+    match.peers[index - 1].inst.kill()
 
 
 def sample_responding(match: Match, indexes: List[int], seconds: float) -> List[str]:
-    """Windows only: sample Process.Responding of the given peers every 0.5s.
+    """Windows only: sample every 0.5 s whether the given peers' windows respond.
 
-    Returns one line per sample, e.g. "5.6s p1=HUNG p2=ok". Windows flags a
-    window as not responding after ~5s without processing messages.
+    Returns one line per sample, e.g. "5.6 s p1=HUNG p2=ok". Windows flags a
+    window as not responding after ~5 s without processing messages.
     """
-    paths = ",".join(f"'{os.path.join(match.peers[i - 1].dir, EXE_NAME)}'" for i in indexes)
-    ps = f"""
-$paths = @({paths})
-$pids = @{{}}
-foreach ($p in (Get-CimInstance Win32_Process -Filter "Name='{EXE_NAME}'")) {{
-  $i = [Array]::IndexOf($paths, $p.ExecutablePath); if ($i -ge 0) {{ $pids["p$($i)"] = $p.ProcessId }} }}
-$sw = [Diagnostics.Stopwatch]::StartNew()
-while ($sw.Elapsed.TotalSeconds -lt {seconds}) {{
-  $row = @()
-  foreach ($k in ($pids.Keys | Sort-Object)) {{
-    $gp = Get-Process -Id $pids[$k] -ErrorAction SilentlyContinue
-    if ($gp) {{ $gp.Refresh(); $row += "$k=" + ($(if ($gp.Responding) {{'ok'}} else {{'HUNG'}})) }} else {{ $row += "$k=exited" }}
-  }}
-  "{{0,5:N1}}s {{1}}" -f $sw.Elapsed.TotalSeconds, ($row -join ' ')
-  Start-Sleep -Milliseconds 500
-}}
-"""
-    out = subprocess.run(["powershell", "-NoProfile", "-Command", ps], capture_output=True, text=True).stdout
-    # The script numbers peers by list position; map back to peer numbers.
-    names = {f"p{j}": f"p{i}" for j, i in enumerate(indexes)}
-    return [re.sub(r"\bp\d+(?==)", lambda m: names.get(m.group(0), m.group(0)), l) for l in out.strip().splitlines()]
+    pids = {i: match.peers[i - 1].inst.proc.pid for i in indexes}
+    out = []
+    start = time.time()
+    while time.time() - start < seconds:
+        hung = emu.hung_windows(list(pids.values()))
+        row = []
+        for i, pid in pids.items():
+            alive = match.peers[i - 1].inst.poll() is None
+            state = "exited" if not alive else "HUNG" if hung[pid] else "ok"
+            row.append(f"p{i}={state}")
+        out.append(f"{time.time() - start:5.1f}s {' '.join(row)}")
+        time.sleep(0.5)
+    return out
 
 
 def wait_for_log(match: Match, index: int, text: str, timeout: float) -> bool:
-    deadline = time.time() + timeout
-    while time.time() < deadline:
-        if text in match.peers[index - 1].log:
-            return True
-        time.sleep(0.2)
-    return False
+    return match.peers[index - 1].inst.wait_log(text, timeout)
 
 
 def skip_crossings(peer: Peer):

@@ -29,6 +29,7 @@ game images, save states, keys or other proprietary console or game data.
 - `gdxsv_patch/` - SH4 network payload of the game and its build.
 - `gdxsv_langmod/` - Translation sources and generators.
 - `tests/` - Unit tests (googletest).
+- `tests/gdxsv/lib/` - Test helpers: launching flycast instances (all OS differences), hash logs.
 - `tests/gdxsv/rollback/` - Rollback and live spectating rigs.
 
 ## Commands
