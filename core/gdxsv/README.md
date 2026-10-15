@@ -26,6 +26,7 @@ options and changed upstream files: `docs/gdxsv/`.
 |---|---|
 | `gdxsv.cpp/.h` | the `Gdxsv` object: game detection, patching, RPC, settings, backend selection |
 | `gdxsv.cmake` | gdxsv sources and build settings, included from `CMakeLists.txt` |
+| `gdxsv_version.cmake` | `GIT_VERSION` from the latest `gdxsv-*` tag in semver form, included after the `git describe` in `CMakeLists.txt` |
 | `gdxsv_config.cpp/.h` | gdxsv options (`config::Gdx*`, `[gdxsv]` in emu.cfg) |
 | `gdxsv_sh4_hooks.cpp/.h` | calls from the SH4 dynarec (slow idle loop hack) |
 | `gdxsv_emu_hooks.cpp/.h` | calls from the emulator (start, stop, frame, input, UI) into gdxsv |

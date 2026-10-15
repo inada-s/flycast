@@ -137,29 +137,12 @@ endif()
 
 find_package(Git)
 if(GIT_FOUND AND EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/.git")
-	if(MINGW AND DEFINED ENV{MSYSTEM} AND DEFINED ENV{GITHUB_ACTIONS})
-		set(GDXSV_PATTERN "gdxsv-\\*")
-	else()
-		set(GDXSV_PATTERN "gdxsv-*")
-	endif()
-	message(GDXSV_PATTERN="${GDXSV_PATTERN}")
 	execute_process(
-		COMMAND ${GIT_EXECUTABLE} describe --tags --always --match ${GDXSV_PATTERN}
+		COMMAND ${GIT_EXECUTABLE} describe --tags --always
 		WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
 		OUTPUT_VARIABLE GIT_VERSION
 		OUTPUT_STRIP_TRAILING_WHITESPACE
 	)
-	# Transform git describe to semver format, e.g. gdxsv-1.2.4-3-g89b14873e -> gdxsv-1.2.4-dev.3+89b14873e
-	string(REGEX REPLACE "-([0-9]+)-g(.+)$" "-dev.\\1+\\2" GIT_VERSION "${GIT_VERSION}")
-
-	# Auto increment semver if it is prelease, since 1.2.3-beta.1 < 1.2.3
-	string(REGEX MATCH "[0-9]+-dev" SEMVER_PATCH "${GIT_VERSION}")
-	if(DEFINED SEMVER_PATCH)
-		string(REPLACE "-dev" "" SEMVER_PATCH "${SEMVER_PATCH}")
-		MATH(EXPR SEMVER_PATCH "${SEMVER_PATCH}+1")
-		string(REGEX REPLACE "[0-9]+-dev" "${SEMVER_PATCH}-dev" GIT_VERSION "${GIT_VERSION}")
-	endif()
-
 	execute_process(
 		COMMAND ${GIT_EXECUTABLE} rev-parse --short HEAD
 		WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
@@ -170,9 +153,7 @@ else()
 	set(GIT_VERSION "v0.0.0-0-g000000000")
 	set(GIT_HASH "000000000")
 endif()
-
-message(GIT_VERSION="${GIT_VERSION}")
-message(GIT_HASH="${GIT_HASH}")
+include(core/gdxsv/gdxsv_version.cmake)
 
 if(WINDOWS_STORE)
 	string(REGEX REPLACE "[Vv]" "" MS_VERSION ${GIT_VERSION})
