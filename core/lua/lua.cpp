@@ -30,6 +30,7 @@
 #include "emulator.h"
 #include "hw/pvr/Renderer_if.h"
 #include "gdxsv/gdxsv.h"
+#include "gdxsv/gdxsv_emu_hooks.h"
 #include <stb_image_write.h>
 #include "input/gamepad_device.h"
 #include "input/mouse.h"
@@ -632,6 +633,8 @@ static void luaRegister(lua_State *L)
 
 			.beginNamespace("gdxsv")	// ai-analysis
 				.addFunction("replayIndex", std::function<int()>([]() { return gdxsv.ReplayKeyMsgCount(); }))
+				// switch gdxsv:FastForward at runtime, e.g. off just before frames to screenshot
+				.addFunction("fastForward", gdxsv_emu_set_fast_forward)
 			.endNamespace()
 
 	  		.beginNamespace("config")

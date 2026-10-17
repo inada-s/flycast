@@ -152,6 +152,8 @@ void gdxsv_emu_next_frame() {
 	}
 }
 
+static int gdxsv_fast_forward = -1;
+
 void gdxsv_emu_mainui_loop() {
 	if (gdxsv.Enabled()) {
 		gdxsv.HookMainUiLoop();
@@ -160,11 +162,16 @@ void gdxsv_emu_mainui_loop() {
 	// (no frame pacing, no audio mixing, every other frame rendered) for offline
 	// runs on any game, NAOMI included. Emulation itself is unchanged. Online
 	// sessions (rollback, gdxsv network battles) keep it off.
-	static int fast_forward = -1;
-	if (fast_forward == -1)
-		fast_forward = config::loadBool("gdxsv", "FastForward", false) ? 1 : 0;
-	if (fast_forward == 1 && !settings.network.online && !gdxsv.InGame())
+	// gdxsv_emu_set_fast_forward (Lua) overrides it at runtime.
+	if (gdxsv_fast_forward == -1)
+		gdxsv_fast_forward = config::loadBool("gdxsv", "FastForward", false) ? 1 : 0;
+	if (gdxsv_fast_forward == 1 && !settings.network.online && !gdxsv.InGame())
 		settings.input.fastForwardMode = true;
+}
+
+void gdxsv_emu_set_fast_forward(bool on) {
+	gdxsv_fast_forward = on ? 1 : 0;
+	settings.input.fastForwardMode = on;
 }
 
 void gdxsv_emu_rpc() {

@@ -41,6 +41,8 @@ void gdxsv_emu_next_frame();
 
 void gdxsv_emu_mainui_loop();
 
+void gdxsv_emu_set_fast_forward(bool on);
+
 void gdxsv_emu_rpc();
 
 void gdxsv_emu_savestate(int slot);
