@@ -182,8 +182,10 @@ void GdxsvBackendUdp::NetThreadLoop() {
 		if (state == State::McsInBattle) {
 			std::lock_guard<std::mutex> lock(send_buf_mtx_);
 			int n = send_buf_.size();
-			if (0 < n || udp_retransmit_countdown-- == 0) {
-				if (0 < n && msg_buf.CanPush()) {
+			// While the buffer is full (unacked), pending game data must not bypass the retransmit interval.
+			const bool push = 0 < n && msg_buf.CanPush();
+			if (push || udp_retransmit_countdown-- <= 0) {
+				if (push) {
 					n = std::min<int>(n, sizeof(buf));
 					for (int i = 0; i < n; ++i) {
 						buf[i] = send_buf_.front();
