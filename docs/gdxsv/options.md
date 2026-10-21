@@ -21,6 +21,7 @@ Upstream options it changes are in [upstream.md](upstream.md).
 | `loginkey` | empty | lobby account key; generated when empty |
 | `language` | -1 | translation patch: 0 Japanese, 1 Cantonese, 2 English, 3 off |
 | `UseTexturePack` | no | download and use the texture pack |
+| `FontRaster` | no | DC2: draw the game font glyphs from an outline font (GenSen Rounded 2 JP R) instead of the 24 px bitmaps; a texture pack entry wins; no menu entry yet; takes effect at the next game start |
 | `TexturePackChannel` | empty | texture pack channel to download |
 | `WidescreenHudLayout` | 1 | HUD in widescreen: 0 stock 4:3, 1 up to 16:9, 2 viewport edges |
 | `LocalPort` | 0 | UDP port for battles; 0 picks a random one |
@@ -53,6 +54,7 @@ Upstream options it changes are in [upstream.md](upstream.md).
 |---|---|---|
 | `replay` | empty | play this replay file on start |
 | `spectate` | empty | watch this live battle code on start |
+| `FontRasterFile` | empty | outline font file for `FontRaster`; empty is the bundled font (Windows) or `GenSenRounded2JP-R.otf` in the data folder |
 | `ReplayPOV` | 1 | point of view of `replay` / `spectate`, player 1 to 4 |
 | `ReplayFourScreen` | no | `replay` as a four-screen replay (four processes) |
 | `replay_target_round` | 0 | start `replay` at this round |

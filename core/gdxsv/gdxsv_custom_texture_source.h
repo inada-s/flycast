@@ -2,6 +2,7 @@
 
 #include "zip.h"
 #include "gdxsv_config.h"
+#include "gdxsv_font_provider.h"
 
 // clang-format off
 #include "../rend/TexCache.h"
@@ -31,7 +32,8 @@ class GdxsvTexturePackSource : public BaseCustomTextureSource {
    public:
 	GdxsvTexturePackSource();
 	~GdxsvTexturePackSource() override;
-	bool shouldReplace() const override { return config::GdxUseTexturePack; }
+	// The font glyphs drawn from an outline font fill in where the pack has no entry.
+	bool shouldReplace() const override { return config::GdxUseTexturePack || config::GdxFontRaster; }
 	bool shouldPreload() const override { return false; }
 	bool loadMap() override;
 	size_t getTextureCount() const override { return texture_map.size(); }
@@ -43,4 +45,5 @@ class GdxsvTexturePackSource : public BaseCustomTextureSource {
    private:
 	std::map<u32, int> texture_map;
 	zip_t* texp_zip = nullptr;
+	GdxsvFontProvider font;
 };
