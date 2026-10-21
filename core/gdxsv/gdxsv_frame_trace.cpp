@@ -2,6 +2,9 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
 #include "gdxsv_frame_trace.h"
 
+#include "emulator.h"
+#include "hw/sh4/sh4_mem.h"
+
 #include <atomic>
 #include <chrono>
 #include <cstdio>
@@ -119,3 +122,35 @@ void gdxsv_trace_event(const char* event, long long arg) {
 }
 
 void gdxsv_trace_set_frame(int frame) { currentFrame.store(frame, std::memory_order_relaxed); }
+
+bool gdxsv_trace_ta_hash = getenv("GDXSV_TA_HASH") != nullptr;
+
+void gdxsv_trace_press(int frame, int player, unsigned& kcode) {
+	static int who = -1, first = -1, frames = 0;
+	static unsigned keys = 0;
+	static const bool on = [] {
+		const char* env = getenv("GDXSV_PRESS");
+		return env != nullptr && sscanf(env, "%d,%d,%x,%d", &who, &first, &keys, &frames) == 4;
+	}();
+	if (on && player == who && first <= frame && frame < first + frames) {
+		kcode &= ~keys;  // active low
+		GDXSV_TRACE("press", keys);
+	}
+}
+
+void gdxsv_trace_ram(int frame) {
+	static char dir[512];
+	static int first = 0, last = -1;
+	static const bool on = [] {
+		const char* env = getenv("GDXSV_RAM_DUMP");
+		return env != nullptr && sscanf(env, "%511[^,],%d,%d", dir, &first, &last) == 3;
+	}();
+	if (!on || frame < first || last < frame)
+		return;
+	char path[600];
+	snprintf(path, sizeof(path), "%s/%d.bin", dir, frame);
+	if (FILE* f = fopen(path, "wb")) {
+		fwrite(&mem_b[0], 1, settings.platform.ram_size, f);
+		fclose(f);
+	}
+}

@@ -14,6 +14,7 @@
 
 #include "gdxsv/gdxsv_emu_hooks.h"
 #include "gdxsv/gdxsv_frame_trace.h"
+#include <xxhash.h>
 
 #include <mutex>
 #include <deque>
@@ -594,6 +595,8 @@ void rend_start_render()
 	}
 
 	GDXSV_TRACE("queue_b", ctx->rend.isRTT);
+	if (gdxsv_trace_ta_hash)
+		GDXSV_TRACE("ta_hash", (long long)(XXH3_64bits(ctx->tad.thd_root, ctx->tad.thd_data - ctx->tad.thd_root) >> 1));
 	const bool queued = QueueRender(ctx);
 	GDXSV_TRACE("queue_e", queued);
 	if (queued)

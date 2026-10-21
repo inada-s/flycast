@@ -406,6 +406,7 @@ static bool save_game_state(unsigned char **buffer, int *len, int *checksum, int
 {
 	verify(!emu.getSh4Executor()->IsCpuRunning());
 	GDXSV_TRACE("save", frame);
+	gdxsv_trace_ram(frame);
 	lastSavedFrame = frame;
 	// TODO this is way too much memory
 	size_t allocSize = settings.platform.isNaomi() ? 20_MB : 10_MB;
@@ -861,6 +862,11 @@ bool nextFrame()
 		if ((frame + localPlayerNum) % 5 == 0) {
 			kcode[0] = ~(gdxsv_ggpo_state.randSource() & gdxsv_ggpo_state.randInputMask);
 		}
+	}
+	{
+		int frame;
+		ggpo::getCurrentFrame(&frame);
+		gdxsv_trace_press(frame, localPlayerNum, kcode[0]);
 	}
 
 	// may call save_game_state
