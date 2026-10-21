@@ -5,6 +5,7 @@
 #include <ft2build.h>
 #include FT_FREETYPE_H
 #include FT_GLYPH_H
+#include FT_OUTLINE_H
 #include FT_STROKER_H
 
 #include <algorithm>
@@ -47,12 +48,15 @@ constexpr int kSize = 32 * kScale;
 constexpr float kEm = 21.f;
 // Vertical centre of the 24 px glyph box, game px.
 constexpr int kMiddle = 12;
+// The game advances 12 game px after a half-width character: wider ink overlaps the next one.
+constexpr int kHalfCell = 12;
 // Outline bands outermost first: stroke radius in output px, grey. The game tints texels with the vertex colour, so
 // the grey shows as a dark outline as with the game's own 2-bit glyphs. The white core is drawn last.
-constexpr struct {
+struct Band {
 	int radius;
 	u8 grey;
-} kBands[] = {{6, 70}, {3, 181}, {0, 255}};
+};
+constexpr Band kBands[] = {{6, 70}, {3, 181}, {0, 255}};
 constexpr size_t kCacheEntries = 256;
 
 const GdxsvFontGlyph* find_glyph(u32 hash) {
@@ -60,6 +64,8 @@ const GdxsvFontGlyph* find_glyph(u32 hash) {
 	const GdxsvFontGlyph* it = std::lower_bound(kGlyphs, end, hash, [](const GdxsvFontGlyph& g, u32 h) { return g.hash < h; });
 	return it != end && it->hash == hash ? it : nullptr;
 }
+
+bool is_half_width(u32 code_point) { return code_point < 0x80 || (code_point >= 0xff61 && code_point <= 0xff9f); }
 
 // Composites a grey coverage bitmap over an RGBA image (rows top-down).
 void blend(std::vector<u8>& image, const FT_BitmapGlyph bitmap, int left, int top, u8 grey) {
@@ -170,13 +176,26 @@ struct GdxsvFontProvider::Impl {
 	}
 
 	// Draws the character in the game's 24 px box like the game lays it out: horizontally centred on centre2 / 2,
-	// vertically on the box middle (the middle between the font's ascender and descender).
+	// vertically on the box middle (the middle between the font's ascender and descender). A half-width character is
+	// centred by its ink and narrowed to fit, outline included, in the half-width cell.
 	bool Draw(const GdxsvFontGlyph& glyph, std::vector<u8>& image) {
 		if (FT_Load_Char(face, glyph.code_point, FT_LOAD_NO_BITMAP | FT_LOAD_NO_HINTING) != 0) return false;
-		const FT_Pos advance = face->glyph->advance.x;
 		const FT_Size_Metrics& m = face->size->metrics;
 		const FT_Pos baseline = kMiddle * kScale * 64 + (m.ascender + m.descender) / 2;
-		const FT_Pos pen_x = glyph.centre2 * kScale * 32 - advance / 2;
+		const FT_Pos centre = glyph.centre2 * kScale * 32;
+		FT_Pos pen_x = centre - face->glyph->advance.x / 2;
+		if (is_half_width(glyph.code_point) && face->glyph->format == FT_GLYPH_FORMAT_OUTLINE) {
+			FT_Outline* outline = &face->glyph->outline;
+			FT_BBox box;
+			FT_Outline_Get_CBox(outline, &box);
+			const FT_Pos room = (kHalfCell * kScale - 2 * kBands[0].radius) * 64;
+			if (box.xMax - box.xMin > room) {
+				FT_Matrix narrow = {(FT_Fixed)(room * 0x10000LL / (box.xMax - box.xMin)), 0, 0, 0x10000};
+				FT_Outline_Transform(outline, &narrow);
+				FT_Outline_Get_CBox(outline, &box);
+			}
+			pen_x = std::max(centre - (box.xMin + box.xMax) / 2, (FT_Pos)kBands[0].radius * 64 - box.xMin);
+		}
 		image.assign(kSize * kSize * 4, 0);
 		for (const auto& band : kBands) {
 			FT_Glyph g;
