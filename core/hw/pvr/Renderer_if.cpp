@@ -204,6 +204,7 @@ private:
 		if (taContext == nullptr)
 			return;
 		GDXSV_TRACE("dequeue", taContext->rend.isRTT);
+		GDXSV_TRACE("dequeue_ctx", (long long)(uintptr_t)taContext);
 
 		// tile clipping is used to calculate framebuffer size in RTT below
 		setTileClipping(taContext->rend);
@@ -595,6 +596,7 @@ void rend_start_render()
 	}
 
 	GDXSV_TRACE("queue_b", ctx->rend.isRTT);
+	GDXSV_TRACE("queue_ctx", (long long)(uintptr_t)ctx);
 	if (gdxsv_trace_ta_hash)
 		GDXSV_TRACE("ta_hash", (long long)(XXH3_64bits(ctx->tad.thd_root, ctx->tad.thd_data - ctx->tad.thd_root) >> 1));
 	const bool queued = QueueRender(ctx);

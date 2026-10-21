@@ -407,6 +407,7 @@ static bool save_game_state(unsigned char **buffer, int *len, int *checksum, int
 	verify(!emu.getSh4Executor()->IsCpuRunning());
 	GDXSV_TRACE("save", frame);
 	gdxsv_trace_ram(frame);
+	gdxsv_trace_pos(frame);
 	lastSavedFrame = frame;
 	// TODO this is way too much memory
 	size_t allocSize = settings.platform.isNaomi() ? 20_MB : 10_MB;
@@ -928,6 +929,7 @@ bool nextFrame()
 			if (lt2[0] >= 64) inputs.kcode |= DC_BTN_A | DC_BTN_X;
 			if (rt2[0] >= 64) inputs.kcode |= DC_BTN_A | DC_BTN_Y;
 		}
+		GDXSV_TRACE("add_kcode", inputs.kcode);
 		GDXSV_TRACE("add_b", loop_count);
 		error = ggpo_add_local_input(ggpoSession, localPlayer, &inputs, inputSize);
 		GDXSV_TRACE("add_e", error);

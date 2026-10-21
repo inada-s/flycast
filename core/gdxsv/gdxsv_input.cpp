@@ -6,11 +6,16 @@
 #include <cstdio>
 #include <cstdlib>
 #include <map>
+#include <chrono>
 #include <mutex>
+#include <random>
+#include <thread>
 #include <vector>
 
 #include "emulator.h"
 #include "gdxsv_emu_hooks.h"
+#include "gdxsv_frame_trace.h"
+#include "gdxsv_ggpo.h"
 #include "input/gamepad_device.h"
 #ifdef USE_SDL
 #include "sdl/sdl_gamepad.h"
@@ -183,4 +188,44 @@ bool gdxsv_input_digital_axis(u32 state, u32 negDir, u32 posDir, s16& joystick) 
 	else
 		joystick = 32767;
 	return true;
+}
+
+bool gdxsv_input_press_sweep(int player) {
+#ifdef USE_SDL
+	static bool started = false;
+	int who, startMs, holdMs, gapMin, gapMax;
+	const char* env = getenv("GDXSV_PRESS_SWEEP");
+	if (started || env == nullptr || sscanf(env, "%d,%d,%d,%d,%d", &who, &startMs, &holdMs, &gapMin, &gapMax) != 5 ||
+		who != player || test_joystick.joystick == nullptr)
+		return false;
+	started = true;
+	NOTICE_LOG(INPUT, "press sweep: player %d from %d ms, hold %d ms, gap %d-%d ms", who, startMs, holdMs, gapMin, gapMax);
+	// Triggers rest at raw 0 = half pressed (A held via the gdxsv trigger mapping): release them.
+	SDL_JoystickSetVirtualAxis(test_joystick.joystick, SDL_CONTROLLER_AXIS_TRIGGERLEFT, -32768);
+	SDL_JoystickSetVirtualAxis(test_joystick.joystick, SDL_CONTROLLER_AXIS_TRIGGERRIGHT, -32768);
+	std::thread([=]() {
+		std::mt19937 rng(540);
+		std::uniform_int_distribution<int> gap(gapMin, gapMax);
+		std::this_thread::sleep_for(std::chrono::milliseconds(startMs));
+		// Random input until here gets the match into the battle; then the pad alone drives this peer.
+		gdxsv_ggpo_random_input(false, 0, 0);
+		std::this_thread::sleep_for(std::chrono::milliseconds(100));
+		kcode[0] = ~0u;
+		GDXSV_TRACE("sweep_start", 0);
+		std::this_thread::sleep_for(std::chrono::milliseconds(500));
+		for (int n = 0;; n++) {
+			// Alternate left / right so the unit stays in place.
+			const int button = n % 2 ? SDL_CONTROLLER_BUTTON_DPAD_RIGHT : SDL_CONTROLLER_BUTTON_DPAD_LEFT;
+			GDXSV_TRACE("vpress", button);
+			SDL_JoystickSetVirtualButton(test_joystick.joystick, button, 1);
+			std::this_thread::sleep_for(std::chrono::milliseconds(holdMs));
+			GDXSV_TRACE("vrelease", button);
+			SDL_JoystickSetVirtualButton(test_joystick.joystick, button, 0);
+			std::this_thread::sleep_for(std::chrono::milliseconds(gap(rng)));
+		}
+	}).detach();
+	return true;
+#else
+	return false;
+#endif
 }

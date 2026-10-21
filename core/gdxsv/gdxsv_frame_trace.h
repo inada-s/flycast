@@ -21,6 +21,9 @@ void gdxsv_trace_set_frame(int frame);
 extern bool gdxsv_trace_ta_hash;
 void gdxsv_trace_press(int frame, int player, unsigned& kcode);
 void gdxsv_trace_ram(int frame);
+// GDXSV_TRACE_POS=<hex address>,<bytes>[;...] (up to 4): log "pos0".."pos3" (low 63 bits of XXH3 of that RAM)
+// at each GGPO save.
+void gdxsv_trace_pos(int frame);
 
 #define GDXSV_TRACE(event, arg)                \
 	do {                                       \

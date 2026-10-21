@@ -4,6 +4,7 @@
 
 #include "emulator.h"
 #include "hw/sh4/sh4_mem.h"
+#include <xxhash.h>
 
 #include <atomic>
 #include <chrono>
@@ -152,5 +153,29 @@ void gdxsv_trace_ram(int frame) {
 	if (FILE* f = fopen(path, "wb")) {
 		fwrite(&mem_b[0], 1, settings.platform.ram_size, f);
 		fclose(f);
+	}
+}
+
+void gdxsv_trace_pos(int frame) {
+	static const char* const names[] = {"pos0", "pos1", "pos2", "pos3"};
+	static unsigned addr[4], len[4];
+	static const int count = [] {
+		const char* env = getenv("GDXSV_TRACE_POS");
+		int n = 0, used = 0;
+		while (env != nullptr && n < 4 && sscanf(env, "%x,%u%n", &addr[n], &len[n], &used) == 2) {
+			n++;
+			env += used;
+			if (*env != ';')
+				break;
+			env++;
+		}
+		return n;
+	}();
+	if (!gdxsv_trace_on)
+		return;
+	for (int i = 0; i < count; i++) {
+		const unsigned off = addr[i] & (settings.platform.ram_size - 1);
+		if (off + len[i] <= settings.platform.ram_size)
+			gdxsv_trace_event(names[i], (long long)(XXH3_64bits(&mem_b[off], len[i]) >> 1));
 	}
 }

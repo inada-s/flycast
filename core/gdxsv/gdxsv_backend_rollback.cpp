@@ -15,6 +15,7 @@
 #include "gdxsv.h"
 #include "gdxsv_round_counters.h"
 #include "gdxsv_emu_hooks.h"
+#include "gdxsv_input_hooks.h"
 #include "gdxsv_replay_util.h"
 #include "gdxsv.pb.h"
 #include "imgui/imgui.h"
@@ -529,6 +530,7 @@ bool GdxsvBackendRollback::StartLocalTest(const char* param) {
 		NOTICE_LOG(COMMON, "RandomInput Seed=%d Mask=%04x", seed + me, mask);
 		gdxsv_ggpo_random_input(true, seed + me, mask);
 	}
+	gdxsv_input_press_sweep(me);
 	// Team vitals (Renpo, Zeon), little endian. VITAL=600 for a full-length battle.
 	const int vital = getenv("VITAL") ? atoi(getenv("VITAL")) : 1;
 	DummyRuleData[6] = vital & 0xff;
