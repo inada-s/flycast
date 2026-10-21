@@ -28,6 +28,7 @@
 #include "profiler/fc_profiler.h"
 #include "oslib/i18n.h"
 #include "gdxsv/gdxsv_emu_hooks.h"
+#include "gdxsv/gdxsv_frame_trace.h"
 
 #include <chrono>
 #include <thread>
@@ -41,6 +42,7 @@ bool mainui_rend_frame()
 	FC_PROFILE_SCOPE;
 
 	os_DoEvents();
+	GDXSV_TRACE("ui_input", 0);
 	os_UpdateInputState();
 
 	if (gui_is_open())
@@ -107,6 +109,7 @@ void mainui_loop(bool forceStart)
 
 	while (mainui_enabled)
 	{
+		GDXSV_TRACE("ui_iter", 0);
 		fc_profiler::startThread("main");
 
 		// gdxsv: gdxsv_emu_mainui_loop gets whether a frame was rendered

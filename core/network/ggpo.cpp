@@ -33,6 +33,7 @@
 #include "gdxsv/gdxsv_input_hooks.h"
 #include "gdxsv/gdxsv_prof.h"
 #include "gdxsv/gdxsv_ggpo_hooks.h"
+#include "gdxsv/gdxsv_frame_trace.h"
 
 void UpdateInputState();
 
@@ -172,6 +173,7 @@ static int lastSavedFrame = -1;
 
 // gdxsv: frames of the last rollback, for the skip frame replay and its test log
 static int seekToFrame = -1;
+static int traceRerunIndex;
 static int loadedFrame = -1;  // the frame the last rollback loaded
 static int timesyncOccurred;
 
@@ -299,6 +301,8 @@ static bool advance_frame(int)
 	int frame;
 	getCurrentFrame(&frame);
 
+	gdxsv_trace_set_frame(frame);
+	GDXSV_TRACE("rerun_b", ++traceRerunIndex);
 	settings.aica.muteAudio = true;
 	settings.gdxsv.skipRenderingAddr = settings.gdxsv.skipRenderingBaseAddr;
 	rend_enable_renderer(false);
@@ -337,6 +341,7 @@ static bool advance_frame(int)
 	_endOfFrame = false;
 
 	gdxsv_ggpo_state.totalRollbackFrames++;
+	GDXSV_TRACE("rerun_e", traceRerunIndex);
 	return true;
 }
 
@@ -351,6 +356,8 @@ static bool load_game_state(unsigned char *buffer, int len)
 {
 	INFO_LOG(NETWORK, "load_game_state");
 	ggpo::getCurrentFrame(&seekToFrame); // gdxsv: test log
+	GDXSV_TRACE("load_b", seekToFrame);
+	traceRerunIndex = 0;
 
 	rend_start_rollback();
 	// FIXME dynarecs
@@ -385,6 +392,7 @@ static bool load_game_state(unsigned char *buffer, int len)
 	rend_allow_rollback();	// ggpo might load another state right after this one
 	memwatch::reset();
 	memwatch::protect();
+	GDXSV_TRACE("load_e", frame);
 	return true;
 }
 
@@ -397,6 +405,7 @@ static bool load_game_state(unsigned char *buffer, int len)
 static bool save_game_state(unsigned char **buffer, int *len, int *checksum, int frame)
 {
 	verify(!emu.getSh4Executor()->IsCpuRunning());
+	GDXSV_TRACE("save", frame);
 	lastSavedFrame = frame;
 	// TODO this is way too much memory
 	size_t allocSize = settings.platform.isNaomi() ? 20_MB : 10_MB;
@@ -819,12 +828,24 @@ bool nextFrame()
 		return false;
 	}
 
+	gdxsv_trace_set_frame(frame);
+	GDXSV_TRACE("next_b", 0);
 	// will call save_game_state
+	GDXSV_TRACE("adv_b", frame);
 	GGPOErrorCode error = ggpo_advance_frame(ggpoSession);
+	GDXSV_TRACE("adv_e", error);
 
 	// may rollback
-	if (error == GGPO_OK)
+	if (error == GGPO_OK) {
+		GDXSV_TRACE("idle_b", 0);
 		error = ggpo_idle(ggpoSession, 0);
+		if (gdxsv_trace_on) {
+			int next;
+			getCurrentFrame(&next);
+			gdxsv_trace_set_frame(next);
+			GDXSV_TRACE("idle_e", error);
+		}
+	}
 	if (error != GGPO_OK)
 	{
 		stopSession();
@@ -846,10 +867,12 @@ bool nextFrame()
 	int loop_count = 0;
 	do {
 		if (!gdxsv_ggpo_state.useRandInput) {
+			GDXSV_TRACE("input_b", 0);
 			if (!config::ThreadedRendering)
 				os_UpdateInputState();
 			else if (config::JoystickPolling)
 				gdxsv_input_update_joysticks();  // Polling mode: EMU thread can safely poll joystick state
+			GDXSV_TRACE("input_e", 0);
 		}
 		Inputs inputs;
 		inputs.kcode = ~kcode[0];
@@ -899,7 +922,9 @@ bool nextFrame()
 			if (lt2[0] >= 64) inputs.kcode |= DC_BTN_A | DC_BTN_X;
 			if (rt2[0] >= 64) inputs.kcode |= DC_BTN_A | DC_BTN_Y;
 		}
+		GDXSV_TRACE("add_b", loop_count);
 		error = ggpo_add_local_input(ggpoSession, localPlayer, &inputs, inputSize);
+		GDXSV_TRACE("add_e", error);
 		if (error == GGPO_OK)
 		{
 			if (0 < loop_count) {
@@ -940,6 +965,7 @@ bool nextFrame()
 			WARN_LOG(NETWORK, "ggpo_add_local_input(%d) failed %d", i, result);
 	}
 #endif
+	GDXSV_TRACE("next_e", 0);
 	if (active()) {
 		emu.getSh4Executor()->Start();
 		return true;

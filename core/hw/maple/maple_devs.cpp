@@ -1,4 +1,5 @@
 #include "maple_devs.h"
+#include "gdxsv/gdxsv_frame_trace.h"
 #include "maple_cfg.h"
 #include "maple_helper.h"
 #include "maple_if.h"
@@ -192,6 +193,7 @@ struct maple_sega_controller: maple_base
 
 				//state data
 				//2 key code
+				GDXSV_TRACE("maple_read", getButtonState(pjs));
 				w16(getButtonState(pjs));
 
 				// analog axes

@@ -15,6 +15,7 @@
 #include <nowide/cstdio.hpp>
 #include "gdxsv_custom_texture_source.h"
 #include "gdxsv_frame_limiter.h"
+#include "gdxsv_frame_trace.h"
 #include "gdxsv_gui_settings.h"
 #include "gdxsv_multi_pov.h"
 #include "gdxsv_multi_pov_audio.h"
@@ -242,8 +243,11 @@ void gdxsv_emu_mainui_loop(bool rendered) {
 	}
 	gdxsv_multi_pov_tick();
 
-	if (rendered)
+	if (rendered) {
+		GDXSV_TRACE("lim_b", 0);
 		gdxsv_frame_limiter_wait();
+		GDXSV_TRACE("lim_e", 0);
+	}
 }
 
 void gdxsv_emu_rpc() {

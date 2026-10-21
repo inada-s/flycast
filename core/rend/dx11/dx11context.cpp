@@ -17,6 +17,7 @@
     along with Flycast.  If not, see <https://www.gnu.org/licenses/>.
 */
 #include "dx11context.h"
+#include "gdxsv/gdxsv_frame_trace.h"
 #ifndef LIBRETRO
 #include "rend/osd.h"
 #ifdef USE_SDL
@@ -240,10 +241,25 @@ void DX11Context::Present()
 	}
 	else if (swapOnVSync) {
 		int swapInterval = std::clamp((int)(settings.display.refreshRate / 60.f * gameSwapInterval), 1, 4);
+		GDXSV_TRACE("present_b", swapInterval);
 		hr = swapchain->Present(swapInterval, 0);
 	}
 	else {
+		GDXSV_TRACE("present_b", 0);
 		hr = swapchain->Present(0, allowTearing ? DXGI_PRESENT_ALLOW_TEARING : DXGI_PRESENT_DO_NOT_WAIT);
+	}
+	GDXSV_TRACE("present_e", (long long)hr);
+	if (gdxsv_trace_on && swapchain) {
+		// The present count and the vblank it was shown at, as DXGI reports them.
+		DXGI_FRAME_STATISTICS stats{};
+		if (SUCCEEDED(swapchain->GetFrameStatistics(&stats))) {
+			GDXSV_TRACE("stat_present_count", stats.PresentCount);
+			GDXSV_TRACE("stat_present_refresh", stats.PresentRefreshCount);
+			GDXSV_TRACE("stat_sync_qpc", stats.SyncQPCTime.QuadPart);
+		}
+		UINT lastCount = 0;
+		if (SUCCEEDED(swapchain->GetLastPresentCount(&lastCount)))
+			GDXSV_TRACE("stat_last_present_count", lastCount);
 	}
 	if (hr == DXGI_ERROR_DEVICE_REMOVED || hr == DXGI_ERROR_DEVICE_RESET) {
 		WARN_LOG(RENDERER, "Present failed: device removed/reset");

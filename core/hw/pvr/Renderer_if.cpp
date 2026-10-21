@@ -13,6 +13,7 @@
 #include "network/ggpo.h"
 
 #include "gdxsv/gdxsv_emu_hooks.h"
+#include "gdxsv/gdxsv_frame_trace.h"
 
 #include <mutex>
 #include <deque>
@@ -201,6 +202,7 @@ private:
 		TA_context *taContext = DequeueRender();
 		if (taContext == nullptr)
 			return;
+		GDXSV_TRACE("dequeue", taContext->rend.isRTT);
 
 		// tile clipping is used to calculate framebuffer size in RTT below
 		setTileClipping(taContext->rend);
@@ -229,6 +231,7 @@ private:
 		if (renderToScreen)
 			// If rendering to texture or in full framebuffer emulation, continue locking until the frame is rendered
 			renderEnd.Set();
+		GDXSV_TRACE("ta_parse_end", 0);
 		rend_allow_rollback();
 		{
 			FC_PROFILE_SCOPE_NAMED("Renderer::Render");
@@ -242,6 +245,7 @@ private:
 			}
 		}
 
+		GDXSV_TRACE("render_end", 0);
 		if (!renderToScreen)
 			renderEnd.Set();
 		else if (config::DelayFrameSwapping && fb_w_cur == FB_R_SOF1)
@@ -267,6 +271,7 @@ private:
 	{
 		FC_PROFILE_SCOPE;
 
+		GDXSV_TRACE("pvr_present", 0);
 		if (renderer->Present())
 		{
 			presented = true;
@@ -516,6 +521,7 @@ void rend_reset()
 
 void rend_start_render()
 {
+	GDXSV_TRACE("startrender", 0);
 	render_called = true;
 	pend_rend = false;
 
@@ -587,7 +593,10 @@ void rend_start_render()
 			ctx->rend.swapInterval = 1;
 	}
 
-	if (QueueRender(ctx))
+	GDXSV_TRACE("queue_b", ctx->rend.isRTT);
+	const bool queued = QueueRender(ctx);
+	GDXSV_TRACE("queue_e", queued);
+	if (queued)
 	{
 		palette_update();
 		pend_rend = true;
@@ -611,8 +620,11 @@ int rend_end_render(int tag, int cycles, int jitter, void *arg)
 		asic_RaiseInterrupt(holly_RENDER_DONE_isp);
 		asic_RaiseInterrupt(holly_RENDER_DONE_vd);
 	}
-	if (pend_rend && config::ThreadedRendering)
+	if (pend_rend && config::ThreadedRendering) {
+		GDXSV_TRACE("rendend_wait_b", 0);
 		renderEnd.Wait();
+		GDXSV_TRACE("rendend_wait_e", 0);
+	}
 
 	return 0;
 }
@@ -671,7 +683,9 @@ void rend_set_fb_write_addr(u32 fb_w_sof1)
 
 void rend_swap_frame(u32 fb_r_sof)
 {
-	if (!config::EmulateFramebuffer && fb_r_sof == fb_w_cur && rend_is_enabled())
+	const bool present = !config::EmulateFramebuffer && fb_r_sof == fb_w_cur && rend_is_enabled();
+	GDXSV_TRACE("fb_swap", present);
+	if (present)
 		pvrQueue.enqueue(PvrMessageQueue::Present);
 }
 
@@ -687,8 +701,11 @@ void rend_allow_rollback()
 
 void rend_start_rollback()
 {
-	if (config::ThreadedRendering)
+	if (config::ThreadedRendering) {
+		GDXSV_TRACE("vramrb_b", 0);
 		vramRollback.Wait();
+		GDXSV_TRACE("vramrb_e", 0);
+	}
 }
 
 void rend_enable_renderer(bool enabled) {

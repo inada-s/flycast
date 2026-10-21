@@ -52,6 +52,7 @@
 #include "oslib/i18n.h"
 
 #include "gdxsv/gdxsv_emu_hooks.h"
+#include "gdxsv/gdxsv_frame_trace.h"
 
 settings_t settings;
 constexpr char const *BIOS_TITLE = "Dreamcast BIOS";
@@ -979,7 +980,9 @@ void Emulator::run()
 	if (!singleStep && stepRangeTo == 0)
 		getSh4Executor()->Start();
 	try {
+		GDXSV_TRACE("run_b", 0);
 		runInternal();
+		GDXSV_TRACE("run_e", 0);
 		gdxsv_emu_next_frame();
 		if (ggpo::active())
 			ggpo::nextFrame();
@@ -1024,7 +1027,9 @@ void Emulator::start()
 						if (!singleStep && stepRangeTo == 0)
 							emu.getSh4Executor()->Start(); // gdxsv: fix blackout on threaded rendering
 						startTime = sh4_sched_now64();
+						GDXSV_TRACE("run_b", 1);
 						runInternal();
+						GDXSV_TRACE("run_e", 1);
 						gdxsv_emu_next_frame();
 						if (ggpo::active()) ggpo::nextFrame();
 					}
@@ -1100,6 +1105,7 @@ bool Emulator::render()
 
 void Emulator::vblank()
 {
+	GDXSV_TRACE("gvbl", 0);
 	EventManager::event(Event::VBlank);
 	runner.execTasks();
 	// Time out if a frame hasn't been rendered for 50 ms

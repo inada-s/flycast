@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
 // FixedFrequency frame limiter for the main UI loop (mainui_loop).
 #include "gdxsv_frame_limiter.h"
+#include "gdxsv_frame_trace.h"
 
 #include <algorithm>
 #include <chrono>
@@ -40,6 +41,7 @@ static int64_t gdxsv_trimmed_frame_period_us() {
 }
 
 void gdxsv_emu_mainui_loop_start() {
+	gdxsv_trace_init();
 	currentDupeFrames = config::DupeFrames;
 	gdxsv_set_timer_resolution();
 	start = {};
