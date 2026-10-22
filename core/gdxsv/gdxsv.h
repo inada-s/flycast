@@ -11,6 +11,7 @@
 #include "gdxsv_backend_tcp.h"
 #include "gdxsv_backend_udp.h"
 #include "gdxsv_key_display.h"
+#include "gdxsv_lobby_status.h"
 #include "gdxsv_projectile_view.h"
 #include "gdxsv_slowdown.h"
 #include "network/miniupnp.h"
@@ -76,6 +77,8 @@ class Gdxsv {
 	bool LobbySuspended() const { return lobby_suspended_; }
 	// A match was found, or the server shut down, while the lobby was suspended.
 	bool LobbyCalling() const { return lobby_calling_; }
+	// The lobby status overlay, for screens drawn while the GUI is open.
+	void DisplayLobbyStatus() { lobby_status_.DisplayOSD(); }
 	bool StartRollbackTest(const char* param);
 	void WritePatch();
 	int Disk() const { return disk_; }
@@ -131,6 +134,7 @@ class Gdxsv {
 	GdxsvBackendReplay replay_net_;
 	GdxsvBackendRollback rollback_net_;
 	GdxsvKeyDisplay key_display_;
+	GdxsvLobbyStatus lobby_status_;
 	GdxsvProjectileView projectile_view_;
 	GdxsvSlowdown slowdown_;
 };

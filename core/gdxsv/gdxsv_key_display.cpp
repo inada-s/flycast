@@ -32,7 +32,6 @@ GdxsvKeyTexture arrows{"ARROWS.png"};
 
 void getArrowsUV(u16 mcs_key, ImVec2& uv0, ImVec2& uv1);
 std::string getArrowsStr(u16 mcs_key);
-float getScale(float w, float h);
 }  // namespace
 
 void GdxsvKeyDisplay::DisplayOSD() {
@@ -64,7 +63,7 @@ void GdxsvKeyDisplay::DisplayOSD() {
 	if (gdxsv_video_grid_active) gdxsv_video_viewport(x, y, w, h);
 	if (w <= 0 || h <= 0) return;
 	const auto& style = ImGui::GetStyle();
-	const float scale = getScale(w, h);
+	const float scale = gdxsv_osd_scale(w, h);
 	// Text and spacing follow the same game-image scale as the button icons,
 	// including when this view is rendered in a hidden guest's smaller window.
 	const float display_scale = 16 * scale / style.FontSizeBase;
@@ -185,19 +184,6 @@ void GdxsvKeyDisplay::Clear() {
 }
 
 namespace {
-float getScale(float w, float h) {
-	const float renderAR = getOutputFramebufferAspectRatio();
-	const float screenAR = w / h;
-	float dx = 0;
-	float dy = 0;
-	if (renderAR > screenAR)
-		dy = h * (1 - screenAR / renderAR) / 2;
-	else
-		dx = w * (1 - renderAR / screenAR) / 2;
-
-	return std::min((w - dx * 2) / 640.f, (h - dy * 2) / 480.f);
-}
-
 void getArrowsUV(u16 mcs_key, ImVec2& uv0, ImVec2& uv1) {
 	uv0 = ImVec2{1.f / 3, 1.f / 3};
 	uv1 = ImVec2{2.f / 3, 2.f / 3};
@@ -272,3 +258,16 @@ std::string getArrowsStr(u16 mcs_key) {
 }
 
 }  // namespace
+
+float gdxsv_osd_scale(float w, float h) {
+	const float renderAR = getOutputFramebufferAspectRatio();
+	const float screenAR = w / h;
+	float dx = 0;
+	float dy = 0;
+	if (renderAR > screenAR)
+		dy = h * (1 - screenAR / renderAR) / 2;
+	else
+		dx = w * (1 - renderAR / screenAR) / 2;
+
+	return std::min((w - dx * 2) / 640.f, (h - dy * 2) / 480.f);
+}

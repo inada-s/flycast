@@ -5,6 +5,9 @@
 
 #include "types.h"
 
+// Scale of the game image (640x480 units) in a w x h display: the OSD overlays grow with it.
+float gdxsv_osd_scale(float w, float h);
+
 class GdxsvKeyDisplay {
    public:
 	void DisplayOSD();

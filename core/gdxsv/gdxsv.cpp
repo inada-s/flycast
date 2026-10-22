@@ -114,6 +114,7 @@ void Gdxsv::DisplayOSD() {
 	rollback_net_.DisplayOSD();
 	replay_net_.DisplayOSD();
 	key_display_.DisplayOSD();
+	lobby_status_.DisplayOSD();
 	projectile_view_.DisplayOSD();
 	slowdown_.DisplayOSD();
 }
@@ -144,6 +145,7 @@ void Gdxsv::Reset(bool loading_state) {
 			lobby_held_.clear();
 		}
 		lobby_patch_list_.Clear();
+		lobby_status_.Clear();
 	}
 	udp_net_.Reset();
 	replay_net_.Reset();
@@ -205,6 +207,10 @@ void Gdxsv::Reset(bool loading_state) {
 			   config::GdxLoginKey.get().c_str(), config::GdxLocalPort.get());
 
 	lbs_net_.lbs_packet_filter([this](const LbsMessage &lbs_msg) -> bool {
+		if (netmode_ == NetMode::Lbs || lobby_suspended_) {
+			lobby_status_.Observe(lbs_msg);
+		}
+
 		if (lobby_suspended_) {
 			HoldLobbyMessage(lbs_msg);
 			return false;
@@ -281,6 +287,7 @@ void Gdxsv::Reset(bool loading_state) {
 
 		return true;
 	});
+	lbs_net_.lbs_sent_observer([this](const LbsMessage &lbs_msg) { lobby_status_.ObserveSent(lbs_msg); });
 }
 
 void Gdxsv::PrepareP2PMatching(const LbsMessage &lbs_msg) {
@@ -442,6 +449,8 @@ void Gdxsv::HookMainUiLoop() {
 	if (netmode_ == NetMode::Replay) {
 		gdxsv.replay_net_.OnMainUiLoop();
 	}
+
+	lobby_status_.enabled(lobby_suspended_ || (netmode_ == NetMode::Lbs && gui_state == GuiState::GdxsvReplay));
 
 	// A match found while in the replay browser starts at once.
 	if (netmode_ == NetMode::Lbs && going_to_battle_ && gui_state == GuiState::GdxsvReplay) {

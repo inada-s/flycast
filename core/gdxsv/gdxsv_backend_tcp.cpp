@@ -10,6 +10,7 @@ void GdxsvBackendTcp::Reset() {
 	tx_msg_reader_.Clear();
 	recv_buf_.clear();
 	lbs_packet_filter_ = nullptr;
+	lbs_sent_observer_ = nullptr;
 }
 
 bool GdxsvBackendTcp::Connect(const std::string &host, u16 port) {
@@ -53,6 +54,7 @@ u32 GdxsvBackendTcp::OnSockWrite(u32 addr, u32 size) {
 	}
 
 	while (tx_msg_reader_.Read(lbs_msg_)) {
+		if (lbs_sent_observer_) lbs_sent_observer_(lbs_msg_);
 		std::vector<u8> v;
 		lbs_msg_.Serialize(v);
 		tcp_client_.Send(reinterpret_cast<const char *>(v.data()), v.size());

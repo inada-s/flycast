@@ -421,6 +421,7 @@ void gdxsv_emu_gui_display() {
 
 	if (gui_state == GuiState::GdxsvReplay) {
 		gdxsv_replay_select_dialog();
+		gdxsv.DisplayLobbyStatus();
 	}
 	
 	if (gui_state == GuiState::GdxsvLatencyCheck) {
