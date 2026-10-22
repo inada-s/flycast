@@ -33,7 +33,7 @@ bool gdxsv_emu_app_init(int argc, const char* const argv[]);
 
 void gdxsv_emu_start();
 
-void gdxsv_emu_reset();
+void gdxsv_emu_reset(bool loading_state = false);
 
 // All deserialization paths, including replay seeks and rollback.
 void gdxsv_emu_state_restored();

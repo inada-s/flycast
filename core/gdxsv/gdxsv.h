@@ -1,6 +1,8 @@
 #pragma once
 
 #include <atomic>
+#include <deque>
+#include <mutex>
 #include <string>
 
 #include "gdxsv.pb.h"
@@ -38,7 +40,8 @@ class Gdxsv {
 	bool IsReplaySeeking() const;
 	void DisplayOSD();
 	const char* NetModeString() const;
-	void Reset();
+	// Loading a savestate keeps a suspended lobby connection; any other reset closes it.
+	void Reset(bool loading_state = false);
 	bool HookOpenMenu();
 	void HookVBlank();
 	void HookMainUiLoop();
@@ -65,6 +68,14 @@ class Gdxsv {
 	bool StartLiveSpectate(const char* battle_code, int pov);
 	bool StartLiveFromHost(int pov);
 	void StopReplay();
+	// A replay can be watched from the lobby, also while waiting for a match:
+	// the connection stays open and what the server sends is held for the game.
+	bool CanSuspendLobby() const;
+	void SuspendLobby();
+	void ResumeLobby();
+	bool LobbySuspended() const { return lobby_suspended_; }
+	// A match was found, or the server shut down, while the lobby was suspended.
+	bool LobbyCalling() const { return lobby_calling_; }
 	bool StartRollbackTest(const char* param);
 	void WritePatch();
 	int Disk() const { return disk_; }
@@ -82,6 +93,8 @@ class Gdxsv {
 	void WriteWidescreenPatch();
 	void WriteWarningSoundVolume();
 	bool WidescreenSitesKnown();
+	void PrepareP2PMatching(const LbsMessage& lbs_msg);
+	void HoldLobbyMessage(const LbsMessage& lbs_msg);
 
 	NetMode netmode_ = NetMode::Offline;
 	std::atomic<bool> enabled_;
@@ -95,6 +108,12 @@ class Gdxsv {
 	std::map<std::string, u32> symbols_;
 	proto::GamePatchList patch_list_;
 	bool going_to_battle_ = false;
+	std::atomic<bool> lobby_suspended_{false};
+	std::atomic<bool> lobby_calling_{false};
+	std::mutex lobby_held_mutex_;
+	std::deque<LbsMessage> lobby_held_;
+	// The savestate restores the original code; these are applied again on resume.
+	proto::GamePatchList lobby_patch_list_;
 	// A zero width invalidates the last applied enable state, viewport and settings.
 	bool widescreen_enabled_ = false;
 	int widescreen_viewport_width_ = 0;

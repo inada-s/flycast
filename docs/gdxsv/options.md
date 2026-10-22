@@ -100,6 +100,7 @@ Tests only; they do nothing unless set. Effects are in
 | `TEST_RELAY`, `TEST_RELAY_SERVER`, `TEST_RELAY_TOKEN`, `TEST_RELAY_IPV6` | `rbk_test` relays |
 | `TEST_SPECTATOR_LBS`, `TEST_SPECTATOR_UPLINK`, `TEST_UPLINK_ROUND_DELAY` | `rbk_test` live uplink |
 | `GDXSV_SPECTATOR_TEST_REPLAY` | unit test `GdxsvSpectator` |
+| `GDXSV_TEST_START_REPLAY` | the online lobby: a file name; once the file appears, the replay whose path it holds starts as from the replay browser (`gdxsv_tests` O6) |
 
 ## Build options (CMake)
 

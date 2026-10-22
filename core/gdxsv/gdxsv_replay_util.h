@@ -29,4 +29,9 @@ void gdxsv_live_autoplay_begin(const std::string& battle_code, int pov, bool fou
 int gdxsv_live_viewer_count(const std::string& battle_code, bool force_refresh = false);
 // user_exit: the viewer left from the pause menu, which also ends Live autoplay.
 void gdxsv_end_replay(std::string error = {}, bool user_exit = false);
+// Back to the lobby game from the replay browser, when a match was found.
+void gdxsv_replay_return_to_game();
+// Test switch for gdxsv_tests O6: GDXSV_TEST_START_REPLAY names a file. Once it appears while the
+// game is in the online lobby, the replay whose path it holds starts as the browser would start it.
+void gdxsv_test_start_replay_tick();
 void gdxsv_replay_select_dialog();

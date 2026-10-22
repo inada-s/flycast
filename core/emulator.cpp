@@ -927,7 +927,7 @@ void Emulator::loadstate(Deserializer& deser)
 
 	dc_deserialize(deser);
 
-	gdxsv_emu_reset();
+	gdxsv_emu_reset(/*loading_state=*/true);
 	mmu_set_state();
 	getSh4Executor()->ResetCache();
 	EventManager::event(Event::LoadState);

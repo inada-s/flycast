@@ -31,7 +31,13 @@ struct LbsMessage {
 	static constexpr u16 lbsUserDecide = 0x6113;
 	static constexpr u16 lbsWinLose = 0x6145;
 
+	static constexpr u16 lbsPlazaJoin = 0x6205;
+	static constexpr u16 lbsLobbyJoin = 0x6303;
+	static constexpr u16 lbsRoomTitle = 0x6402;
+	static constexpr u16 lbsRoomStatus = 0x6404;
 	static constexpr u16 lbsLobbyMatchingEntry = 0x640e;
+	static constexpr u16 lbsLobbyMatchingJoin = 0x640f;
+	static constexpr u16 lbsChatMessage = 0x6702;
 	static constexpr u16 lbsReadyBattle = 0x6910;
 	static constexpr u16 lbsAskMatchingJoin = 0x6911;
 	static constexpr u16 lbsAskPlayerSide = 0x6912;

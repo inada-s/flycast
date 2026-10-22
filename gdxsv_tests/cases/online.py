@@ -3,7 +3,9 @@
 import json
 import os
 import re
+import shutil
 import threading
+import time
 
 from lib import assets, servers
 from lib.case import Skip, case, result
@@ -27,11 +29,13 @@ def login(ctx, tag: str, client_key: str, battle: bool = False, force_start: boo
 
 
 def session(ctx, tag: str, clients: list, force_start: bool = True, mcs_region: str = "",
-            server: str = "127.0.0.1", udp_hello: bool = False, public_ip: str = "127.0.0.1"):
-    """clients = (name, gdxsv:loginkey, lua/login.lua params) run at once against one lobby;
-    returns ([probe per client], lobby log, fake HTTP requests).
+            server: str = "127.0.0.1", udp_hello: bool = False, public_ip: str = "127.0.0.1",
+            replay_state: bool = False, during=None):
+    """clients = (name, gdxsv:loginkey, lua/login.lua params[, Ctx.probe options]) run at once
+    against one lobby; returns ([probe per client], lobby log, fake HTTP requests).
     server: gdxsv:server; udp_hello: the fake P2P test answers over UDP (lib/servers.FakeHttp);
-    public_ip: the fake public IP answer."""
+    public_ip: the fake public IP answer; replay_state: the replay boot savestate (slot 99) too;
+    during: called in a thread with the clients' directories once they are started."""
     rom = ctx.rom("dc2")
     exe = servers.server_exe()
     if exe is None:
@@ -39,23 +43,33 @@ def session(ctx, tag: str, clients: list, force_start: bool = True, mcs_region: 
     states = assets.login_state_dir()
     if states is None:
         raise Skip("no network menu savestate (GDXSV_LOGIN_STATE)")
+    if replay_state and states:
+        both = states + "_replay"
+        os.makedirs(both, exist_ok=True)
+        for d in (states, assets.state_dir(rom)):
+            for name in os.listdir(d):
+                shutil.copy(os.path.join(d, name), both)
+        states = both
     lobby = servers.Lobby(exe, os.path.join(ctx.out, tag + "_lbs"))
     lobby.init([(servers.server_login_key(LOGIN_KEY),) + USER, (servers.server_login_key(LOGIN_KEY2),) + USER2])
     servers.add_training_lobby(lobby.db, force_start=force_start, mcs_region=mcs_region)
     probes = [None] * len(clients)
     with servers.FakeHttp(body=public_ip.encode(), udp_hello=udp_hello) as http:
-        def run(i, name, key, params):
+        def run(i, name, key, params, opts=None):
             battle = params.get("battle", False)
             cfg = http.config() + [f"gdxsv:server={server}", f"gdxsv:loginkey={key}",
-                                   "config:rend.ThreadedRendering=no"]
+                                   "config:rend.ThreadedRendering=no", "config:aica.Volume=0"]
+            kw = {"frames": BATTLE_FRAMES if battle else LOGIN_FRAMES, "until_done": battle, **(opts or {})}
             probes[i] = ctx.probe(name, rom, "login.lua", {"boot": BOOT, "slot": assets.LOGIN_SLOT, **params},
-                                  frames=BATTLE_FRAMES if battle else LOGIN_FRAMES, config=cfg, loadstate=False,
-                                  states=states, timeout=900, until_done=battle)
+                                  config=cfg, loadstate=False, states=states, timeout=900, **kw)
         lobby.start()
         try:
-            threads = [threading.Thread(target=run, args=(i,) + c) for i, c in enumerate(clients)]
+            threads = [threading.Thread(target=run, args=(i,) + tuple(c)) for i, c in enumerate(clients)]
             for t in threads:
                 t.start()
+            if during:
+                threading.Thread(target=during, args=([os.path.join(ctx.out, c[0]) for c in clients],),
+                                 daemon=True).start()
             for t in threads:
                 t.join()
         finally:
@@ -273,3 +287,77 @@ def online_rollback_pair_control(ctx):
     return result([{"what": "a: battle reached", "ok": a["a: probe ran"] and a["a: battle scene reached"]},
                    {"what": "two-peer checks fail", "ok": not a["lobby sent the P2P matching to both"]
                     and not a["a: GGPO session of two peers"] and not a["a: the other peer answered"]}], detail=c)
+
+
+# O6: a's flycast.log lines (gdxsv.cpp, gdxsv_backend_replay.cpp, gdxsv_replay_util.cpp)
+TEST_STARTED = "test: starting replay"
+SUSPENDED = "lobby: suspended for replay playback"
+BACK = "lobby: back to the lobby from replay playback"
+RESUMED = re.compile(r"lobby: resumed with (\d+) held messages")
+REPLAY_SECONDS = 15  # a plays this long before b starts the match
+
+
+def read_log(d: str) -> str:
+    try:
+        with open(os.path.join(d, "flycast.log"), encoding="utf-8", errors="replace") as f:
+            return f.read()
+    except OSError:
+        return ""
+
+
+def lobby_replay(ctx, tag: str, second_enters: bool = True):
+    """a enters the P2P lobby's match, then starts a corpus replay from the lobby (GDXSV_TEST_START_REPLAY,
+    the browser's start). b enters REPLAY_SECONDS into the playback and force-starts; a's playback
+    ends, its lobby resumes and both play the battle. second_enters=False: b only logs in."""
+    from cases.replay import newest_dc2
+    replay = assets.replay(newest_dc2())
+
+    def watch(dirs):
+        a, b = dirs
+        deadline = time.time() + 900
+        while time.time() < deadline and SUSPENDED not in read_log(a):
+            time.sleep(0.5)
+        time.sleep(REPLAY_SECONDS)
+        open(os.path.join(b, "go_chat.flag"), "w").close()
+        while time.time() < deadline and not RESUMED.search(read_log(a)):
+            time.sleep(0.5)
+        open(os.path.join(a, "lobby_back.flag"), "w").close()
+
+    first = {"battle": True, "chat": False, "in_battle": 600, "start_replay": ["start_replay.txt", replay],
+             "wait_file": "lobby_back.flag", "wait_file_max": 12000 if second_enters else 3600}
+    first_opts = {"window": True, "frames": 80000, "env": {"GDXSV_TEST_START_REPLAY": "start_replay.txt"}}
+    second = {"battle": True, "in_battle": 600, "wait_file": "go_chat.flag", "wait_file_max": 12000} \
+        if second_enters else {}
+    return session(ctx, tag, [(tag + "a", LOGIN_KEY, first, first_opts), (tag + "b", LOGIN_KEY2, second)],
+                   mcs_region="p2p", replay_state=True, during=watch)
+
+
+def lobby_replay_checks(probes, lbs: str) -> list:
+    a = probes[0].log
+    m = RESUMED.search(a)
+    started = a.find(SUSPENDED)
+    return [
+        {"what": "a: replay started from the lobby",
+         "ok": TEST_STARTED in a and started >= 0 and "Loaded state" in a[started:]},
+        {"what": "a: the match ended the replay", "ok": BACK in a[max(started, 0):]},
+        {"what": "a: lobby resumed with the held messages", "held": int(m.group(1)) if m else None,
+         "ok": bool(m) and int(m.group(1)) > 0},
+    ] + pair_checks(probes, lbs)
+
+
+@case("O6", "replay from the online lobby while waiting for a match: the match ends it, the lobby resumes "
+            "and the battle starts (local gdxsv, two clients)")
+def online_lobby_replay(ctx):
+    probes, lbs, _ = lobby_replay(ctx, "O6")
+    return result(lobby_replay_checks(probes, lbs))
+
+
+@case("O6c", "O6 with the second client not entering: no match, a's replay is not ended", control_of="O6")
+def online_lobby_replay_control(ctx):
+    probes, lbs, _ = lobby_replay(ctx, "O6c", second_enters=False)
+    c = lobby_replay_checks(probes, lbs)
+    ok = {x["what"]: x["ok"] for x in c}
+    return result([{"what": "a: replay started from the lobby", "ok": ok["a: replay started from the lobby"]},
+                   {"what": "match checks fail", "ok": not ok["a: the match ended the replay"]
+                    and not ok["a: lobby resumed with the held messages"] and not ok["a: battle scene reached"]}],
+                  detail=c)

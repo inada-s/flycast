@@ -7,6 +7,10 @@
 -- which cancels a running countdown).
 -- E2E_PARAMS.unpatch: zero the network payload's patch_id on every vblank after the
 -- load, so the payload in RAM is never the current one.
+-- E2E_PARAMS.start_replay = {trigger, path}: after the entry, write path to the file
+-- trigger (GDXSV_TEST_START_REPLAY): the emulator starts that replay from the lobby.
+-- E2E_PARAMS.wait_file: after the entry (and start_replay), wait up to wait_file_max
+-- vblanks for this file before the chat and the battle; logs wait_file=0 or 1.
 -- Menu paths from gdxsv-reveng tools/dc2_lobby.py.
 
 local B = e2e.BTN
@@ -50,6 +54,20 @@ function main()
   run(LOGIN)
   if not E2E_PARAMS.battle then return end
   run(LOBBY)
+  if E2E_PARAMS.start_replay then
+    local f = io.open(E2E_PARAMS.start_replay[1], "w")
+    f:write(E2E_PARAMS.start_replay[2])
+    f:close()
+  end
+  if E2E_PARAMS.wait_file then
+    local found = e2e.wait_until(function()
+      local f = e2e.frame % 30 == 0 and io.open(E2E_PARAMS.wait_file, "r")
+      if f then f:close() end
+      return f
+    end, E2E_PARAMS.wait_file_max)
+    e2e.log("wait_file", found and 1 or 0)
+    if not found then return end
+  end
   if E2E_PARAMS.chat ~= false then
     e2e.wait(E2E_PARAMS.chat_delay or 0)
     run(CHAT)
