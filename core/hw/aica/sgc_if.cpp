@@ -28,6 +28,7 @@
 #include "cfg/option.h"
 #include "network/ggpo.h" // gdxsv: rollback rerun in ChannelEx::Step
 #include "serialize.h"
+#include "log/BitSet.h" // gdxsv: active channel mask
 
 #include <algorithm>
 #include <cmath>
@@ -417,6 +418,8 @@ enum PCMSType
 struct ChannelEx
 {
 	static ChannelEx Chans[64];
+	// gdxsv: bit n set = Chans[n].enabled, so StepAll skips idle channels
+	static u64 enabledMask;
 
 	ChannelCommonData* ccd;
 
@@ -596,6 +599,7 @@ struct ChannelEx
 	void disable()
 	{
 		enabled = false;
+		enabledMask &= ~(1ull << ChannelNumber); // gdxsv: active channel mask
 		SetAegState(EG_Release);
 		AEG.SetValue(0x3FF);
 		CA = 0;
@@ -604,6 +608,7 @@ struct ChannelEx
 	void enable()
 	{
 		enabled = true;
+		enabledMask |= 1ull << ChannelNumber; // gdxsv: active channel mask
 	}
 
 	SampleType InterpolateSample()
@@ -730,8 +735,9 @@ struct ChannelEx
 
 	static void StepAll(SampleType& mixl, SampleType& mixr)
 	{
-		for (ChannelEx& channel : Chans)
-			channel.Step(mixl, mixr);
+		// gdxsv: step only the enabled channels, in channel order. A disabled channel's step has no effect.
+		for (u64 mask = enabledMask; mask != 0; mask &= mask - 1)
+			Chans[Common::LeastSignificantSetBit(mask)].Step(mixl, mixr);
 	}
 
 	void SetAegState(EGState newstate)
@@ -1477,6 +1483,7 @@ static void staticinitialise()
 static OnLoad staticInit(staticinitialise);
 
 ChannelEx ChannelEx::Chans[64];
+u64 ChannelEx::enabledMask; // gdxsv: active channel mask
 
 #define Chans ChannelEx::Chans
 
@@ -1730,6 +1737,11 @@ void deserialize(Deserializer& deser)
 		deser >> channel.lfo.state;
 		channel.UpdateLFO(true);
 		deser >> channel.enabled;
+		// gdxsv: active channel mask
+		if (channel.enabled)
+			channel.enable();
+		else
+			ChannelEx::enabledMask &= ~(1ull << channel.ChannelNumber);
 		channel.quiet = false;
 	}
 	beep.deserialize(deser);

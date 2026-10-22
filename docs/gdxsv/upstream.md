@@ -125,6 +125,7 @@ every spot is marked and the list is current (`--write` updates it).
 | `core/emulator.cpp` | `Emulator::vblank` | `gdxsv_emu_end_frame` |
 | `core/emulator.h` |  | a rollback or replay session ended |
 | `core/hw/aica/sgc_if.cpp` | `ChannelEx::Step` | muted replay seek or rollback rerun (`ggpo::rollbacking()`, include `network/ggpo.h`) without DSP: step envelopes, stream and LFO, skip the mix nobody hears |
+| `core/hw/aica/sgc_if.cpp` | `ChannelEx` (`enabledMask`, `enable`, `disable`, `StepAll`), `deserialize` | a mask of the enabled channels, so each sample steps only those, in channel order; a disabled channel's step changes nothing. Include `log/BitSet.h` |
 | `core/hw/arm7/arm7_rec_x64.cpp` |  | cpuid is slow: probe the host once, not for every compiled block |
 | `core/hw/holly/sb_mem.cpp` |  | include `gdxsv/gdxsv_emu_hooks.h` |
 | `core/hw/holly/sb_mem.cpp` | `ReadMem_area0` | `gdxsv_emu_rpc` |
