@@ -25,6 +25,8 @@
 #include "hw/pvr/Renderer_if.h"
 #include "emulator.h"
 #include "dx11_driver.h"
+#include "gdxsv/gdxsv_present_pacing.h"
+#include "gdxsv/gdxsv_fptrace.h"
 #include "gdxsv/gdxsv_video_hooks.h"
 #include "imgui_impl_dx11.h"
 #include <dxgi1_6.h>
@@ -214,6 +216,7 @@ bool DX11Context::init(bool keepCurrentWindow)
 void DX11Context::term()
 {
 	NOTICE_LOG(RENDERER, "DX11 Context terminating");
+	stopVblankThread();
 	overlay.term();
 	samplers.term();
 	shaders.term();
@@ -242,8 +245,21 @@ void DX11Context::Present()
 		hr = DXGI_ERROR_DEVICE_RESET;
 	}
 	else if (swapOnVSync) {
-		int swapInterval = std::clamp((int)(settings.display.refreshRate / 60.f * gameSwapInterval), 1, 4);
-		hr = swapchain->Present(swapInterval, 0);
+		// gdxsv: the startup refresh rate can be another display's; rollback battles swap every vblank
+		// and the frame limiter paces them from the vblanks of the display that shows the window.
+		if (gdxsv_video_rollback_battle()) {
+			updateVblankOutput();
+			gdxsv_present_pacing_presented(gdxsv_present_pacing_now_us());
+			const int64_t fptT = gdxsv_fpt_now();
+			hr = swapchain->Present(1, 0);
+			FPT("pres", gdxsv_fpt_now() - fptT);
+		}
+		else {
+			int swapInterval = std::clamp((int)(settings.display.refreshRate / 60.f * gameSwapInterval), 1, 4);
+			const int64_t fptT = gdxsv_fpt_now();
+			hr = swapchain->Present(swapInterval, 0);
+			FPT("pres", gdxsv_fpt_now() - fptT);
+		}
 	}
 	else {
 		hr = swapchain->Present(0, allowTearing ? DXGI_PRESENT_ALLOW_TEARING : DXGI_PRESENT_DO_NOT_WAIT);
@@ -255,6 +271,45 @@ void DX11Context::Present()
 	else if (hr != DXGI_ERROR_WAS_STILL_DRAWING && FAILED(hr)) {
 		WARN_LOG(RENDERER, "Present failed %x", hr);
 	}
+}
+
+void DX11Context::updateVblankOutput()
+{
+	// The window can move to another display: look up its output again every second or so.
+	if (presentsSinceOutput-- > 0 && vblankThreadRunning)
+		return;
+	presentsSinceOutput = 60;
+	ComPtr<IDXGIOutput> output;
+	if (FAILED(swapchain->GetContainingOutput(&output.get())))
+		return;
+	{
+		std::lock_guard<std::mutex> lock(vblankOutputMutex);
+		vblankOutput = output;
+	}
+	if (vblankThreadRunning)
+		return;
+	vblankThreadRunning = true;
+	vblankThread = std::thread([this]() {
+		while (vblankThreadRunning) {
+			ComPtr<IDXGIOutput> output;
+			{
+				std::lock_guard<std::mutex> lock(vblankOutputMutex);
+				output = vblankOutput;
+			}
+			if (output && SUCCEEDED(output->WaitForVBlank()))
+				gdxsv_present_pacing_vblank(gdxsv_present_pacing_now_us());
+			else
+				Sleep(100);
+		}
+	});
+}
+
+void DX11Context::stopVblankThread()
+{
+	vblankThreadRunning = false;
+	if (vblankThread.joinable())
+		vblankThread.join();
+	vblankOutput.reset();
 }
 
 void DX11Context::EndImGuiFrame()

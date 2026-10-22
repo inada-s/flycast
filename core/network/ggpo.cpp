@@ -17,6 +17,7 @@
     along with Flycast.  If not, see <https://www.gnu.org/licenses/>.
 */
 #include "ggpo.h"
+#include "gdxsv/gdxsv_fptrace.h"
 #include "hw/maple/maple_cfg.h"
 #include "hw/maple/maple_devs.h"
 #include "input/gamepad_device.h"
@@ -298,6 +299,7 @@ static bool advance_frame(int)
 	INFO_LOG(NETWORK, "advance_frame");
 	int frame;
 	getCurrentFrame(&frame);
+	FPT("rr", frame);
 
 	settings.aica.muteAudio = true;
 	settings.gdxsv.skipRenderingAddr = settings.gdxsv.skipRenderingBaseAddr;
@@ -352,7 +354,9 @@ static bool load_game_state(unsigned char *buffer, int len)
 	INFO_LOG(NETWORK, "load_game_state");
 	ggpo::getCurrentFrame(&seekToFrame); // gdxsv: test log
 
+	const int64_t fptT0 = gdxsv_fpt_now();
 	rend_start_rollback();
+	const int64_t fptWait = gdxsv_fpt_now() - fptT0;
 	// FIXME dynarecs
 	Deserializer deser(buffer, len, true);
 	int frame;
@@ -385,6 +389,7 @@ static bool load_game_state(unsigned char *buffer, int len)
 	rend_allow_rollback();	// ggpo might load another state right after this one
 	memwatch::reset();
 	memwatch::protect();
+	FPT("load", gdxsv_fpt_now() - fptT0, fptWait, frame);
 	return true;
 }
 
@@ -400,7 +405,9 @@ static bool save_game_state(unsigned char **buffer, int *len, int *checksum, int
 	lastSavedFrame = frame;
 	// TODO this is way too much memory
 	size_t allocSize = settings.platform.isNaomi() ? 20_MB : 10_MB;
+	const int64_t fptT0 = gdxsv_fpt_now();
 	*buffer = (unsigned char *)malloc(allocSize);
+	const int64_t fptMalloc = gdxsv_fpt_now() - fptT0;
 	if (*buffer == nullptr)
 	{
 		WARN_LOG(NETWORK, "Memory alloc failed");
@@ -471,9 +478,12 @@ static bool save_game_state(unsigned char **buffer, int *len, int *checksum, int
 #endif
 		// Save the delta to frame-1
 		deltaStates[frame - 1].load();
+		FPT("pages", deltaStates[frame - 1].ram.size(), deltaStates[frame - 1].vram.size(),
+			deltaStates[frame - 1].aram.size() + deltaStates[frame - 1].elanram.size());
 		DEBUG_LOG(NETWORK, "Saved frame %d pages: %d ram, %d vram, %d eram, %d aica ram", frame - 1, (u32)deltaStates[frame - 1].ram.size(),
 				(u32)deltaStates[frame - 1].vram.size(), (u32)deltaStates[frame - 1].elanram.size(), (u32)deltaStates[frame - 1].aram.size());
 	}
+	FPT("save", gdxsv_fpt_now() - fptT0, fptMalloc, frame);
 
 	return true;
 }
@@ -792,6 +802,7 @@ bool nextFrame()
 	_endOfFrame = false;
 	if (inRollback)
 		return true;
+	FPT("ef");
 	auto now = std::chrono::steady_clock::now();
 	if (lastFrameTime != time_point<steady_clock>())
 	{
@@ -812,9 +823,11 @@ bool nextFrame()
 	if (skipInputOccurred) {
 		skipInputOccurred = false;
 		skippedFrames[frame]++;
+		FPT("skip", frame);
 		if (gdxsv_ggpo_state.testLog)
 			NOTICE_LOG(NETWORK, "RBKTEST skip record frame=%d", frame);
 		if (active()) {
+			FPT("go", frame);
 			emu.getSh4Executor()->Start();
 			return true;
 		}
@@ -831,10 +844,12 @@ bool nextFrame()
 	GGPOErrorCode error = ggpo_advance_frame(ggpoSession);
 
 	// may rollback
+	const int64_t fptIdle = gdxsv_fpt_now();
 	if (error == GGPO_OK)
 		error = ggpo_idle(ggpoSession, 0);
 	if (error == GGPO_OK && gdxsv_ggpo_state.inputBeforeAdvance && !gdxsv_ggpo_wait_prediction_barrier())
 		error = GGPO_ERRORCODE_GENERAL_FAILURE;
+	FPT("idle", gdxsv_fpt_now() - fptIdle, frame);
 	if (error != GGPO_OK)
 	{
 		stopSession();
@@ -856,6 +871,7 @@ bool nextFrame()
 	if (!gdxsv_ggpo_state.inputBeforeAdvance && !addLocalInput())
 		return false;
 	if (active()) {
+		FPT("go", frame);
 		emu.getSh4Executor()->Start();
 		return true;
 	}
@@ -867,6 +883,7 @@ static bool addLocalInput()
 	GGPOErrorCode error;
 	// may call save_game_state
 	int loop_count = 0;
+	const int64_t fptBar = gdxsv_fpt_now();
 	do {
 		if (!gdxsv_ggpo_state.useRandInput) {
 			if (!config::ThreadedRendering)
@@ -922,6 +939,7 @@ static bool addLocalInput()
 			if (lt2[0] >= 64) inputs.kcode |= DC_BTN_A | DC_BTN_X;
 			if (rt2[0] >= 64) inputs.kcode |= DC_BTN_A | DC_BTN_Y;
 		}
+		FPT("inp", inputs.kcode);
 		error = ggpo_add_local_input(ggpoSession, localPlayer, &inputs, inputSize);
 		if (error == GGPO_OK)
 		{
@@ -950,6 +968,7 @@ static bool addLocalInput()
 			throw FlycastException("GGPO error");
 		}
 	} while (active());
+	FPT("bar", loop_count, gdxsv_fpt_now() - fptBar);
 #ifdef SYNC_TEST
 	for (int i = 0; i < MAX_PLAYERS; i++) {
 		if (gdxsv_ggpo_state.playerHandles[i] == localPlayer) continue;
@@ -986,7 +1005,9 @@ bool poll()
 	if (0 < getSkippedFrames())
 		return false;
 
+	const int64_t fptIdle = gdxsv_fpt_now();
 	GGPOErrorCode error = ggpo_idle(ggpoSession, 0);
+	FPT("pidle", gdxsv_fpt_now() - fptIdle);
 	if (error != GGPO_OK) {
 		WARN_LOG(NETWORK, "ggpo_idle in poll failed %d", error);
 		return false;

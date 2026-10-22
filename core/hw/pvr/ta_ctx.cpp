@@ -8,6 +8,7 @@
 
 #include <mutex>
 #include <vector>
+#include "gdxsv/gdxsv_fptrace.h"
 
 extern u32 fskip;
 static int RenderCount;
@@ -61,6 +62,7 @@ bool QueueRender(TA_context* ctx)
 		else if (ggpo::active() && RenderCount % 30 == 0 && ggpo::timeSyncFrames < 0) {
 			ggpo::timeSyncFrames.fetch_add(1);
 			skipFrame = true;
+			FPT("tsdrop", RenderCount);
 		}
 		else if (config::ThreadedRendering && rqueue != nullptr
 				&& (config::AutoSkipFrame == 0 || (config::AutoSkipFrame == 1 && SH4FastEnough)))

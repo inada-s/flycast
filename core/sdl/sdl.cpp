@@ -995,6 +995,7 @@ bool sdl_recreate_window(u32 flags)
 				settings.display.refreshRate = mode.refresh_rate + 1;
 			else
 				settings.display.refreshRate = mode.refresh_rate;
+			if (getenv("FPT_RR")) settings.display.refreshRate = atoi(getenv("FPT_RR"));
 			if (flags & SDL_WINDOW_FULLSCREEN)
 			{
 				settings.display.width = mode.w;

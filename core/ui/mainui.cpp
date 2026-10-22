@@ -31,6 +31,7 @@
 
 #include <chrono>
 #include <thread>
+#include "gdxsv/gdxsv_fptrace.h"
 
 static bool mainui_enabled;
 u32 MainFrameCount;
@@ -110,7 +111,16 @@ void mainui_loop(bool forceStart)
 		fc_profiler::startThread("main");
 
 		// gdxsv: gdxsv_emu_mainui_loop gets whether a frame was rendered
+		const int64_t fptT0 = gdxsv_fpt_now();
 		const bool rendered = mainui_rend_frame();
+		const int64_t fptT1 = gdxsv_fpt_now();
+		static int64_t fptIdleLoops;
+		if (rendered || fptT1 - fptT0 >= 1000) {
+			FPT("rend", fptT1 - fptT0, rendered, fptIdleLoops);
+			fptIdleLoops = 0;
+		} else {
+			fptIdleLoops++;
+		}
 		if (rendered && imguiDriver != nullptr)
 		{
 			try {

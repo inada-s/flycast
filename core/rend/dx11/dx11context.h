@@ -29,6 +29,9 @@
 #include "windows/dynlink.h"
 #include "dx11_overlay.h"
 #include "wsi/context.h"
+#include <atomic>
+#include <mutex>
+#include <thread>
 
 class DX11Context : public GraphicsContext
 {
@@ -87,6 +90,9 @@ private:
 	void term();
 	void handleDeviceLost();
 	bool checkTextureSupport();
+	// gdxsv: vblanks of the display that shows the window, for the rollback present pacing
+	void updateVblankOutput();
+	void stopVblankThread();
 
 	ComPtr<ID3D11Device> pDevice;
 	ComPtr<ID3D11DeviceContext> pDeviceContext;
@@ -98,6 +104,11 @@ private:
 	bool allowTearing = false;
 	bool swapOnVSync = false;
 	bool frameRendered = false;
+	std::thread vblankThread;
+	std::atomic<bool> vblankThreadRunning{false};
+	std::mutex vblankOutputMutex;
+	ComPtr<IDXGIOutput> vblankOutput;
+	int presentsSinceOutput = 0;
 	std::string adapterDesc;
 	std::string adapterVersion;
 	UINT vendorId = 0;
