@@ -415,3 +415,6 @@ msgstr "SIDE 7 內部"
 
 msgid "Choose the horizontal boundary used for the battle HUD:\n    4:3 (Original): Keep the stock positions\n    Up to 16:9: Use the viewport width, capped at a 16:9 safe area\n    Full Width: Move the HUD to the current viewport edges"
 msgstr "選擇戰鬥 HUD 的水平範圍：\n    4:3 (Original)：保持原本位置\n    Up to 16:9：跟畫面闊度，最多 16:9\n    Full Width：HUD 貼住畫面邊緣"
+
+msgid "Matching... %d/%d"
+msgstr "配對中... %d/%d"

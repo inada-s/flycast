@@ -166,6 +166,7 @@ void GdxsvBackendReplay::Reset() {
 	live_mode_ = false;
 	live_session_ = false;
 	exit_requested_ = false;
+	lobby_exit_requested_ = false;
 	live_feeding_ = false;
 	live_from_host_ = false;
 	frames_without_input_ = 0;
@@ -272,6 +273,13 @@ void GdxsvBackendReplay::OnMainUiLoop() {
 		}
 		gdxsv_end_replay(replay_error_, exit_requested_);
 		return;
+	}
+
+	// The other players wait for this one.
+	if (gdxsv.LobbyCalling() && ui.state != State::None && !lobby_exit_requested_) {
+		NOTICE_LOG(COMMON, "lobby: back to the lobby from replay playback");
+		lobby_exit_requested_ = true;
+		ui_commands_.emplace_back(ReplayCtrlCommand::ExitReplay);
 	}
 
 	if (ui.state <= State::LbsStartBattleFlow) {

@@ -256,6 +256,8 @@ class GdxsvBackendReplay {
 	bool live_session_ = false;
 	// The viewer left playback from the pause menu, as opposed to it ending.
 	bool exit_requested_ = false;
+	// A match was found in the suspended lobby; the exit is on its way.
+	bool lobby_exit_requested_ = false;
 	// 4-player live: the host relays what live_downlink_ receives to the
 	// guests, which read it from the session instead.
 	bool live_feeding_ = false;

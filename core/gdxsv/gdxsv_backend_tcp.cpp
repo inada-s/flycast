@@ -10,6 +10,7 @@ void GdxsvBackendTcp::Reset() {
 	tx_msg_reader_.Clear();
 	recv_buf_.clear();
 	lbs_packet_filter_ = nullptr;
+	lbs_sent_observer_ = nullptr;
 }
 
 bool GdxsvBackendTcp::Connect(const std::string &host, u16 port) {
@@ -53,6 +54,7 @@ u32 GdxsvBackendTcp::OnSockWrite(u32 addr, u32 size) {
 	}
 
 	while (tx_msg_reader_.Read(lbs_msg_)) {
+		if (lbs_sent_observer_) lbs_sent_observer_(lbs_msg_);
 		std::vector<u8> v;
 		lbs_msg_.Serialize(v);
 		tcp_client_.Send(reinterpret_cast<const char *>(v.data()), v.size());
@@ -71,22 +73,33 @@ u32 GdxsvBackendTcp::OnSockPoll() {
 			while (rx_msg_reader_.Read(lbs_msg_)) {
 				if (lbs_packet_filter_ && !lbs_packet_filter_(lbs_msg_))
 					continue;
-				// The guest reader assumes exact reads and has a 768-byte body
-				// buffer (disc 2 0x0c3a9bdc, disc 1 0x0c30e49c). Keep staging
-				// complete messages, and reject oversize bodies before exposing
-				// their header to the guest. Host-only messages (e.g. protobuf
-				// patches) were handled by the filter.
-				if ((gdxsv.Disk() == 1 || gdxsv.Disk() == 2) && lbs_msg_.body.size() > 768) {
-					WARN_LOG(COMMON, "LBS: oversized guest reply command=%04x size=%zu",
-						lbs_msg_.command, lbs_msg_.body.size());
-					lbs_msg_.body.clear();
-					lbs_msg_.body_size = 0;
-					lbs_msg_.status = LbsMessage::StatusError;
-				}
-				lbs_msg_.Serialize(recv_buf_);
+				Stage(lbs_msg_);
 			}
 		}
 	}
 
 	return recv_buf_.size();
+}
+
+void GdxsvBackendTcp::Inject(const LbsMessage &msg) {
+	if (lbs_packet_filter_ && !lbs_packet_filter_(msg))
+		return;
+	LbsMessage staged = msg;
+	Stage(staged);
+}
+
+void GdxsvBackendTcp::Stage(LbsMessage &msg) {
+	// The guest reader assumes exact reads and has a 768-byte body
+	// buffer (disc 2 0x0c3a9bdc, disc 1 0x0c30e49c). Keep staging
+	// complete messages, and reject oversize bodies before exposing
+	// their header to the guest. Host-only messages (e.g. protobuf
+	// patches) were handled by the filter.
+	if ((gdxsv.Disk() == 1 || gdxsv.Disk() == 2) && msg.body.size() > 768) {
+		WARN_LOG(COMMON, "LBS: oversized guest reply command=%04x size=%zu",
+			msg.command, msg.body.size());
+		msg.body.clear();
+		msg.body_size = 0;
+		msg.status = LbsMessage::StatusError;
+	}
+	msg.Serialize(recv_buf_);
 }

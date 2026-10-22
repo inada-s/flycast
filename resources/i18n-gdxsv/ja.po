@@ -379,3 +379,6 @@ msgstr "サイド７内部"
 
 msgid "Choose the horizontal boundary used for the battle HUD:\n    4:3 (Original): Keep the stock positions\n    Up to 16:9: Use the viewport width, capped at a 16:9 safe area\n    Full Width: Move the HUD to the current viewport edges"
 msgstr "対戦中のHUDを配置する横方向の範囲を選びます:\n    4:3 (Original): 元の位置のまま\n    Up to 16:9: 画面の幅に合わせます（最大で16:9のセーフエリアまで）\n    Full Width: 現在の画面の端までHUDを移動します"
+
+msgid "Matching... %d/%d"
+msgstr "マッチング中... %d/%d"
