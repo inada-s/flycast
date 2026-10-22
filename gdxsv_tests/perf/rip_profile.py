@@ -42,17 +42,24 @@ def symbols(exe: str, nm: str) -> list:
 
 def block_map(path: str) -> tuple:
     """Host start -> (host size, guest addr, guest instructions, reads, writes, fpu, fallbacks) or (host size, name)
-    for the main loop and memory handlers; a later line wins."""
-    blocks = {}
+    for the main loop and memory handlers; a later line replaces every earlier block starting inside its range
+    (host code reused after a cache reset)."""
+    blocks, starts = {}, []
     with open(path) as f:
         for line in f:
             p = line.split()
             if len(p) >= 9:
-                blocks[int(p[0], 16)] = (int(p[1]), int(p[2], 16), int(p[3]), int(p[5]), int(p[6]), int(p[7]),
-                                         int(p[8]))
+                b = (int(p[1]), int(p[2], 16), int(p[3]), int(p[5]), int(p[6]), int(p[7]), int(p[8]))
             elif len(p) == 3:
-                blocks[int(p[0], 16)] = (int(p[1]), p[2])
-    starts = sorted(blocks)
+                b = (int(p[1]), p[2])
+            else:
+                continue
+            start = int(p[0], 16)
+            lo, hi = bisect.bisect_left(starts, start), bisect.bisect_left(starts, start + max(b[0], 1))
+            for s in starts[lo:hi]:
+                del blocks[s]
+            starts[lo:hi] = [start]
+            blocks[start] = b
     return starts, blocks
 
 
