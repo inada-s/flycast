@@ -146,6 +146,7 @@ every spot is marked and the list is current (`--write` updates it).
 | `core/hw/pvr/ta_ctx.cpp` | `QueueRender` | fast-forward counts in frame skip; a rollback time sync skips one render every 30 frames |
 | `core/hw/sh4/dyna/blockmanager.cpp` |  | include `gdxsv/gdxsv_sh4_hooks.h` |
 | `core/hw/sh4/dyna/blockmanager.cpp` | `bm_GetCodeByVAddr` | `gdxsv_sh4_code_addr` |
+| `core/hw/sh4/dyna/blockmanager.cpp` | `bm_AddBlock` | `gdxsv_sh4_block_compiled` when `GDXSV_SH4_BLOCK_MAP` is set (profiling) |
 | `core/hw/sh4/dyna/decoder.cpp` |  | slow idle loop hack |
 | `core/hw/sh4/dyna/decoder.cpp` |  | slow idle loop hack, the game's idle loop block costs more cycles |
 | `core/hw/sh4/dyna/shil_canonical.h` |  | round the product before the add (no fused multiply-add) |

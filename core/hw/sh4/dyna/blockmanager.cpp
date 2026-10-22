@@ -223,6 +223,8 @@ void bm_AddBlock(RuntimeBlockInfo* blk)
 
 	verify((void*)bm_GetCode(block->addr) == (void*)ngen_FailedToFindBlock);
 	FPCA(block->addr) = (DynarecCodeEntryPtr)CC_RW2RX(block->code);
+	if (gdxsv_sh4_block_map_on)
+		gdxsv_sh4_block_compiled(blk);
 
 #ifdef DYNA_OPROF
 	if (oprofHandle)

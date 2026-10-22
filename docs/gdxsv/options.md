@@ -100,6 +100,7 @@ Tests only; they do nothing unless set. Effects are in
 | `TEST_RELAY`, `TEST_RELAY_SERVER`, `TEST_RELAY_TOKEN`, `TEST_RELAY_IPV6` | `rbk_test` relays |
 | `TEST_SPECTATOR_LBS`, `TEST_SPECTATOR_UPLINK`, `TEST_UPLINK_ROUND_DELAY` | `rbk_test` live uplink |
 | `GDXSV_SPECTATOR_TEST_REPLAY` | unit test `GdxsvSpectator` |
+| `GDXSV_SH4_BLOCK_MAP` | file that every compiled SH4 dynarec block is logged to, for `gdxsv_tests/perf/rip_profile.py --block-map` |
 
 ## Build options (CMake)
 

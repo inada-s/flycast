@@ -28,6 +28,7 @@ options and changed upstream files: `docs/gdxsv/`.
 | `gdxsv.cmake` | gdxsv sources and build settings, included from `CMakeLists.txt` |
 | `gdxsv_config.cpp/.h` | gdxsv options (`config::Gdx*`, `[gdxsv]` in emu.cfg) |
 | `gdxsv_sh4_hooks.cpp/.h` | calls from the SH4 dynarec and block manager (output-only functions skipped on skip frames, block-link gate) |
+| `gdxsv_sh4_block_map.cpp` | compiled SH4 blocks logged for profiling (`GDXSV_SH4_BLOCK_MAP`) |
 | `gdxsv_emu_hooks.cpp/.h` | calls from the emulator (start, stop, frame, input, UI) into gdxsv |
 | `gdxsv_audio.cpp`, `gdxsv_audio_hooks.h` | calls from the audio stream: replay gain and fade, audio rate control |
 | `gdx_rpc.h` | gdx RPC request layout and codes |

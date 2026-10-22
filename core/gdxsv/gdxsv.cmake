@@ -257,6 +257,7 @@ target_sources(${PROJECT_NAME} PRIVATE
 		core/gdxsv/gdxsv.h
 		core/gdxsv/gdxsv_config.cpp
 		core/gdxsv/gdxsv_config.h
+		core/gdxsv/gdxsv_sh4_block_map.cpp
 		core/gdxsv/gdxsv_sh4_hooks.cpp
 		core/gdxsv/gdxsv_sh4_hooks.h
 		core/gdxsv/gdxsv.pb.cc

@@ -19,3 +19,8 @@ bool gdxsv_sh4_linkable(u32 addr);
 u32* gdxsv_sh4_render_return_ptr();
 // Bit (addr >> 1) & 4095 is set for the output-only functions.
 u64* gdxsv_sh4_render_only_mask_ptr();
+
+// Profiling: true when GDXSV_SH4_BLOCK_MAP names a file; bm_AddBlock then logs each compiled block there.
+struct RuntimeBlockInfo;
+extern const bool gdxsv_sh4_block_map_on;
+void gdxsv_sh4_block_compiled(const RuntimeBlockInfo* block);
