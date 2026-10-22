@@ -6,9 +6,9 @@ usage: rip_profile.py --syms flycast.exe [--top N] [--block-map [--functions FIL
 build relinked without -s). Its symbols are read with `nm -n -C` (nm from PATH or --nm).
 Addresses outside every module are JIT code: the SH4 and ARM7 blocks and their dispatchers.
 --block-map: read the SH4 block map (GDXSV_SH4_BLOCK_MAP, seek_bench.py --block-map) as blocks.txt next to each
-samples file. JIT samples inside a block are attributed to its guest address; the rest of the JIT (ARM7 blocks,
-dispatchers, stubs) stays <JIT other>. Prints the top guest blocks or functions with their op mix per guest
-instruction (static, from the block: reads, writes, FPU ops, interpreter fallbacks).
+samples file. JIT samples inside a block are attributed to its guest address, the SH4 main loop and memory handlers
+get their names, the rest of the JIT (ARM7) stays <JIT other>. Prints the top guest blocks or functions with their
+op mix per guest instruction (static, from the block: reads, writes, FPU ops, interpreter fallbacks).
 --functions: "<guest addr hex> <name>" lines; blocks are grouped by the nearest function start at or below them.
 """
 import argparse
@@ -41,7 +41,8 @@ def symbols(exe: str, nm: str) -> list:
 
 
 def block_map(path: str) -> tuple:
-    """Host start -> (host size, guest addr, guest instructions, reads, writes, fpu, fallbacks); a later line wins."""
+    """Host start -> (host size, guest addr, guest instructions, reads, writes, fpu, fallbacks) or (host size, name)
+    for the main loop and memory handlers; a later line wins."""
     blocks = {}
     with open(path) as f:
         for line in f:
@@ -49,6 +50,8 @@ def block_map(path: str) -> tuple:
             if len(p) >= 9:
                 blocks[int(p[0], 16)] = (int(p[1]), int(p[2], 16), int(p[3]), int(p[5]), int(p[6]), int(p[7]),
                                          int(p[8]))
+            elif len(p) == 3:
+                blocks[int(p[0], 16)] = (int(p[1]), p[2])
     starts = sorted(blocks)
     return starts, blocks
 
@@ -57,7 +60,11 @@ def category(f: str) -> str:
     if f.startswith("sh4 "):
         return "jit sh4 blocks"
     if f.startswith("<JIT"):
-        return "jit" if f == "<JIT>" else "jit other (arm7, dispatchers)"
+        if f.startswith("<JIT sh4 mem_"):
+            return "jit sh4 memory handlers"
+        if f == "<JIT sh4 mainloop>":
+            return "jit sh4 main loop"
+        return "jit" if f == "<JIT>" else "jit other (arm7)"
     if "aica::arm" in f:
         return "aica arm7"
     if "aica" in f.lower():
@@ -121,7 +128,8 @@ def main() -> int:
                 return "<JIT>"
             i = bisect.bisect_right(starts, rip) - 1
             if i >= 0 and rip < starts[i] + blocks[starts[i]][0]:
-                return f"sh4 {blocks[starts[i]][1]:08X} {starts[i]:x}"
+                b = blocks[starts[i]]
+                return f"<JIT sh4 {b[1]}>" if isinstance(b[1], str) else f"sh4 {b[1]:08X} {starts[i]:x}"
             return "<JIT other>"
 
         busy = collections.Counter()

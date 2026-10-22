@@ -24,3 +24,6 @@ u64* gdxsv_sh4_render_only_mask_ptr();
 struct RuntimeBlockInfo;
 extern const bool gdxsv_sh4_block_map_on;
 void gdxsv_sh4_block_compiled(const RuntimeBlockInfo* block);
+// Profiling: logs the x64 main loop (mainloop up to the first handler) and the memory handlers, ordered fast, store
+// queue, slow x 8, 16, 32, 64 bit x read, write; the last one ends at handlersEnd.
+void gdxsv_sh4_code_regions(const void* mainloop, const void* const* handlers, int count, const void* handlersEnd);

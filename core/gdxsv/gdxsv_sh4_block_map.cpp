@@ -5,6 +5,7 @@
 // file, so samples of host code can be mapped to guest addresses (gdxsv_tests/perf/rip_profile.py --block-map).
 // Line: <host code> <host size> <guest addr> <guest instructions> <guest cycles> <reads> <writes> <fpu ops>
 // <interpreter fallbacks> <temp block>. Host code is reused after a cache reset: a later line wins.
+// Line for other dynarec code (main loop, memory handlers): <host code> <host size> <name>.
 #include <cstdio>
 #include <cstdlib>
 
@@ -60,4 +61,20 @@ void gdxsv_sh4_block_compiled(const RuntimeBlockInfo* block) {
 	fprintf(f, "%p %u %08X %u %u %d %d %d %d %d\n", (const void*)block->code, block->host_code_size, block->addr, block->guest_opcodes,
 			block->guest_cycles, reads, writes, fpu, fallbacks, block->temp_block ? 1 : 0);
 	fflush(f);	// the profiled process is usually killed
+}
+
+void gdxsv_sh4_code_regions(const void* mainloop, const void* const* handlers, int count, const void* handlersEnd) {
+	FILE* f = blockMapFile();
+	if (f == nullptr) return;
+	static const char* const typeNames[] = {"fast", "sq", "slow"};
+	static const char* const opNames[] = {"read", "write"};
+	const u8* start = (const u8*)mainloop;
+	fprintf(f, "%p %zu mainloop\n", mainloop, (size_t)((const u8*)handlers[0] - start));
+	for (int i = 0; i < count && i < 24; i++) {
+		const u8* code = (const u8*)handlers[i];
+		const u8* end = (const u8*)(i + 1 < count ? handlers[i + 1] : handlersEnd);
+		if (end == code) continue;	// a store queue handler exists only for 32 and 64 bit writes
+		fprintf(f, "%p %zu mem_%s_%s%d\n", code, (size_t)(end - code), typeNames[i / 8], opNames[i % 2], 8 << (i / 2 % 4));
+	}
+	fflush(f);
 }

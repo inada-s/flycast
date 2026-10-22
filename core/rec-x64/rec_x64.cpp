@@ -1427,6 +1427,9 @@ private:
 			}
 		}
 		MemHandlerEnd = getCurr();
+		if (gdxsv_sh4_block_map_on)
+			gdxsv_sh4_code_regions(getCode(), &MemHandlers[0][0][0], MemType::Count * MemSize::Count * MemOp::Count,
+					MemHandlerEnd);
 	}
 
 	void saveXmmRegisters()

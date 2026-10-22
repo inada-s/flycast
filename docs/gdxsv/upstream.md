@@ -250,6 +250,7 @@ every spot is marked and the list is current (`--write` updates it).
 | `core/rec-x64/rec_x64.cpp` |  | `gdxsv_sh4_render_return_ptr`, `gdxsv_sh4_render_only_mask_ptr`, `settings.gdxsv.skipRenderingBaseAddr` |
 | `core/rec-x64/rec_x64.cpp` |  | cpuid is slow: probe the host once, not for every compiled block |
 | `core/rec-x64/rec_x64.cpp` |  | block linking |
+| `core/rec-x64/rec_x64.cpp` | `genMemHandlers` | `gdxsv_sh4_code_regions` when `GDXSV_SH4_BLOCK_MAP` is set (profiling) |
 | `core/rend/CustomTexture.cpp` |  | include `gdxsv/gdxsv_custom_texture_source.h` |
 | `core/rend/CustomTexture.cpp` | `CustomTexture::loadTexture` | `gdxsv_custom_texture_load_cells`: a texture made of 32x32 glyph cells without a replacement of its own is built from the glyph replacements |
 | `core/rend/CustomTexture.cpp` | `CustomTexture::init` | DC2 embedded textures and the downloaded texture pack |
