@@ -20,7 +20,7 @@ Trace on: env `FPTRACE=<dir>` (`drive.py` sets it). Knobs (env, read by flycast)
 ```
 set EXE=C:\path\flycast.exe
 set ROM=C:\rom\gdx-disc2\gdx-disc2.gdi
-rem offline, one instance, 75 s (SECS to change):
+rem offline, one instance, 75 s (SECS to change; analyse with burst.py --skip 20, the boot is not steady):
 python drive.py --exe %EXE% --rom %ROM% --out out base_off off no
 rem 2-peer rollback battle on this PC (~60 s), threaded rendering on:
 set FPT_LIM=a1
@@ -38,7 +38,7 @@ Each script takes one or more `out/<tag>/fpt` folders (one CSV per flycast proce
 |---|---|
 | `burst.py [--skip S]` | bad display intervals (shown-vblank step != 1), bursts (>= 4 bad, <= 8 presents apart), present phase vs vblank, drift per frame |
 | `fps.py` | game fps, GGPO timesync skips, `tsdrop` |
-| `per.py` | limiter wake period p50 |
+| `per.py` | limiter wake period p50 (match mode: needs rollback frames) |
 | `over.py` | limiter oversleep p50/p99/max |
 | `work.py` | limiter wake to Present call p1/p50/p99 |
 | `hang.py` | the 6 wake intervals after each injected hang (a catch-up burst = several far under a period) |
