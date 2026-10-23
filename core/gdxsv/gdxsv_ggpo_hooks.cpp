@@ -31,6 +31,7 @@ void CloseHashLog() {
 }  // namespace
 
 void gdxsv_ggpo_session_start() {
+	gdxsv_ggpo_state.inputBeforeAdvance = false;
 	CloseHashLog();
 	if (config::loadBool("gdxsv", "hashlog", false)) {
 		std::string path = get_writable_data_path("hashlog.txt");
@@ -47,3 +48,5 @@ void gdxsv_ggpo_session_stop() { CloseHashLog(); }
 void gdxsv_ggpo_state_saved(int frame, const unsigned char* buffer, int len) {
 	if (hashLogFile != nullptr) fprintf(hashLogFile, "%d %08x %d\n", frame, XXH32(buffer, len, 7), len);
 }
+
+int gdxsv_ggpo_frame_delay(int delay) { return gdxsv_ggpo_state.inputBeforeAdvance ? delay + 1 : delay; }

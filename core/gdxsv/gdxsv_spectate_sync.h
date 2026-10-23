@@ -29,11 +29,12 @@ class GdxsvSpectateSync {
 
 	// Holds this instance back while any live peer is more than kSyncSlack
 	// behind, so the group cannot drift apart.
+	// extra_slack adds protocol delivery latency, in the same position units.
 	//
 	// Returns true if the group synced up, false if it gave up: alone, every
 	// peer catching up, or the deadline passed. Playback continues either way
 	// - a spectator must never hang.
-	bool WaitForPeers(int32_t frame, int max_wait_ms);
+	bool WaitForPeers(int32_t frame, int max_wait_ms, int32_t extra_slack = 0);
 
    private:
 	void* map_ = nullptr;

@@ -196,6 +196,7 @@ void GdxsvBackendReplay::Reset() {
 	pause_menu_opend_ = false;
 	lbs_first_skip_ = false;
 	ctrl_play_speed_ = 0;
+	fast_forward_pending_ = false;
 	ctrl_step_frame_ = false;
 	ctrl_pause_ = false;
 	ctrl_loading_ = false;
@@ -206,6 +207,7 @@ void GdxsvBackendReplay::Reset() {
 	multi_pov_speed_burst_ = false;
 	multi_pov_published_frame_ = -1;
 	multi_pov_seek_generation_ = 0;
+	multi_pov_step_target_ = -1;
 	multi_pov_system_move_ = false;
 	multi_pov_round_jump_ = false;
 	multi_pov_seek_round_ = 0;
@@ -240,6 +242,8 @@ void GdxsvBackendReplay::Reset() {
 }
 
 void GdxsvBackendReplay::OnMainUiLoop() {
+	// Consume even when controls are blocked, so a press cannot leak past a menu or loading screen.
+	const bool fast_forward = fast_forward_pending_.exchange(false);
 	const UiState ui = ui_snapshot_.Read();
 	if (ui.state == State::End) {
 		// A headless replay run is done the moment playback ends: exit with
@@ -310,7 +314,7 @@ void GdxsvBackendReplay::OnMainUiLoop() {
 		}
 		const u32 pressed = ~((input.kcode ^ prev_kcode) & ~input.kcode);
 
-		if (input.kcode != prev_kcode) {
+		if (input.kcode != prev_kcode || fast_forward) {
 			if (ui.takeover) {
 				if (~pressed & DC_BTN_START) {
 					ui_commands_.emplace_back(ReplayCtrlCommand::RetryTakeover);
@@ -338,14 +342,21 @@ void GdxsvBackendReplay::OnMainUiLoop() {
 					}
 					flash_left_ = 0.3f;
 				}
+				// Fast-forward shares the speed controls, but never interrupts loading or live bootstrap.
+				else if (fast_forward && !ui.loading && (!ui.liveMode || ui.inGame) && ui.takeoverCountdown == 0 &&
+						 !(~input.kcode & (DC_DPAD_LEFT | DC_DPAD_RIGHT))) {
+					ui_commands_.emplace_back(ReplayCtrlCommand::ToggleFastForward);
+					(ui.playSpeed == ReplayMaxSpeed ? flash_down_ : flash_up_) = 0.3f;
+					ctrl_bar_idle_timer_ = 3.0f;
+				}
 				// Up/Down: Speed control (ignored while Left/Right is held)
 				else if ((~pressed & DC_DPAD_UP) && !(~input.kcode & DC_DPAD_LEFT) && !(~input.kcode & DC_DPAD_RIGHT)) {
 					ui_commands_.emplace_back(ReplayCtrlCommand::NextSpeed, 1);
-					flash_up_ = 0.3f;
+					if (ui.playSpeed < ReplayMaxSpeed) flash_up_ = 0.3f;
 				}
 				else if ((~pressed & DC_DPAD_DOWN) && !(~input.kcode & DC_DPAD_LEFT) && !(~input.kcode & DC_DPAD_RIGHT)) {
 					ui_commands_.emplace_back(ReplayCtrlCommand::NextSpeed, -1);
-					flash_down_ = 0.3f;
+					if (ui.playSpeed > -2) flash_down_ = 0.3f;
 				}
 			}
 		}
@@ -642,6 +653,9 @@ constexpr int64_t kMultiPovHostLeadSlack = 2 * 1024;
 // takes several frames to recover from a missing input, a visible hitch.
 constexpr int kSyncHoldLeadFrames = 2;
 constexpr int kSyncCatchUpWaitMs = 500;
+// A paused step passes through a cached host snapshot and a prefetched input.
+// Allow those two extra frames before holding for a stalled guest.
+constexpr int32_t kPausedStepExtraSlack = 2 * kSyncSubFrames;
 
 }  // namespace
 
@@ -762,7 +776,7 @@ void GdxsvBackendReplay::OnNextFrame() {
 	if (MultiPov())
 		gdxsv_multi_pov_audio_frame(key_msg_count_, start_msg_count_, multi_pov_seek_generation_,
 									ctrl_pause_ || pause_menu_opend_ ? 0 : ctrl_play_speed_,
-									settings.input.fastForwardMode || settings.aica.muteAudio, pause_menu_opend_);
+									settings.input.fastForwardMode || settings.aica.muteAudio, pause_menu_opend_, ctrl_pause_);
 	// Must run here, on the emulation thread, before the early-returns below.
 	//
 	// Thread: DeliverKeyMsgBatch reads log_file_ on the emulation thread while
@@ -892,6 +906,7 @@ void GdxsvBackendReplay::WaitForMultiPovHost() {
 // Guest: applies what the host published, as the commands the user's input
 // would have queued on this screen.
 void GdxsvBackendReplay::FollowMultiPovHost() {
+	multi_pov_step_target_ = -1;
 	if (!multi_pov_guest_) return;
 	if (state_ == State::None || state_ == State::End) return;
 
@@ -950,17 +965,21 @@ void GdxsvBackendReplay::FollowMultiPovHost() {
 	// Paused on both: walk to the host's frame. A step forward moves the host
 	// by one, inside kMultiPovSeekSlack, so it is never published as a seek.
 	// This also lines up a guest that paused a frame or two off the host.
-	// Only once the next input is waiting in recv_buf_: a step or jump bumps
-	// key_msg_count_ a frame after it runs, and walking in between overshoots.
+	// Cache one target per run for OnSockRead. Following steps must use the
+	// same path with audio routing disabled and in headless replay rigs.
 	const auto pending = [this](ReplayCtrlCommand::Command c) {
 		return ui_commands_.contains(c) || ctrl_commands_.contains(c);
 	};
-	if (st.paused && ctrl_pause_ && !ctrl_step_frame_ && !recv_buf_.empty() && !pending(ReplayCtrlCommand::TogglePause) &&
-		!pending(ReplayCtrlCommand::StepFrame) && !pending(ReplayCtrlCommand::JumpToKeyMsg)) {
-		if (key_msg_count_ < st.seek_target)
-			ui_commands_.emplace_back(ReplayCtrlCommand::StepFrame);
-		else if (st.seek_target < key_msg_count_)
+	if (st.paused && ctrl_pause_ && !st.menu_open && !ctrl_step_frame_ && !seeking_ && !takeover_ &&
+		!pending(ReplayCtrlCommand::TogglePause) && !pending(ReplayCtrlCommand::StepFrame) &&
+		!pending(ReplayCtrlCommand::JumpToKeyMsg) && !pending(ReplayCtrlCommand::SetRound)) {
+		multi_pov_step_target_ = st.seek_target;
+		// A jump bumps the prefetched input counter a frame after it runs.
+		// Wait for the pending reply before deciding that a guest overshot.
+		if (st.seek_target < key_msg_count_ && !recv_buf_.empty()) {
+			multi_pov_step_target_ = -1;
 			ui_commands_.emplace_back(ReplayCtrlCommand::JumpToKeyMsg, static_cast<int>(st.seek_target) - 1);
+		}
 	}
 }
 
@@ -1014,7 +1033,11 @@ void GdxsvBackendReplay::OnNextFrameInternal() {
 				if (live_mode_ && ++lead_log_counter % 600 == 0)
 					NOTICE_LOG(COMMON, "spectate sync: live frame %d, lead %d frames", key_msg_count_, lead_frames);
 			}
-			spectate_sync_.WaitForPeers(static_cast<int32_t>(pos), wait_ms);
+			// Paused input follows an older host snapshot. The barrier must
+			// tolerate that delay throughout its wait, including the wakeup
+			// condition, while still holding for larger viewpoint stalls.
+			const int32_t extra_slack = MultiPov() && ctrl_pause_ ? kPausedStepExtraSlack : 0;
+			spectate_sync_.WaitForPeers(static_cast<int32_t>(pos), wait_ms, extra_slack);
 		}
 	}
 	WaitForMultiPovHost();
@@ -1026,7 +1049,7 @@ void GdxsvBackendReplay::OnNextFrameInternal() {
 	//
 	// Offline replay only. In live mode the pacing controller owns the trim -
 	// the buffer target has to win over group alignment, or playback starves.
-	if (spectate_sync_.Active() && !live_mode_ && !takeover_ && !seeking_) {
+	if (spectate_sync_.Active() && !live_mode_ && !takeover_ && !seeking_ && !(MultiPov() && ctrl_pause_)) {
 		const int64_t pos = static_cast<int64_t>(key_msg_count_) * kSyncSubFrames + sync_subframe_;
 		const int lead_frames = spectate_sync_.LeadOverSlowest(static_cast<int32_t>(pos)) / kSyncSubFrames;
 		const int excess = lead_frames - kSyncHoldLeadFrames;
@@ -1500,11 +1523,15 @@ void GdxsvBackendReplay::OnNextFrameInternal() {
 			ctrl_commands_.pop_front();
 		}
 
-		if (ctrl.cmd == ReplayCtrlCommand::SetSpeed || ctrl.cmd == ReplayCtrlCommand::NextSpeed) {
-			int speed = ctrl.cmd == ReplayCtrlCommand::SetSpeed ? ctrl.arg1 : ctrl_play_speed_ + ctrl.arg1;
-			speed = std::max<int>(-2, std::min<int>(2, speed));
+		if (ctrl.cmd == ReplayCtrlCommand::SetSpeed || ctrl.cmd == ReplayCtrlCommand::NextSpeed ||
+			ctrl.cmd == ReplayCtrlCommand::ToggleFastForward) {
+			int speed = ctrl.cmd == ReplayCtrlCommand::ToggleFastForward ? (ctrl_play_speed_ == ReplayMaxSpeed ? 0 : ReplayMaxSpeed)
+						: ctrl.cmd == ReplayCtrlCommand::SetSpeed		 ? ctrl.arg1
+																		 : ctrl_play_speed_ + ctrl.arg1;
+			speed = std::clamp(speed, -2, ReplayMaxSpeed);
 			if (speed != ctrl_play_speed_) {
 				ctrl_play_speed_ = speed;
+				NOTICE_LOG(COMMON, "Replay speed: %s", SpeedText(speed));
 			}
 			ctrl_commands_.pop_front();
 		}
@@ -1631,6 +1658,8 @@ void GdxsvBackendReplay::OnNextFrameInternal() {
 	// handler was skipped. No pending command still needs the Loading HUD.
 	ctrl_loading_ = false;
 }
+
+void GdxsvBackendReplay::OnFastForward() { fast_forward_pending_ = true; }
 
 bool GdxsvBackendReplay::OnOpenMenu() {
 	if (ui_snapshot_.Read().state <= State::LbsStartBattleFlow) {
@@ -1853,7 +1882,7 @@ void GdxsvBackendReplay::ProcessUiCommands() {
 			cmd.cmd == ReplayCtrlCommand::JumpToKeyMsg || cmd.cmd == ReplayCtrlCommand::SeekBackward ||
 			cmd.cmd == ReplayCtrlCommand::StepFrameBackward || cmd.cmd == ReplayCtrlCommand::TogglePause ||
 			cmd.cmd == ReplayCtrlCommand::TogglePauseMenu || cmd.cmd == ReplayCtrlCommand::SetSpeed ||
-			cmd.cmd == ReplayCtrlCommand::NextSpeed)) {
+			cmd.cmd == ReplayCtrlCommand::NextSpeed || cmd.cmd == ReplayCtrlCommand::ToggleFastForward)) {
 			if (live_initial_catchup_)
 				NOTICE_LOG(COMMON, "Initial live catch-up cancelled by control=%d at frame=%d", int(cmd.cmd), key_msg_count_);
 			if (live_following_)
@@ -2071,9 +2100,7 @@ u32 GdxsvBackendReplay::OnSockRead(u32 addr, u32 size) {
 	}
 
 	if (ctrl_pause_ && !seeking_) {
-		if (!ctrl_step_frame_) {
-			return 0;
-		}
+		if (!ctrl_step_frame_ && (!multi_pov_guest_ || key_msg_count_ >= multi_pov_step_target_)) return 0;
 		ctrl_step_frame_ = false;
 	}
 
@@ -2136,6 +2163,8 @@ bool GdxsvBackendReplay::Start() {
 		settings.input.fastForwardMode = true;
 		config::FixedFrequency.override(0);
 	} else {
+		// A lobby fast-forward must not leave replay uncapped and muted.
+		settings.input.fastForwardMode = false;
 		// ReplayFixedFrequency (ini only) lets a test run the clock off the
 		// device's rate, e.g. 3 (60Hz) for audio rate control.
 		config::FixedFrequency.override(config::loadInt("gdxsv", "ReplayFixedFrequency", 2));
@@ -2156,6 +2185,7 @@ bool GdxsvBackendReplay::Start() {
 	multi_pov_speed_burst_ = false;
 	multi_pov_published_frame_ = -1;
 	multi_pov_seek_generation_ = 0;
+	multi_pov_step_target_ = -1;
 	multi_pov_system_move_ = false;
 	multi_pov_round_jump_ = false;
 	multi_pov_seek_round_ = 0;
@@ -2741,6 +2771,21 @@ void GdxsvBackendReplay::ProcessMcsMessage(const McsMessage& msg) {
 	}
 }
 
+// Logs older than this were recorded while the emulator itself forced cost 300 to 295;
+// newer ones carry it as a game patch when the lobby enables it.
+constexpr int kLogFileVersionCostGamePatch = 20261023;
+
+static void WriteLegacyCostPatch(int disk, u16 cost) {
+	if (disk == 1) {
+		gdxsv_WriteMem16(0x0c1b0fd0, cost);
+	}
+	if (disk == 2) {
+		gdxsv_WriteMem16(0x0c21bfec, cost);
+		gdxsv_WriteMem16(0x0c21bff4, cost);
+		gdxsv_WriteMem16(0x0c21c034, cost);
+	}
+}
+
 void GdxsvBackendReplay::ApplyPatch(bool first_time) {
 	if (state_ == State::None || state_ == State::End) {
 		return;
@@ -2763,6 +2808,10 @@ void GdxsvBackendReplay::ApplyPatch(bool first_time) {
 		gdxsv_WriteMem8(0x0c3abb90, 1);
 	}
 
+	if (log_file_.log_file_version() < kLogFileVersionCostGamePatch) {
+		WriteLegacyCostPatch(disk, 295);
+	}
+
 	// Online Patch
 	for (const auto& patch : log_file_.patches()) {
 		for (const auto& code : patch.codes()) {
@@ -2779,6 +2828,10 @@ void GdxsvBackendReplay::RestorePatch() {
 	if (gdxsv.Disk() == 2) {
 		gdxsv_WriteMem16(0x8c045f64, 0x410b);
 		gdxsv_WriteMem8(0x0c3abb90, 2);
+	}
+
+	if (log_file_.log_file_version() < kLogFileVersionCostGamePatch) {
+		WriteLegacyCostPatch(gdxsv.Disk(), 300);
 	}
 
 	// Online Patch
@@ -3278,14 +3331,14 @@ void GdxsvBackendReplay::RenderControlBar(const UiState& ui) {
 	// Up/Down guide icons (for speed control)
 	ImVec2 udSize = ImGui::CalcTextSize(ICON_FA_ANGLE_UP);
 	const float udSlotW = std::max(udSize.x, uiScaled(20.0f));
-	const bool canSpeedUp = ui.playSpeed < 2;
+	const bool canSpeedUp = ui.playSpeed < ReplayMaxSpeed;
 	const bool canSpeedDown = ui.playSpeed > -2;
 	const ImVec2 upCenter(cx + udSlotW * 0.5f, barY + barH * 0.25f);
 	const ImVec2 downCenter(cx + udSlotW * 0.5f, barY + barH * 0.75f);
 	const ImVec2 upPos = upCenter - udSize * 0.5f;
 	const ImVec2 downPos = downCenter - udSize * 0.5f;
-	dl->AddText(upPos, canSpeedUp ? flashCol(flash_up_) : disabledCol, ICON_FA_ANGLE_UP);
-	dl->AddText(downPos, canSpeedDown ? flashCol(flash_down_) : disabledCol, ICON_FA_ANGLE_DOWN);
+	dl->AddText(upPos, (canSpeedUp || flash_up_ > 0.0f) ? flashCol(flash_up_) : disabledCol, ICON_FA_ANGLE_UP);
+	dl->AddText(downPos, (canSpeedDown || flash_down_ > 0.0f) ? flashCol(flash_down_) : disabledCol, ICON_FA_ANGLE_DOWN);
 	if (iconButton("##gdxsv-speed-up", upCenter, ImVec2(udSlotW, barH * 0.5f), canSpeedUp)) {
 		ui_commands_.emplace_back(ReplayCtrlCommand::NextSpeed, 1);
 		flash_up_ = 0.3f;

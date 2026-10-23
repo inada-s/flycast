@@ -249,7 +249,7 @@ int32_t GdxsvSpectateSync::LeadOverSlowest(int32_t frame) const {
 	return std::max(0, frame - slowest);
 }
 
-bool GdxsvSpectateSync::WaitForPeers(int32_t frame, int max_wait_ms) {
+bool GdxsvSpectateSync::WaitForPeers(int32_t frame, int max_wait_ms, int32_t extra_slack) {
 	if (slot_ == nullptr) return false;
 
 	Publish(frame, false);
@@ -277,7 +277,7 @@ bool GdxsvSpectateSync::WaitForPeers(int32_t frame, int max_wait_ms) {
 		// instead, because whoever is behind is never blocked. The slack
 		// matters: without it an instance one position ahead blocks
 		// immediately, and the pair alternates and ends up slower than either.
-		if (frame <= slowest + kSyncSlack) return true;
+		if (static_cast<int64_t>(frame) <= static_cast<int64_t>(slowest) + kSyncSlack + extra_slack) return true;
 		if (deadline < now) return false;
 
 		// Spin on memory rather than yielding. yield() does not return promptly

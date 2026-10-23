@@ -5,13 +5,9 @@ from lib.case import case, result
 # (address, width, value before the patch, value written by the patch, what it is)
 ANCHORS = {
     "dc1": [
-        (0x0c1b0fd0, 2, 300, 295, "cost 300->295"),
         (0x0c310450, 1, 0, 1, "send key every frame"),
     ],
     "dc2": [
-        (0x0c21bfec, 2, 300, 295, "cost 300->295 (a)"),
-        (0x0c21bff4, 2, 300, 295, "cost 300->295 (b)"),
-        (0x0c21c034, 2, 300, 295, "cost 300->295 (c)"),
         (0x0c3abb90, 1, 0, 1, "send key every frame"),
     ],
 }

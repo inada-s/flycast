@@ -19,6 +19,7 @@ Option<bool> GdxUploadReplay("UploadReplay", true, "gdxsv");
 Option<std::string, false> GdxReplayPath("ReplayPath", "", "gdxsv");
 Option<bool> GdxSkipRenderingHack("SkipRenderingHack", true, "gdxsv");
 Option<bool> GdxSlowIdleLoopHack("SlowIdleLoopHack", true, "gdxsv");
+Option<int> GdxMaxFrameLatency("MaxFrameLatency", 1, "gdxsv");
 
 Option<bool> GdxReplayHideName("ReplayHideName", false, "gdxsv");
 Option<bool> GdxReplayShowAllyHP("ReplayShowAllyHP", true, "gdxsv");

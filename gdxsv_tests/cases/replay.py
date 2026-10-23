@@ -6,7 +6,7 @@ import re
 import time
 
 from lib import assets, emu, image, recheck, replayfile
-from lib.case import case, result, write_lua
+from lib.case import Skip, case, result, write_lua
 
 STARTS_RE = re.compile(r"start_msg_indexes = ([\d ]*)")
 ROUND_RE = re.compile(r"StartMsg key_msg_count (\d+)")
@@ -70,7 +70,7 @@ def replay_newest(ctx):
 
 
 def newest_dc2() -> dict:
-    return max((e for e in assets.corpus() if e["disk"] == "dc2"), key=lambda e: e["date"])
+    return newest("dc2")
 
 
 @case("R2c", "R2 on a copy with the inputs cut in the third round: the check fails it", control_of="R2")
@@ -124,6 +124,59 @@ def replay_pov_control(ctx):
     c = pov_checks([r], [2])[0]
     return result([{"what": "probe ran", "ok": r["clean"]},
                    {"what": "POV 2 check fails (player 1 by default)", "ok": not c["ok"] and r["id"] == "1"}],
+                  detail=c)
+
+
+# Cost 300->295 (core/gdxsv/gdxsv_backend_replay.cpp WriteLegacyCostPatch). Files before
+# log_file_version 20261023 were recorded while the emulator forced it; newer files get it only
+# from their game patches, as the lobby sends it (gdxsv m_patch).
+COST = {"dc1": [0x0c1b0fd0], "dc2": [0x0c21bfec, 0x0c21bff4, 0x0c21c034]}
+COST_VERSION = 20261023
+
+
+def newest(disk: str) -> dict:
+    return max((e for e in assets.corpus() if e["disk"] == disk), key=lambda e: e["date"])
+
+
+def cost_run(ctx, name: str, disk: str, version: int = None, patch: bool = False) -> dict:
+    """Read the cost values at POV_FRAME of the newest replay of `disk`; with `version`, a copy
+    of it with that log_file_version, plus the cost game patch when `patch`."""
+    entry = newest(disk)
+    pb = assets.replay(entry)
+    if version is not None:
+        os.makedirs(ctx.out, exist_ok=True)
+        dst = os.path.join(ctx.out, f"{name}.pb")
+        if not recheck.ACTIVE:
+            codes = [(16, a, 300, 295) for a in COST[disk]]
+            replayfile.rewrite_header(pb, dst, version, [replayfile.game_patch(disk, "cost295", codes)] if patch else [])
+        pb = dst
+    p = ctx.probe(name, ctx.rom(disk), "memread.lua",
+                  {"frame": POV_FRAME, "reads": [[a, 2] for a in COST[disk]]},
+                  frames=POV_FRAME + 20, config=[f"gdxsv:replay={pb}", "gdxsv:ReplaySeekStates=no"],
+                  loadstate=False, until_done=True, timeout=300)
+    return {"disk": disk, "version": version or entry["log_file_version"], "patch": patch,
+            "cost": [p.e2e.get(f"0x{a:08x}:2") for a in COST[disk]], "clean": p.clean, **p.facts()}
+
+
+def cost_check(what: str, r: dict, want: int) -> dict:
+    return {"what": what, "ok": r["clean"] and r["cost"] == [str(want)] * len(r["cost"]), **r}
+
+
+@case("R5", "cost 300->295 in replays: older files keep it, newer ones take it from their game patch (Disc 1, Disc 2)")
+def replay_cost(ctx):
+    runs = [(f"{d}: recorded file (version before {COST_VERSION}): 295", (f"R5_{d}_old", d), 295) for d in COST]
+    runs += [(f"dc2: version {COST_VERSION} with the cost295 game patch: 295", ("R5_dc2_patch", "dc2", COST_VERSION, True), 295)]
+    with concurrent.futures.ThreadPoolExecutor(3) as ex:
+        got = list(ex.map(lambda r: cost_run(ctx, *r[1]), runs))
+    return result([cost_check(what, g, want) for (what, _, want), g in zip(runs, got)])
+
+
+@case("R5c", f"R5's check on a copy with version {COST_VERSION} and no cost game patch: it fails (300)", control_of="R5")
+def replay_cost_control(ctx):
+    r = cost_run(ctx, "R5c", "dc2", COST_VERSION)
+    c = cost_check("295 check", r, 295)
+    return result([{"what": "probe ran", "ok": r["clean"]},
+                   {"what": "295 check fails, the stock cost 300", "ok": not c["ok"] and r["cost"] == ["300"] * 3}],
                   detail=c)
 
 
@@ -185,6 +238,98 @@ def frame_jump_checks(r: dict, out: str, name: str, frame: int) -> list:
         jumps = FRAME_JUMP_RE.findall(f.read())
     return [{"what": f"one seek, landed on input {frame}", "ok": jumps == [(str(frame), str(frame))], "jumps": jumps},
             {"what": "every round played to the end with the recorded winners", "ok": r["ok"]}]
+
+
+SPEED_RE = re.compile(r"Replay speed: (\d+%)")
+FAST_FORWARD_TARGETS = [("round-jump", "gdxsv:replay_target_round=4", "ctrl_change_round_:4"),
+                        ("frame-seek", "gdxsv:replay_target_frame=4000", "target=4000")]
+
+
+def fast_forward_run(ctx, name: str, target: str, ready: str, press: bool) -> dict:
+    """Use the mapped keyboard key after a round jump or frame seek; save each observed speed
+    sequence so --recheck can apply the same checks without sending input."""
+    saved = os.path.join(ctx.out, name + ".json")
+    if recheck.ACTIVE:
+        return recheck.load(saved, {})
+    if not (emu.IS_WINDOWS or emu.IS_MAC):
+        raise Skip("mapped keyboard input requires Windows or macOS")
+    rom = ctx.rom("dc2")
+    cfg = [f"gdxsv:replay={assets.replay(newest_dc2())}", target,
+           "gdxsv:ReplayFourScreen=no", "gdxsv:ReplaySeekStates=no", "gdxsv:ReplaySkipMsSelection=yes",
+           "config:rend.Resolution=480", "config:rend.vsync=no", "log:LogToFile=yes", "log:Verbosity=3"]
+    with image.SCREEN_LOCK:
+        inst = emu.launch(ctx.exe, rom, os.path.join(ctx.out, name), config=cfg,
+                          state_dir=assets.state_dir(rom), headless=False)
+        r = {}
+
+        def speeds(expected):
+            wait_for(lambda: inst.poll() is not None or SPEED_RE.findall(inst.log) == expected, 3)
+            return SPEED_RE.findall(inst.log)
+
+        try:
+            r["ready"] = wait_for(lambda: inst.poll() is not None or ready in inst.log, 120) and inst.poll() is None
+            if r["ready"]:
+                time.sleep(3)  # allow Loading and the control bar to disappear
+                pid = inst.proc.pid
+                if press:
+                    emu.press_key(0x20, pid, hold=0.8)
+                r["first"] = speeds(["300%"])
+                if press:
+                    time.sleep(1)
+                    r["released"] = SPEED_RE.findall(inst.log)
+                    emu.press_key(0x20, pid)
+                    r["second"] = speeds(["300%", "100%"])
+                    emu.press_key(0x09, pid)  # Tab: replay pause menu
+                    r["menu_open"] = wait_for(lambda: "Save Menu Opened frame" in inst.log, 3)
+                    emu.press_key(0x20, pid)
+                    time.sleep(0.5)
+                    emu.press_key(0x09, pid)
+                    time.sleep(0.5)
+                    r["menu"] = SPEED_RE.findall(inst.log)
+                    emu.press_key(0x20, pid)
+                    r["after_menu"] = speeds(["300%", "100%", "300%"])
+                    emu.press_key(0x20, pid)
+                    r["final"] = speeds(["300%", "100%", "300%", "100%"])
+            r.update(errors=inst.errors, running=inst.poll() is None)
+        except NotImplementedError as e:
+            raise Skip(str(e))
+        finally:
+            inst.kill()
+            inst.proc.wait(10)
+            inst.remove_exe()
+        recheck.save(saved, r)
+    return r
+
+
+def fast_forward_checks(r: dict) -> list:
+    return [{"what": "replay reached its target and stayed running without errors",
+             "ok": r.get("ready") and r.get("running") and not r.get("errors")},
+            {"what": "held Fast-forward selects 300% once", "ok": r.get("first") == ["300%"]},
+            {"what": "release does not toggle; the next press restores 100%",
+             "ok": r.get("released") == ["300%"] and r.get("second") == ["300%", "100%"]},
+            {"what": "menu press neither changes speed nor leaks after closing",
+             "ok": r.get("menu_open") and r.get("menu") == ["300%", "100%"]},
+            {"what": "fresh presses after the menu toggle 300% then 100%",
+             "ok": r.get("after_menu") == ["300%", "100%", "300%"]
+             and r.get("final") == ["300%", "100%", "300%", "100%"]}]
+
+
+@case("V10", "mapped Fast-forward toggles 100%/300% after a round jump and frame seek; pause menu ignores it")
+def replay_fast_forward(ctx):
+    runs = {name: fast_forward_run(ctx, name, target, ready, True) for name, target, ready in FAST_FORWARD_TARGETS}
+    return result([{**c, "target": name} for name, r in runs.items() for c in fast_forward_checks(r)], runs=runs)
+
+
+@case("V10c", "V10 without the first key press: the 300% check fails", control_of="V10")
+def replay_fast_forward_control(ctx):
+    runs = {name: fast_forward_run(ctx, name, target, ready, False) for name, target, ready in FAST_FORWARD_TARGETS}
+    checks = []
+    for name, r in runs.items():
+        c = fast_forward_checks(r)
+        checks += [{**c[0], "target": name},
+                   {"what": "missing press fails the 300% check", "target": name,
+                    "ok": not c[1]["ok"] and r.get("first") == []}]
+    return result(checks, runs=runs)
 
 
 SEEK_RE = re.compile(r"JumpToKeyMsg \d+->(\d+) target=\d+ load=-?\d+ ran=(\d+) frames in \d+\[ms\] \(([\d.]+)\[ms/fr\]\)")

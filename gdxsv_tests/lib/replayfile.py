@@ -4,6 +4,8 @@ without a protobuf dependency."""
 from typing import Iterator, List, Tuple
 
 # Field numbers from core/gdxsv/gdxsv.pb.h
+LOG_FILE_VERSION = 4  # BattleLogFile.log_file_version (int32)
+PATCHES = 7  # BattleLogFile.patches (GamePatch)
 ROUND_DATA = 18  # BattleLogFile.round_data (BattleLogRound)
 WIN_TEAM = 1  # BattleLogRound.win_team (int32; -1 = draw)
 INPUTS = 15  # BattleLogFile.inputs (repeated fixed64)
@@ -148,5 +150,28 @@ def truncate_inputs(src: str, dst: str, keep: int) -> None:
             if keep < 0:
                 continue
         out += put_field(num, wt, v)
+    with open(dst, "wb") as f:
+        f.write(out)
+
+
+def game_patch(disk: str, name: str, codes: List[Tuple[int, int, int, int]]) -> bytes:
+    """A GamePatch message; codes are (size in bits, address, original, changed)."""
+    out = put(1, disk) + put(2, name)
+    for size, addr, orig, changed in codes:
+        out += put(10, put(1, size) + put(2, addr) + put(3, orig) + put(4, changed))
+    return out
+
+
+def rewrite_header(src: str, dst: str, version: int, add_patches: List[bytes] = ()) -> None:
+    """Copy of a replay file with another log_file_version and extra game patches."""
+    with open(src, "rb") as f:
+        data = f.read()
+    out = bytearray()
+    for num, wt, v in fields(data):
+        if num != LOG_FILE_VERSION:
+            out += put_field(num, wt, v)
+    out += put(LOG_FILE_VERSION, version)
+    for p in add_patches:
+        out += put(PATCHES, p)
     with open(dst, "wb") as f:
         f.write(out)

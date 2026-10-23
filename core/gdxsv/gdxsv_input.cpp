@@ -10,6 +10,7 @@
 #include <vector>
 
 #include "emulator.h"
+#include "gdxsv.h"
 #include "gdxsv_emu_hooks.h"
 #include "input/gamepad_device.h"
 #ifdef USE_SDL
@@ -118,6 +119,8 @@ void TestJoystickVBlank(Event, void*) {
 
 }  // namespace
 #endif
+
+bool gdxsv_input_toggle_fast_forward() { return gdxsv.HookFastForward(); }
 
 void gdxsv_input_attach_test_joystick() {
 #ifdef USE_SDL

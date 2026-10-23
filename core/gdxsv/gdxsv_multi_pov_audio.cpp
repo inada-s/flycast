@@ -20,9 +20,13 @@
 #include "gdxsv_multi_pov.h"
 
 namespace {
-constexpr uint32_t kPackets = 16;			  // three displayed frames at 3x, plus the guests' allowed lead
-constexpr uint32_t kSamples = 16384;		  // a run can span several vblanks during loading
-constexpr uint32_t kAudioMagic = 0x41505634;  // "APV4": local PCM layout, not the replay protocol
+constexpr uint32_t kPackets = 16;					// three displayed frames at 3x, plus the guests' allowed lead
+constexpr uint32_t kSamples = 16384;				// a run can span several vblanks during loading
+constexpr uint32_t kAudioMagic = 0x41505635;		// "APV5": local PCM layout, not the replay protocol
+constexpr uint32_t kSpliceSamples = 220;			// 5ms at 44.1kHz to join discontinuous guest audio
+constexpr uint32_t kPausedBufferSamples = 3 * 735;	// minimum samples in three 735/736-sample frames
+// Keep short freezes buffered, with two nominal packets of room before full.
+constexpr uint32_t kPausedMaxBufferedSamples = 14 * 736;
 
 uint32_t gdxsv_audio_now_ms() {
 	return static_cast<uint32_t>(
@@ -36,6 +40,8 @@ static_assert(sizeof(GdxsvAudioSample) == 4);
 
 struct GdxsvAudioPacket {
 	uint64_t epoch = 0;
+	uint64_t serial = 0;
+	uint64_t sample_position = 0;
 	uint32_t round = 0;
 	int input = 0;
 	uint32_t frame = 0;
@@ -52,12 +58,41 @@ struct GdxsvAudioPacket {
 	}
 	void Copy(const GdxsvAudioPacket& other) {
 		epoch = other.epoch;
+		serial = other.serial;
+		sample_position = other.sample_position;
 		round = other.round;
 		input = other.input;
 		frame = other.frame;
 		reset = other.reset;
 		count = other.count;
 		std::memcpy(samples, other.samples, count * sizeof(*samples));
+	}
+};
+
+// An exact replay-position match establishes the relative audio clocks. Keep
+// that alignment through paused steps: input advances asynchronously, but the
+// AICA keeps running on every screen even while the game waits for input.
+struct GdxsvAudioCursor {
+	uint64_t epoch = 0, host_serial = 0, guest_serial = 0;
+	uint64_t host_sample = 0, guest_sample = 0;
+	uint32_t round = 0, reset = 0;
+	bool valid = false, buffering = false;
+
+	bool Matches(const GdxsvAudioPacket& wanted, uint32_t producer_reset) const {
+		return valid && epoch == wanted.epoch && round == wanted.round && reset == producer_reset;
+	}
+	uint64_t Next(const GdxsvAudioPacket& wanted) const { return guest_serial + (wanted.serial - host_serial); }
+	uint64_t NextSample(const GdxsvAudioPacket& wanted) const { return guest_sample + (wanted.sample_position - host_sample); }
+	void Set(const GdxsvAudioPacket& wanted, const GdxsvAudioPacket& guest) {
+		epoch = wanted.epoch;
+		round = wanted.round;
+		reset = guest.reset;
+		host_serial = wanted.serial;
+		guest_serial = guest.serial;
+		host_sample = wanted.sample_position + wanted.count;
+		guest_sample = guest.sample_position + guest.count;
+		valid = true;
+		buffering = false;
 	}
 };
 
@@ -77,7 +112,9 @@ struct GdxsvAudioQueue {
 		slot.reset = reset.load(std::memory_order_relaxed);
 		write.store(w + 1, std::memory_order_release);
 	}
-	bool Take(const GdxsvAudioPacket& wanted, GdxsvAudioPacket& result) {
+	bool Take(const GdxsvAudioPacket& wanted, GdxsvAudioPacket& result, GdxsvAudioCursor* cursor, bool paused = true) {
+		if (paused && cursor != nullptr && cursor->Matches(wanted, reset.load(std::memory_order_acquire)))
+			return TakeSamples(wanted, result, *cursor);
 		uint32_t r = read.load(std::memory_order_relaxed);
 		const uint32_t w = write.load(std::memory_order_acquire);
 		if (w - r > kPackets) {
@@ -90,10 +127,106 @@ struct GdxsvAudioQueue {
 			const int order = valid ? packet.Compare(wanted) : -1;
 			if (order > 0) return false;
 			bool found = valid && order == 0;
+			if (found && cursor != nullptr && cursor->Matches(wanted, packet.reset) && cursor->guest_sample > packet.sample_position) {
+				// Paused mixing may leave a packet suffix at the queue head.
+				// Treat it as a break: replaying the prefix repeats sound, and
+				// stretching just the suffix over a whole frame changes pitch.
+				found = false;
+			}
 			if (found) result.Copy(packet);
 			found = found && packet.reset == reset.load(std::memory_order_acquire);
 			read.store(++r, std::memory_order_release);
 			if (found) return true;
+		}
+		return false;
+	}
+	bool TakeSamples(const GdxsvAudioPacket& wanted, GdxsvAudioPacket& result, GdxsvAudioCursor& cursor) {
+		uint32_t r = read.load(std::memory_order_relaxed);
+		const uint32_t w = write.load(std::memory_order_acquire);
+		if (w - r > kPackets) {
+			read.store(w, std::memory_order_release);
+			return false;
+		}
+		if (wanted.count == 0) return false;
+		// Inspect before consuming. Only the newest contiguous range can
+		// recover from a producer stall or packets dropped by a full queue.
+		// Keep the read index fixed until copying finishes, so the producer
+		// cannot overwrite any of the packets inspected here.
+		uint64_t begin = 0, end = 0;
+		uint32_t first = w, discarded = r;
+		for (uint32_t i = r; i != w; ++i) {
+			const auto& packet = packets[i % kPackets];
+			if (packet.reset != cursor.reset || packet.count > kSamples) {
+				if (discarded == i) ++discarded;
+				continue;
+			}
+			if (packet.epoch != wanted.epoch || packet.round != wanted.round) continue;
+			const uint64_t packet_end = packet.sample_position + packet.count;
+			if (packet.count == 0 || packet_end <= cursor.guest_sample) {
+				if (discarded == i) ++discarded;
+				continue;
+			}
+			const uint64_t packet_begin = std::max(packet.sample_position, cursor.guest_sample);
+			if (first == w || packet_begin != end) {
+				first = i;
+				begin = packet_begin;
+			}
+			end = packet_end;
+		}
+		if (reset.load(std::memory_order_acquire) != cursor.reset) return false;
+		uint64_t position = cursor.NextSample(wanted);
+		if (first == w) {
+			cursor.buffering = true;
+			read.store(discarded, std::memory_order_release);
+			return false;
+		}
+		if (cursor.buffering || position < begin || position > end || end - position < wanted.count ||
+			end - position > std::max(kPausedMaxBufferedSamples, wanted.count)) {
+			cursor.buffering = true;
+			const uint32_t depth = std::max(kPausedBufferSamples, wanted.count);
+			// Rebuffer briefly instead of chasing samples the guest has not
+			// produced. Release stale ranges so a full ring can receive new PCM.
+			// Stay in this mode until full: a one-sample scheduling difference
+			// must not alternate between starvation and premature recovery.
+			if (end - begin < depth) {
+				read.store(first, std::memory_order_release);
+				return false;
+			}
+			position = end - depth;
+		}
+		result.epoch = wanted.epoch;
+		result.round = wanted.round;
+		result.input = wanted.input;
+		result.frame = wanted.frame;
+		result.reset = cursor.reset;
+		result.sample_position = position;
+		result.count = 0;
+		r = first;
+		while (r != w && reset.load(std::memory_order_acquire) == cursor.reset) {
+			const auto& packet = packets[r % kPackets];
+			if (packet.reset != cursor.reset || packet.count > kSamples) {
+				++r;
+				continue;
+			}
+			if (packet.epoch != wanted.epoch || packet.round != wanted.round) return false;
+			const uint64_t next = result.sample_position + result.count;
+			if (packet.sample_position > next) return false;
+			const uint64_t offset = next - packet.sample_position;
+			if (offset >= packet.count) {
+				++r;
+				continue;
+			}
+			const uint32_t count = std::min(wanted.count - result.count, packet.count - static_cast<uint32_t>(offset));
+			std::memcpy(result.samples + result.count, packet.samples + offset, count * sizeof(*result.samples));
+			result.serial = packet.serial;
+			result.count += count;
+			// A run can stop between vblanks. Leave an unconsumed suffix in
+			// the queue; the next host frame continues at its next sample.
+			if (offset + count == packet.count) ++r;
+			if (result.count == wanted.count) {
+				read.store(r, std::memory_order_release);
+				return reset.load(std::memory_order_acquire) == cursor.reset;
+			}
 		}
 		return false;
 	}
@@ -107,6 +240,8 @@ struct GdxsvAudioInputRequest {
 
 	void Publish(int requested_input, uint32_t requested_round, uint32_t requested_seek) {
 		sequence.fetch_add(1, std::memory_order_acq_rel);
+		// Pair with the reader's fence even when it sees a relaxed field store.
+		std::atomic_thread_fence(std::memory_order_release);
 		input.store(requested_input, std::memory_order_relaxed);
 		round.store(requested_round, std::memory_order_relaxed);
 		seek.store(requested_seek, std::memory_order_relaxed);
@@ -116,7 +251,8 @@ struct GdxsvAudioInputRequest {
 		const uint32_t before = sequence.load(std::memory_order_acquire);
 		if (before & 1) return false;
 		const bool ready = input.load(std::memory_order_relaxed) >= requested_input &&
-			round.load(std::memory_order_relaxed) == requested_round && seek.load(std::memory_order_relaxed) == requested_seek;
+						   round.load(std::memory_order_relaxed) == requested_round &&
+						   seek.load(std::memory_order_relaxed) == requested_seek;
 		std::atomic_thread_fence(std::memory_order_acquire);
 		return ready && before == sequence.load(std::memory_order_relaxed);
 	}
@@ -131,7 +267,45 @@ static_assert(std::atomic<uint32_t>::is_always_lock_free);
 
 struct GdxsvAudioDelayed {
 	uint64_t clock;
+	bool paused;
 	GdxsvAudioPacket packet;
+};
+
+struct GdxsvAudioStream {
+	GdxsvAudioCursor cursor;
+	float left = 0, right = 0, from_left = 0, from_right = 0;
+	uint32_t remaining = 0;
+	bool started = false, present = false, continuous = false;
+
+	void Begin(const GdxsvAudioPacket& wanted, const GdxsvAudioPacket* packet, bool paused) {
+		const bool next_present = packet != nullptr;
+		const bool aligned =
+			next_present && cursor.Matches(wanted, packet->reset) &&
+			((paused || continuous) ? cursor.NextSample(wanted) == packet->sample_position : cursor.Next(wanted) == packet->serial);
+		const bool discontinuous = present != next_present || (next_present && !aligned);
+		if (started && discontinuous) {
+			// Bridge from the last output sample. A missing packet has no PCM
+			// to fade out, and replaying its predecessor would repeat sounds.
+			from_left = left;
+			from_right = right;
+			remaining = kSpliceSamples;
+		}
+		if (next_present) cursor.Set(wanted, *packet);
+		present = next_present;
+		continuous = paused;
+		started = true;
+	}
+	void Add(float sample_left, float sample_right, float& mixed_left, float& mixed_right) {
+		if (remaining != 0) {
+			const float weight = float(remaining--) / kSpliceSamples;
+			sample_left += (from_left - sample_left) * weight;
+			sample_right += (from_right - sample_right) * weight;
+		}
+		left = sample_left;
+		right = sample_right;
+		mixed_left += left;
+		mixed_right += right;
+	}
 };
 
 class GdxsvMultiPovAudioBackend final : public AudioBackend {
@@ -221,6 +395,8 @@ class GdxsvMultiPovAudioBackend final : public AudioBackend {
 		last_input_ = -1;
 		have_packet_ = false;
 		frame_ = 0;
+		serial_ = 0;
+		sample_position_ = 0;
 		clock_ = 0;
 		overflow_ = false;
 		FlushAudio();
@@ -257,7 +433,7 @@ class GdxsvMultiPovAudioBackend final : public AudioBackend {
 		return true;
 	}
 
-	void Frame(int input, uint32_t round, uint32_t seek, int speed, bool silent, bool menu) {
+	void Frame(int input, uint32_t round, uint32_t seek, int speed, bool silent, bool menu, bool paused) {
 		if (!Enabled() || !initialized_ || !settings.gdxsv.replayModeActive) return;
 		if (silent) {
 			captured_.clear();
@@ -291,6 +467,8 @@ class GdxsvMultiPovAudioBackend final : public AudioBackend {
 		gdxsv_multi_pov_read_live_battle(code, battle);
 		auto& packet = scratch_[0];
 		packet.epoch = (uint64_t(battle) << 32) | seek;
+		packet.serial = serial_++;
+		packet.sample_position = sample_position_;
 		packet.round = round;
 		packet.input = input;
 		packet.frame = frame_;
@@ -305,6 +483,7 @@ class GdxsvMultiPovAudioBackend final : public AudioBackend {
 			}
 		}
 		packet.count = static_cast<uint32_t>(captured_.size());
+		sample_position_ += packet.count;
 		std::memcpy(packet.samples, captured_.data(), packet.count * sizeof(*packet.samples));
 		captured_.clear();
 		if (screen_ != 0) {
@@ -323,11 +502,13 @@ class GdxsvMultiPovAudioBackend final : public AudioBackend {
 		clock_ += 6 / (1 + std::clamp(speed, 0, 2));
 		delay_.emplace_back();
 		delay_.back().clock = clock_;
+		delay_.back().paused = paused;
 		delay_.back().packet.Copy(packet);
 		while (!delay_.empty() && clock_ - delay_.front().clock >= 18) {
 			packet.Copy(delay_.front().packet);
+			const bool delayed_pause = delay_.front().paused;
 			delay_.pop_front();
-			Mix(packet);
+			Mix(packet, delayed_pause);
 			if (packet.count != 0) break;
 		}
 	}
@@ -346,6 +527,8 @@ class GdxsvMultiPovAudioBackend final : public AudioBackend {
 
 	void ClearOutput() {
 		pending_.clear();
+		streams_ = {};
+		paused_audio_ = false;
 		phase_ = 0;
 		step_ = 1;
 		queue_level_ = .5;
@@ -353,7 +536,18 @@ class GdxsvMultiPovAudioBackend final : public AudioBackend {
 		primed_ = false;
 		have_previous_ = false;
 	}
-	void Mix(const GdxsvAudioPacket& wanted) {
+	void Mix(const GdxsvAudioPacket& wanted, bool paused) {
+		// Resume can spend another run waiting on the paused input. Its local
+		// frame counters still differ; realign only after that input advances.
+		if (paused) {
+			paused_audio_ = true;
+			paused_epoch_ = wanted.epoch;
+			paused_round_ = wanted.round;
+			paused_input_ = wanted.input;
+		} else if (wanted.epoch != paused_epoch_ || wanted.round != paused_round_ || wanted.input != paused_input_) {
+			paused_audio_ = false;
+		}
+		if (paused_audio_ && wanted.count == 0) return;
 		uint32_t mask = 1;
 		uint32_t expected_mask = 1;
 		int active = 1;
@@ -364,9 +558,14 @@ class GdxsvMultiPovAudioBackend final : public AudioBackend {
 				++active;
 				expected_mask |= 1u << i;
 			}
-			if (queue.Take(wanted, scratch_[i]) && (wanted.count == 0 || scratch_[i].count != 0)) mask |= 1u << i;
+			if (queue.Take(wanted, scratch_[i], &streams_[i - 1].cursor, paused_audio_) && (wanted.count == 0 || scratch_[i].count != 0)) {
+				mask |= 1u << i;
+				if (wanted.count == 0) streams_[i - 1].cursor.Set(wanted, scratch_[i]);
+			}
 		}
 		if (wanted.count == 0 || !device_ready_) return;
+		for (int i = 1; i < kGdxsvMultiPovScreens; ++i)
+			streams_[i - 1].Begin(wanted, mask & (1u << i) ? &scratch_[i] : nullptr, paused_audio_);
 		if ((mask & expected_mask) != expected_mask) ++incomplete_;
 		if (++logged_frames_ == 300) {
 			NOTICE_LOG(AUDIO, "multi-pov audio: %u/300 frames with missing PCM", incomplete_);
@@ -385,13 +584,21 @@ class GdxsvMultiPovAudioBackend final : public AudioBackend {
 			float left = 0, right = 0;
 			for (int i = 0; i < kGdxsvMultiPovScreens; ++i) {
 				const auto& packet = scratch_[i];
-				if (!(mask & (1u << i)) || packet.count == 0) continue;
-				const float position = wanted.count > 1 ? float(j) * (packet.count - 1) / (wanted.count - 1) : 0;
-				const uint32_t a = std::min(uint32_t(position), packet.count - 1);
-				const uint32_t b = std::min(a + 1, packet.count - 1);
-				const float t = position - a;
-				left += packet.samples[a].left + (packet.samples[b].left - packet.samples[a].left) * t;
-				right += packet.samples[a].right + (packet.samples[b].right - packet.samples[a].right) * t;
+				float sample_left = 0, sample_right = 0;
+				if (mask & (1u << i)) {
+					const float position = wanted.count > 1 ? float(j) * (packet.count - 1) / (wanted.count - 1) : 0;
+					const uint32_t a = std::min(uint32_t(position), packet.count - 1);
+					const uint32_t b = std::min(a + 1, packet.count - 1);
+					const float t = position - a;
+					sample_left = packet.samples[a].left + (packet.samples[b].left - packet.samples[a].left) * t;
+					sample_right = packet.samples[a].right + (packet.samples[b].right - packet.samples[a].right) * t;
+				}
+				if (i == 0) {
+					left += sample_left;
+					right += sample_right;
+				} else {
+					streams_[i - 1].Add(sample_left, sample_right, left, right);
+				}
 			}
 			// Keep gain stable for transient missing frames; smooth lost/rejoining
 			// participants over about 75ms, without clipping during the change.
@@ -427,14 +634,19 @@ class GdxsvMultiPovAudioBackend final : public AudioBackend {
 	bool original_readonly_ = false;
 	int screen_ = -1;
 	bool initialized_ = false, device_ready_ = false, overflow_ = false;
-	uint64_t pushes_ = 0, clock_ = 0;
+	uint64_t pushes_ = 0, clock_ = 0, serial_ = 0, sample_position_ = 0;
 	int last_input_ = -1;
 	uint32_t frame_ = 0, logged_frames_ = 0, incomplete_ = 0;
 	std::vector<GdxsvAudioSample> captured_, pending_;
 	std::array<GdxsvAudioPacket, kGdxsvMultiPovScreens> scratch_;
+	std::array<GdxsvAudioStream, kGdxsvMultiPovScreens - 1> streams_;
 	GdxsvAudioPacket previous_packet_;
 	bool have_packet_ = false;
 	bool rate_control_ = true;
+	bool paused_audio_ = false;
+	uint64_t paused_epoch_ = 0;
+	uint32_t paused_round_ = 0;
+	int paused_input_ = -1;
 	bool input_pending_ = false;
 	std::chrono::steady_clock::time_point input_deadline_{};
 	std::deque<GdxsvAudioDelayed> delay_;
@@ -469,17 +681,15 @@ void gdxsv_multi_pov_audio_start() {
 	if (gdxsv_audio.backend) gdxsv_audio.backend->Start();
 }
 
-void gdxsv_multi_pov_audio_frame(int input, uint32_t round, uint32_t seek, int speed, bool silent, bool menu) {
-	if (gdxsv_audio.backend) gdxsv_audio.backend->Frame(input, round, seek, speed, silent, menu);
+void gdxsv_multi_pov_audio_frame(int input, uint32_t round, uint32_t seek, int speed, bool silent, bool menu, bool paused) {
+	if (gdxsv_audio.backend) gdxsv_audio.backend->Frame(input, round, seek, speed, silent, menu, paused);
 }
 
 void gdxsv_multi_pov_audio_reset() {
 	if (gdxsv_audio.backend) gdxsv_audio.backend->Reset();
 }
 
-bool gdxsv_multi_pov_audio_input_pending() {
-	return gdxsv_audio.backend && gdxsv_audio.backend->InputPending();
-}
+bool gdxsv_multi_pov_audio_input_pending() { return gdxsv_audio.backend && gdxsv_audio.backend->InputPending(); }
 
 bool gdxsv_multi_pov_audio_input_ready(int input, uint32_t round, uint32_t seek, bool wait) {
 	return !gdxsv_audio.backend || gdxsv_audio.backend->InputReady(input, round, seek, wait);
@@ -490,7 +700,7 @@ bool gdxsv_multi_pov_audio_open() { return true; }
 void gdxsv_multi_pov_audio_close() {}
 bool gdxsv_multi_pov_audio_enabled() { return false; }
 void gdxsv_multi_pov_audio_start() {}
-void gdxsv_multi_pov_audio_frame(int, uint32_t, uint32_t, int, bool, bool) {}
+void gdxsv_multi_pov_audio_frame(int, uint32_t, uint32_t, int, bool, bool, bool) {}
 void gdxsv_multi_pov_audio_reset() {}
 bool gdxsv_multi_pov_audio_input_pending() { return false; }
 bool gdxsv_multi_pov_audio_input_ready(int, uint32_t, uint32_t, bool) { return true; }

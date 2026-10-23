@@ -28,7 +28,7 @@
 #include "types.h"
 
 constexpr uint32_t kMagic = 0x4D505634;	 // "MPV4"
-constexpr uint32_t kVersion = 4;
+constexpr uint32_t kVersion = 5;
 
 // The replay payload follows the header at this offset.
 constexpr size_t kPayloadOffset = 4096;
@@ -134,6 +134,8 @@ struct GdxsvMultiPovHeader {
 	std::atomic<uint32_t> feed_rounds_size;
 	std::atomic<int32_t> feed_inputs;
 	std::atomic<uint32_t> feed_backlog;
+	// Odd while the host updates a playback snapshot; even when complete.
+	std::atomic<uint32_t> playback_sequence;
 };
 
 static_assert(sizeof(GdxsvMultiPovHeader) <= kPayloadOffset, "header must fit before the payload");
@@ -619,6 +621,9 @@ bool gdxsv_multi_pov_host_wait_for_guests(int expected_guests, int timeout_ms) {
 void gdxsv_multi_pov_publish_playback(const GdxsvMultiPovPlayback& state) {
 	GdxsvMultiPovHeader* h = g_session.header();
 	if (h == nullptr || g_session.role != GdxsvMultiPovRole::Host) return;
+	h->playback_sequence.fetch_add(1, std::memory_order_acq_rel);
+	// Pair with the reader's fence even when it sees a relaxed field store.
+	std::atomic_thread_fence(std::memory_order_release);
 	h->position.store(state.position, std::memory_order_relaxed);
 	h->speed.store(state.speed, std::memory_order_relaxed);
 	h->paused.store(state.paused ? 1u : 0u, std::memory_order_relaxed);
@@ -630,14 +635,16 @@ void gdxsv_multi_pov_publish_playback(const GdxsvMultiPovPlayback& state) {
 	h->skip_ms_selection.store(state.skip_ms_selection ? 1u : 0u, std::memory_order_relaxed);
 	h->volume.store(state.volume, std::memory_order_relaxed);
 	h->live_following.store(state.live_following ? 1u : 0u, std::memory_order_relaxed);
-	// Last, so a guest that sees the generation sees the target with it.
-	h->seek_generation.store(state.seek_generation, std::memory_order_release);
+	h->seek_generation.store(state.seek_generation, std::memory_order_relaxed);
 	h->playback_published.store(1, std::memory_order_release);
+	h->playback_sequence.fetch_add(1, std::memory_order_release);
 }
 
 bool gdxsv_multi_pov_read_playback(GdxsvMultiPovPlayback& out) {
 	const GdxsvMultiPovHeader* h = g_session.header();
 	if (h == nullptr) return false;
+	const uint32_t before = h->playback_sequence.load(std::memory_order_acquire);
+	if (before & 1) return false;
 	if (h->playback_published.load(std::memory_order_acquire) == 0) return false;
 	out.seek_generation = h->seek_generation.load(std::memory_order_acquire);
 	out.seek_target = h->seek_target.load(std::memory_order_relaxed);
@@ -651,7 +658,8 @@ bool gdxsv_multi_pov_read_playback(GdxsvMultiPovPlayback& out) {
 	out.skip_ms_selection = h->skip_ms_selection.load(std::memory_order_relaxed) != 0;
 	out.volume = h->volume.load(std::memory_order_relaxed);
 	out.live_following = h->live_following.load(std::memory_order_relaxed) != 0;
-	return true;
+	std::atomic_thread_fence(std::memory_order_acquire);
+	return before == h->playback_sequence.load(std::memory_order_relaxed);
 }
 
 void gdxsv_multi_pov_publish_host_window(const GdxsvMultiPovHostWindow& window) {

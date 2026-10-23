@@ -35,6 +35,7 @@
 
 #include <sstream>
 #include <locale>
+#include <xxhash.h>
 #include <future>
 #include <thread>
 #include <algorithm>
@@ -1813,10 +1814,31 @@ std::string gdxsv_save_replay_file(const proto::BattleLogFile& log, const std::s
 	return {};
 }
 
+// The slot-99 savestates published until 2026-10 hold the cost 295 the emulator used to force.
+static bool is_outdated_replay_savestate(const std::string& path) {
+	FILE* fp = nowide::fopen(path.c_str(), "rb");
+	if (fp == nullptr) {
+		return false;
+	}
+	std::vector<u8> buf;
+	u8 chunk[65536];
+	size_t n;
+	while ((n = fread(chunk, 1, sizeof(chunk), fp)) > 0) {
+		buf.insert(buf.end(), chunk, chunk + n);
+	}
+	std::fclose(fp);
+	const u64 digest = XXH64(buf.data(), buf.size(), 0);
+	return digest == 0x7adff82350016e72ull || digest == 0x73a4d167c1db9910ull;
+}
+
 bool gdxsv_ensure_replay_savestate(int disk) {
 	const auto save_path = hostfs::getSavestatePath(99, false);
-	if (file_exists(save_path)) {
+	const bool exists = file_exists(save_path);
+	if (exists && !is_outdated_replay_savestate(save_path)) {
 		return true;
+	}
+	if (exists) {
+		NOTICE_LOG(COMMON, "replay savestate is outdated, downloading again: %s", save_path.c_str());
 	}
 
 	http::init();
@@ -1827,7 +1849,7 @@ bool gdxsv_ensure_replay_savestate(int disk) {
 	int rc = http::get(url, downloaded, content_type);
 	if (rc != 200) {
 		ERROR_LOG(COMMON, "replay savestate download failure rc=%d url=%s", rc, url.c_str());
-		return false;
+		return exists;
 	}
 
 	FILE* fp = nowide::fopen(save_path.c_str(), "wb");

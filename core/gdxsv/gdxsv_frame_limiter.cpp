@@ -12,7 +12,8 @@
 #include "log/Log.h"
 #include "ui/gui.h"
 
-static std::chrono::time_point<std::chrono::steady_clock> start;
+// When the next frame is due.
+static std::chrono::time_point<std::chrono::steady_clock> nextFrame;
 static bool currentDupeFrames;
 
 static int64_t gdxsv_frame_period_us() {
@@ -42,7 +43,7 @@ static int64_t gdxsv_trimmed_frame_period_us() {
 void gdxsv_emu_mainui_loop_start() {
 	currentDupeFrames = config::DupeFrames;
 	gdxsv_set_timer_resolution();
-	start = {};
+	nextFrame = {};
 }
 
 void gdxsv_emu_mainui_loop_end() {
@@ -57,19 +58,26 @@ bool gdxsv_emu_mainui_reinit_needed() {
 }
 
 void gdxsv_frame_limiter_wait() {
-	if (!config::FixedFrequency || gui_is_open() || settings.input.fastForwardMode)
+	if (!config::FixedFrequency || gui_is_open() || settings.input.fastForwardMode) {
+		nextFrame = {};
 		return;
+	}
 
-	const auto period = gdxsv_trimmed_frame_period_us();
+	const auto period = std::chrono::microseconds(gdxsv_trimmed_frame_period_us());
 	int64_t overSlept = 0;
 
-	const auto elapsed = std::chrono::duration_cast<std::chrono::microseconds>(
-		std::chrono::steady_clock::now() - start).count();
-	const auto remaining = period - elapsed;
+	auto now = std::chrono::steady_clock::now();
+	if (nextFrame == decltype(nextFrame){}) nextFrame = now;
+	const auto remaining = std::chrono::duration_cast<std::chrono::microseconds>(nextFrame - now).count();
 	if (remaining > 0)
 		overSlept = gdxsv_sleep_and_busy_wait(remaining);
 
-	start = std::chrono::steady_clock::now();
+	// The schedule is absolute: a frame late by less than a period is paid back by the next waits.
+	// A frame late by a period or more skips whole periods, so a stall is not followed by a burst
+	// of short frames.
+	now = std::chrono::steady_clock::now();
+	if (now - nextFrame >= period) nextFrame += (now - nextFrame) / period * period;
+	nextFrame += period;
 	if (1000 <= overSlept)
 		WARN_LOG(RENDERER, "FixedFrequency: Over slept %d [us]", (int)overSlept);
 

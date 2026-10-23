@@ -17,6 +17,7 @@ GdxsvGgpoState gdxsv_ggpo_state;
 #include "emulator.h"
 #include "gdxsv_sleep.h"
 #include "ggponet.h"
+#include "sync.h"
 #include "input/gamepad_device.h"
 #include "log/Log.h"
 #include "network/ggpo.h"
@@ -35,6 +36,7 @@ void StartSession(const char* sessionCode, int me, const std::vector<std::string
 	GdxsvGgpoUpstream u = gdxsv_ggpo_upstream(&cb);
 	GdxsvGgpoState& s = gdxsv_ggpo_state;
 	gdxsv_ggpo_session_start();
+	s.inputBeforeAdvance = true;
 	s.testLog = getenv("GGPO_TEST_LOG") != nullptr;
 	s.testNoSkipReplay = getenv("GGPO_TEST_NO_SKIP_REPLAY") != nullptr;
 	memset(s.playerHandles, 0, sizeof(s.playerHandles));
@@ -110,7 +112,7 @@ void StartSession(const char* sessionCode, int me, const std::vector<std::string
 			config::GGPODelay.override(v);
 		}
 	}
-	ggpo_set_frame_delay(session, *u.localPlayer, config::GGPODelay.get());
+	ggpo_set_frame_delay(session, *u.localPlayer, gdxsv_ggpo_frame_delay(config::GGPODelay.get()));
 
 	DEBUG_LOG(NETWORK, "GGPO session started");
 }
@@ -161,6 +163,34 @@ std::future<bool> gdxsv_ggpo_start_network(const char* sessionCode, int me, cons
 		}
 		return ggpo::active();
 	});
+}
+
+bool gdxsv_ggpo_wait_prediction_barrier() {
+	GdxsvGgpoUpstream u = gdxsv_ggpo_upstream(nullptr);
+	GdxsvGgpoState& s = gdxsv_ggpo_state;
+	for (int loop_count = 0; ggpo::active(); loop_count++) {
+		int frame = 0;
+		GGPONetworkStats stats{};
+		ggpo_get_current_frame(*u.session, &frame);
+		if (ggpo_get_network_stats(*u.session, *u.remotePlayer, &stats) != GGPO_OK) return true;
+		// The check of ggpo_add_local_input, at the frame the next input is added at
+		if (frame < MAX_PREDICTION_FRAMES || stats.sync.predicted_frames < MAX_PREDICTION_FRAMES) {
+			// Counted as ggpo::nextFrame counts its prediction barrier waits
+			if (0 < loop_count) {
+				if (loop_count * 5 <= 30)
+					s.inputBlockCount[0]++;
+				else if (loop_count * 5 <= 500)
+					s.inputBlockCount[1]++;
+				else
+					s.inputBlockCount[2]++;
+			}
+			if (2 < loop_count) NOTICE_LOG(NETWORK, "prediction barrier reached looped %dms", loop_count * 5);
+			return true;
+		}
+		gdxsv_sleep_us(5 * 1000);
+		if (ggpo_idle(*u.session, 0) != GGPO_OK) return false;
+	}
+	return true;
 }
 
 bool gdxsv_ggpo_is_connected(int playerNum) {
@@ -279,6 +309,7 @@ std::future<bool> gdxsv_ggpo_start_network(const char*, int, const std::vector<s
 	started.set_value(false);
 	return started.get_future();
 }
+bool gdxsv_ggpo_wait_prediction_barrier() { return true; }
 bool gdxsv_ggpo_is_connected(int) { return false; }
 void gdxsv_ggpo_disconnect(int) {}
 void gdxsv_ggpo_random_input(bool, u64, u32) {}

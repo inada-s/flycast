@@ -119,19 +119,28 @@ constexpr u32 STACK_ALIGN = 8;
 // Block linking: a block that ends in a static branch keeps the host code of its branch target (and of its
 // fall-through for conditional branches) and jumps there directly while cycles remain, instead of returning
 // to the main loop. The links are made lazily on the first exit and dropped (Relink) when the target block
-// is discarded.
+// is discarded. Once linked, the link site's jmp rel32 is patched to jump to the target directly.
 struct X64BlockInfo : RuntimeBlockInfo
 {
 	// 0: BranchBlock, 1: NextBlock. nullptr = not linked yet, NoLink = never link
 	void *linkCode[2] {};
 	static inline void * const NoLink = (void *)1;
+	// jmp rel32 at the link site; rel32 0 jumps to the slow path right after it
+	u8 *linkSite[2] {};
+
+	void Unlink(u32 which)
+	{
+		linkCode[which] = nullptr;
+		if (linkSite[which] != nullptr)
+			*(s32 *)(linkSite[which] + 1) = 0;
+	}
 
 	u32 Relink() override
 	{
 		if (pBranchBlock == nullptr && linkCode[0] != NoLink)
-			linkCode[0] = nullptr;
+			Unlink(0);
 		if (pNextBlock == nullptr && linkCode[1] != NoLink)
-			linkCode[1] = nullptr;
+			Unlink(1);
 		return 0;
 	}
 };
@@ -163,6 +172,12 @@ static void * DYNACALL x64LinkBlock(X64BlockInfo *block, u32 which)
 		block->pNextBlock = next.get();
 	next->AddRef(self);
 	block->linkCode[which] = (void *)next->code;
+	if (block->linkSite[which] != nullptr)
+	{
+		const ptrdiff_t rel = (u8 *)next->code - (block->linkSite[which] + 5);
+		if (rel == (s32)rel)
+			*(s32 *)(block->linkSite[which] + 1) = (s32)rel;
+	}
 	return block->linkCode[which];
 }
 
@@ -668,8 +683,17 @@ public:
 		if (mmu_enabled())
 			return;
 		X64BlockInfo *xblock = static_cast<X64BlockInfo *>(block);
-		Xbyak::Label linked, unlinked, done;
+		Xbyak::Label slow, linked, unlinked, done;
 
+		mov(rdx, (uintptr_t)&sh4ctx.cycle_counter);
+		cmp(dword[rdx], 0);
+		jle(done, T_NEAR);
+		add(rsp, STACK_ALIGN);
+		// x64LinkBlock patches this jmp to the linked block, Relink restores it
+		xblock->linkSite[which] = (u8 *)getCurr();
+		jmp(slow, T_NEAR);
+		L(slow);
+		sub(rsp, STACK_ALIGN);
 		mov(rax, (uintptr_t)&xblock->linkCode[which]);
 		mov(rax, qword[rax]);
 		cmp(rax, 1);	// X64BlockInfo::NoLink
@@ -678,9 +702,6 @@ public:
 		jz(unlinked, T_NEAR);
 
 		L(linked);
-		mov(rdx, (uintptr_t)&sh4ctx.cycle_counter);
-		cmp(dword[rdx], 0);
-		jle(done, T_NEAR);
 		add(rsp, STACK_ALIGN);
 		jmp(rax);
 

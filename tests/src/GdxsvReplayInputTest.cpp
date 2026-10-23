@@ -4,6 +4,7 @@
 #include "cfg/option.h"
 #include "emulator.h"
 #include "gdxsv/gdxsv_emu_hooks.h"
+#include "gdxsv/gdxsv_multi_pov.h"
 #include "gdxsv/libs.h"
 #include "gtest/gtest.h"
 #include "imgui.h"
@@ -23,6 +24,10 @@ class GdxsvReplayInputTest : public ::testing::Test {
 	}
 
 	void TearDown() override {
+		if (multi_pov_session_) {
+			gdxsv_multi_pov_close();
+			config::setTransient("gdxsv", "headless", headless_ ? "yes" : "no");
+		}
 		config::ThreadedRendering = threaded_rendering_;
 #ifdef _WIN32
 		config::JoystickPolling = joystick_polling_;
@@ -42,6 +47,19 @@ class GdxsvReplayInputTest : public ::testing::Test {
 	void SetPlaybackFrame(int frame) { replay_.key_msg_count_ = frame; }
 	void SetPlaybackSpeed(int speed) { replay_.ctrl_play_speed_ = speed; }
 	void SetPaused(bool paused) { replay_.ctrl_pause_ = paused; }
+	void PrepareMultiPovGuest() {
+		config::setTransient("gdxsv", "headless", "yes");
+		multi_pov_session_ = true;
+		ASSERT_TRUE(gdxsv_multi_pov_host_create(gdxsv_multi_pov_new_session_id(), {0}));
+		replay_.multi_pov_guest_ = true;
+		SetOffline();
+		SetPaused(true);
+	}
+	void FollowHost(const GdxsvMultiPovPlayback& state) {
+		gdxsv_multi_pov_publish_playback(state);
+		replay_.FollowMultiPovHost();
+	}
+	u32 ReadReply() { return replay_.OnSockRead(SocketReplyAddress, 40); }
 	void SetFollowing(bool following) { replay_.live_following_ = following; }
 	void SetRoundCount(int round) { replay_.start_msg_count_ = round; }
 	void SetLiveBuffer(int frames) { replay_.live_buffer_frames_ = frames; }
@@ -191,9 +209,12 @@ class GdxsvReplayInputTest : public ::testing::Test {
 
 	static constexpr u64 FirstInput = 0x0008000400020001ULL;
 	static constexpr u64 SecondInput = 0x0080004000200010ULL;
+	static constexpr u32 SocketReplyAddress = 0x0c100000; // Scratch RAM for the decoded socket reply.
 
  private:
 	GdxsvBackendReplay replay_;
+	bool multi_pov_session_ = false;
+	const bool headless_ = config::loadBool("gdxsv", "headless", false);
 	const bool threaded_rendering_ = config::ThreadedRendering;
 #ifdef _WIN32
 	const bool joystick_polling_ = config::JoystickPolling;
@@ -204,6 +225,46 @@ class GdxsvReplayInputTest : public ::testing::Test {
 	const float audio_fade_ = settings.aica.audioFade;
 	const int frame_period_trim_ = gdxsv_frame_period_trim_us;
 };
+
+TEST_F(GdxsvReplayInputTest, PausedGuestUsesOneHostTargetWithoutAudioRouting) {
+	PrepareFrameControl();
+	PrepareMultiPovGuest();
+	GdxsvMultiPovPlayback host;
+	host.paused = true;
+	host.seek_target = 13;
+	FollowHost(host);
+	for (int frame = 11; frame <= 13; ++frame) {
+		Send(McsMessage::ForceMsg);
+		EXPECT_EQ(InputIndex(), frame);
+		EXPECT_EQ(ReadReply(), frame < 13 ? 40u : 0u);
+	}
+	// A newly published target is applied at the next frame boundary, not
+	// midway through a run's socket reads.
+	host.seek_target = 14;
+	gdxsv_multi_pov_publish_playback(host);
+	EXPECT_EQ(ReadReply(), 0u);
+	FollowHost(host);
+	EXPECT_EQ(ReadReply(), 40u);
+}
+
+TEST_F(GdxsvReplayInputTest, PausedGuestStopsAtMenusAndPendingSeeks) {
+	PrepareFrameControl();
+	PrepareMultiPovGuest();
+	Send(McsMessage::ForceMsg);
+	GdxsvMultiPovPlayback host;
+	host.paused = true;
+	host.menu_open = true;
+	host.seek_target = 14;
+	FollowHost(host);
+	EXPECT_EQ(ReadReply(), 0u);
+	host.menu_open = false;
+	host.seek_generation = 1;
+	FollowHost(host);
+	EXPECT_EQ(ReadReply(), 0u);
+	// Observing the same generation again must not bypass the queued jump.
+	FollowHost(host);
+	EXPECT_EQ(ReadReply(), 0u);
+}
 
 TEST_F(GdxsvReplayInputTest, ManualActionsDetachAndCancelAutomaticSpeed) {
 	PrepareFrameControl();

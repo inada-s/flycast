@@ -2,6 +2,7 @@
 #include "gdxsv_config.h"
 #include <cstdlib>
 
+#include <algorithm>
 #include <chrono>
 #include <locale>
 #include <regex>
@@ -35,6 +36,10 @@
 #include "oslib/http_client.h"
 #include "ui/gui_util.h"
 #include "ui/IconsFontAwesome6.h"
+#include "ui/imgui_driver.h"
+#include "hw/pvr/Renderer_if.h"
+#include "network/ggpo.h"
+#include "gdxsv_ggpo_hooks.h"
 #include "stdclass.h"
 #include "xxhash.h"
 
@@ -52,6 +57,11 @@ std::atomic<int> gdxsv_frame_period_trim_us{0};
 // whether it is sitting that battle out.
 static uint32_t g_live_guest_generation = 0;
 static bool g_live_guest_idle = false;
+
+namespace {
+// A GGPO session of a gdxsv battle: its frame order differs from upstream's netplay.
+bool RollbackBattle() { return ggpo::active() && gdxsv.Enabled(); }
+}  // namespace
 
 bool gdxsv_enabled() { return gdxsv.Enabled(); }
 
@@ -227,6 +237,22 @@ void gdxsv_emu_next_frame() {
 	if (gdxsv.Enabled()) {
 		gdxsv.HookNextFrame();
 	}
+	// Without threaded rendering, mainui_loop presents after ggpo::nextFrame: a rollback there
+	// delays the picture. Present the frame rendered at its start of render now instead; mainui_loop
+	// then has nothing left to present. Rollback frames render nothing (renderer disabled).
+	if (!config::ThreadedRendering && RollbackBattle() && rend_is_enabled() && imguiDriver != nullptr) {
+		try {
+			imguiDriver->present();
+		} catch (const FlycastException&) {
+			// mainui_loop presents again and recreates the context on failure
+		}
+	}
+}
+
+void gdxsv_emu_frame_end() {
+	// With threaded rendering, a rollback battle paces the emulation thread, after the local input is sent and the
+	// rollback ran; the UI thread renders and presents each queued frame at once.
+	if (config::ThreadedRendering && RollbackBattle()) gdxsv_frame_limiter_wait();
 }
 
 void gdxsv_emu_mainui_loop(bool rendered) {
@@ -242,7 +268,7 @@ void gdxsv_emu_mainui_loop(bool rendered) {
 	}
 	gdxsv_multi_pov_tick();
 
-	if (rendered)
+	if (rendered && !(config::ThreadedRendering && RollbackBattle()))
 		gdxsv_frame_limiter_wait();
 }
 
@@ -431,7 +457,10 @@ void gdxsv_emu_apply_base_settings() {
 
 const char* gdxsv_emu_settings_text_for_preparing_font() { return gdxsv_gui_settings_text_for_preparing_font(); }
 
-uint32_t gdxsv_emu_skip_rendering_addr() {
+uint32_t gdxsv_emu_skip_rendering_addr(bool last_frame) {
+	// Outside the fight (intro, "operation start" banner, after the round is decided) the ground flickers black
+	// after a rollback unless the stage draw ran on the frame before, so the last rollback frame renders in full there.
+	if (last_frame && !gdxsv.InBattlePlay()) return 0;
 	return config::GdxSkipRenderingHack ? settings.gdxsv.skipRenderingBaseAddr : 0;
 }
 
@@ -873,3 +902,5 @@ void gdxsv_headless_exit(int code) {
 	fflush(nullptr);
 	std::_Exit(code);
 }
+
+int gdxsv_video_max_frame_latency() { return std::clamp(config::GdxMaxFrameLatency.get(), 0, 16); }

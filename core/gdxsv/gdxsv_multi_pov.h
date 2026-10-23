@@ -112,7 +112,7 @@ bool gdxsv_multi_pov_host_wait_for_guests(int expected_guests, int timeout_ms);
 // ---- per-frame publication --------------------------------------------
 
 void gdxsv_multi_pov_publish_playback(const GdxsvMultiPovPlayback& state);
-// False until the host has published at least once.
+// False before the first publication or while the host updates the snapshot.
 bool gdxsv_multi_pov_read_playback(GdxsvMultiPovPlayback& out);
 
 void gdxsv_multi_pov_publish_host_window(const GdxsvMultiPovHostWindow& window);

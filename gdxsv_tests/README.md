@@ -4,7 +4,10 @@ End-to-end tests of the gdxsv features: each case runs the emulator with the
 game and checks RAM values, logs or hash logs. One case covers one row of
 [`docs/gdxsv/features.md`](../docs/gdxsv/features.md), whose Test and Control
 columns name the case ids. A control (`<id>c`) runs the case's check on input
-where the feature is absent and passes when the check catches it.
+where the feature is absent and passes when the check catches it. A case has a
+control only when its check is an agreement or comparison (hashes, round
+winners, a golden, a recorded result), which a broken check would pass
+silently.
 
 Python 3 standard library and Lua only (Pillow for image compares). Not run in
 GitHub CI.
@@ -79,6 +82,7 @@ send the public IP, P2P and latency checks to a local fake server and turn UPnP 
 | `cases/*.py` | the cases |
 | `corpus/replays.json` | replays of every format, with sha256 and the winners per round |
 | `rollback/` | rollback suite `run_suite.py` (A1 to D8), see its README |
+| `perf/` | measurement tools, not cases: `seek_bench.py` (replay seek ms per frame, builds alternated per round), `sampler.cpp` + `rip_profile.py` (Windows sampling profile of the seek); usage in each file |
 
 ## Cases
 
@@ -91,6 +95,7 @@ send the public IP, P2P and latency checks to a local fake server and turn UPnP 
 | C2 / C2c | smoke | an `emu.cfg` with gdxsv-1.9.6's sections and keys (`[config]`, `[gdxsv]`): `rend.Resolution`, `aica.Volume` read through Lua, `loginkey`, `LocalPort`, `language` from the log (C2c: sections renamed, none carries) | 2 s |
 | C3 / C3c | smoke | an `emu.cfg` `LocalPort` no UDP socket can bind (70000, -5): the logged `udp_port` is a port in 1-65535 (C3c: 65535 is kept) | 3 s |
 | R2 / R2c | smoke | newest Disc 2 replay plays to the end with the recorded winners | 110-150 s |
+| R5 / R5c | full | cost 300->295 at vblank 4000 of the newest corpus replays: Disc 1 and Disc 2 as recorded (before `log_file_version` 20261023) and a Disc 2 copy at 20261023 with a `cost295` game patch read 295 (R5c: the 20261023 copy without the patch reads 300) | 7 s / 6 s |
 | R1 | full | all corpus replays play to the end with the recorded winners | 470-520 s (4-5 replays in parallel) |
 | W1 / W1c | full | widescreen matte edges and HUD offset per layout and viewport (formula of `WriteWidescreenPatch`) | 10 s |
 | I1 / I1c | full | 4-peer local rollback match at GGPO delay 2 and 4: peer 1's B press reaches the confirmed input buffer 2 vblanks later at delay 4 | 130-260 s |
@@ -148,5 +153,6 @@ the mark`. The fix is postponed: it may move the other patches' timing too.
   so `--recheck` can replay it.
 - Judge by RAM values, logs and hash logs; an image only for what is visual by
   nature, cropped and downscaled into `golden/`.
-- Add a control and name both in `docs/gdxsv/features.md`.
+- Name the case in `docs/gdxsv/features.md`. Add a control only for an
+  agreement or comparison check, and name it there too.
 - A failure a human chose not to fix yet: `known_failure="<why>"` on the case (and its control).

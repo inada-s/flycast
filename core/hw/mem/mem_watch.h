@@ -27,6 +27,7 @@
 #include "rend/TexCache.h"
 #include "gdxsv/gdxsv_emu_hooks.h"
 #include <unordered_map>
+#include <unordered_set> // gdxsv: Watcher::protectRestored
 #include <memory>
 
 namespace memwatch
@@ -43,6 +44,18 @@ class Watcher
 {
 	bool started;
 	PageMap pages;
+	// gdxsv: pages written in HotFaultSaves consecutive saves stay unprotected (hot): at each
+	// save their content is compared with the copy taken at the previous save instead, which
+	// costs less than a write fault and a re-protect per page. Used by the rollback save only.
+	static constexpr u32 HotFaultSaves = 2;
+	static constexpr u32 HotIdleSaves = 60; // unchanged for this many saves: protected again
+	struct HotPage
+	{
+		Page page; // content at the last save
+		u32 idleSaves = 0;
+	};
+	std::unordered_map<u32, HotPage> hot;
+	std::unordered_map<u32, u32> faultStreak; // pages written in the last save: consecutive saves
 
 public:
 	void protect()
@@ -64,10 +77,87 @@ public:
 		static_cast<T&>(*this).unprotectMem(0, 0xffffffff);
 	}
 
+	// gdxsv: a rollback restores single pages
+	void unprotectPage(u32 addr)
+	{
+		static_cast<T&>(*this).unprotectMem(addr, PAGE_SIZE);
+	}
+
+	// gdxsv: after a rollback, protect the restored pages and the pages written since the last
+	// save. Every other page is still protected from its last save.
+	void protectRestored(const std::unordered_set<u32>& restored)
+	{
+		protect();
+		for (u32 addr : restored)
+			if (hot.count(addr) == 0)
+				static_cast<T&>(*this).protectMem(addr, PAGE_SIZE);
+		pages.clear();
+		for (auto& pair : hot)
+			memcpy(&pair.second.page.data[0], static_cast<T&>(*this).getMemPage(pair.first), PAGE_SIZE);
+	}
+
+	// gdxsv: before a rollback restores older pages, undo the writes to hot pages since the last save
+	void restoreHot()
+	{
+		for (const auto& pair : hot)
+			memcpy(static_cast<T&>(*this).getMemPage(pair.first), &pair.second.page.data[0], PAGE_SIZE);
+	}
+
+	// gdxsv: protect() then getPages(), with hot pages. delta gets the content at the previous
+	// save of each page changed since.
+	void save(PageMap& delta)
+	{
+		T& t = static_cast<T&>(*this);
+		if (!started)
+		{
+			protect();
+			getPages(delta);
+			return;
+		}
+		delta = PageMap();
+		for (auto it = hot.begin(); it != hot.end();)
+		{
+			void *mem = t.getMemPage(it->first);
+			HotPage& hp = it->second;
+			if (memcmp(mem, &hp.page.data[0], PAGE_SIZE) != 0)
+			{
+				std::swap(delta[it->first].data, hp.page.data);
+				memcpy(&hp.page.data[0], mem, PAGE_SIZE);
+				hp.idleSaves = 0;
+				++it;
+			}
+			else if (++hp.idleSaves >= HotIdleSaves)
+			{
+				t.protectMem(it->first, PAGE_SIZE);
+				it = hot.erase(it);
+			}
+			else
+				++it;
+		}
+		std::unordered_map<u32, u32> streaks;
+		for (auto& pair : pages)
+		{
+			auto s = faultStreak.find(pair.first);
+			u32 n = (s == faultStreak.end() ? 0 : s->second) + 1;
+			if (n >= HotFaultSaves)
+				memcpy(&hot[pair.first].page.data[0], t.getMemPage(pair.first), PAGE_SIZE);
+			else
+			{
+				streaks[pair.first] = n;
+				t.protectMem(pair.first, PAGE_SIZE);
+			}
+			delta[pair.first] = std::move(pair.second);
+		}
+		faultStreak = std::move(streaks);
+		pages.clear();
+	}
+
 	void reset()
 	{
 		started = false;
 		pages.clear();
+		hot.clear(); // gdxsv
+		faultStreak.clear(); // gdxsv
 	}
 
 	bool hit(void *addr)
@@ -76,6 +166,12 @@ public:
 		if (offset == (u32)-1)
 			return false;
 		offset &= ~PAGE_MASK;
+		// gdxsv: a hot page protected again by the code or texture cache: its copy is already taken
+		if (hot.count(offset) != 0)
+		{
+			static_cast<T&>(*this).unprotectMem(offset, PAGE_SIZE);
+			return true;
+		}
 	    auto rv = pages.try_emplace(offset);
 	    if (!rv.second)
 	    {

@@ -1027,6 +1027,7 @@ void Emulator::start()
 						runInternal();
 						gdxsv_emu_next_frame();
 						if (ggpo::active()) ggpo::nextFrame();
+						gdxsv_emu_frame_end();
 					}
 					TermAudio();
 				} catch (...) {

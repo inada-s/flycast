@@ -31,6 +31,7 @@ class Gdxsv {
 
 	bool Enabled() const;
 	bool InGame() const;
+	bool InBattlePlay() const;
 	bool IsOnline() const;
 	bool IsSaveStateAllowed() const;
 	bool IsReplaying() const;
@@ -39,6 +40,7 @@ class Gdxsv {
 	const char* NetModeString() const;
 	void Reset();
 	bool HookOpenMenu();
+	bool HookFastForward();
 	void HookVBlank();
 	void HookMainUiLoop();
 	void HookEndOfFrame();

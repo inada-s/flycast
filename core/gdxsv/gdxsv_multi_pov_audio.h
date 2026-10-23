@@ -13,7 +13,8 @@ void gdxsv_multi_pov_audio_start();
 
 // Called on the emulation thread after each run, before replay controls can
 // change its position. Silent speed-burst frames advance the output delay too.
-void gdxsv_multi_pov_audio_frame(int input, uint32_t round, uint32_t seek, int speed, bool silent, bool menu = false);
+// Paused steps keep the audio clocks aligned across changes of replay input.
+void gdxsv_multi_pov_audio_frame(int input, uint32_t round, uint32_t seek, int speed, bool silent, bool menu = false, bool paused = false);
 void gdxsv_multi_pov_audio_reset();
 
 // Briefing input requests are retried without stopping emulation or audio.

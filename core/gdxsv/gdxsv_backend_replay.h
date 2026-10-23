@@ -1,4 +1,5 @@
 #pragma once
+#include <atomic>
 #include <chrono>
 
 #include "gdxsv_spectate_sync.h"
@@ -30,6 +31,7 @@ class GdxsvBackendReplay {
 	void OnEndOfFrame();
 	void OnNextFrame();
 	bool OnOpenMenu();
+	void OnFastForward();
 	void DisplayOSD();
 	bool Seeking() const { return seeking_; }
 
@@ -56,6 +58,7 @@ class GdxsvBackendReplay {
    private:
 	using UiState = GdxsvReplayUiState;
 	static constexpr int ReplaySeekFrames = 60;
+	static constexpr int ReplayMaxSpeed = 2;
 	void PublishUiState();
 	void ProcessUiCommands();
 	void UpdateReplayFlow();
@@ -137,6 +140,7 @@ class GdxsvBackendReplay {
 			ResumePlayback,
 			ExitReplay,
 			TakeoverInput,
+			ToggleFastForward,
 		};
 
 		ReplayCtrlCommand() = default;
@@ -229,6 +233,9 @@ class GdxsvBackendReplay {
 	bool save_converted_log_ = false;
 	uint64_t timeline_revision_ = 0;
 	int audio_fade_frames_ = 0;
+
+	// Mapped buttons can arrive from joystick polling on the emulation thread.
+	std::atomic<bool> fast_forward_pending_{false};
 
 	// UI-thread owned presentation/input state, reset before playback starts.
 	bool lbs_first_skip_ = false;
@@ -336,6 +343,8 @@ class GdxsvBackendReplay {
 	// guests follow. Guest: the last seek generation applied.
 	int multi_pov_published_frame_ = -1;
 	uint32_t multi_pov_seek_generation_ = 0;
+	// Guest: paused input may advance only to the host snapshot for this run.
+	int64_t multi_pov_step_target_ = -1;
 	// Host: the replay is moving the position itself (round change, briefing
 	// skip), which every screen does on its own, so it is not a seek.
 	bool multi_pov_system_move_ = false;

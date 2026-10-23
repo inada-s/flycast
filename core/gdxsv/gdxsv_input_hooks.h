@@ -5,6 +5,9 @@
 
 // Input hooks for core/input and core/sdl.
 
+// True when replay consumed the mapped Fast-forward press.
+bool gdxsv_input_toggle_fast_forward();
+
 // Reads the state of every open SDL joystick and feeds the changes to its
 // gamepad device, without the SDL event queue (option JoystickPolling). Safe
 // to call from the emulator thread.

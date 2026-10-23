@@ -114,7 +114,7 @@ bool GamepadDevice::handleButtonInput(int port, DreamcastKey key, bool pressed)
 				gui_togglePause();
 			break;
 		case EMU_BTN_FFORWARD:
-			if (pressed && !gui_is_open() && !gdxsv_is_ingame())
+			if (pressed && !gui_is_open() && !gdxsv_is_ingame() && !gdxsv_input_toggle_fast_forward())
 				settings.input.fastForwardMode = !settings.input.fastForwardMode && !settings.network.online && !settings.naomi.multiboard;
 			break;
 		case EMU_BTN_LOADSTATE:
