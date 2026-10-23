@@ -16,7 +16,6 @@
 
 // When the next frame is due.
 static std::chrono::time_point<std::chrono::steady_clock> nextFrame;
-static bool currentDupeFrames;
 
 static int64_t gdxsv_frame_period_us() {
 	const auto mode = config::FixedFrequency.get();
@@ -43,20 +42,12 @@ static int64_t gdxsv_trimmed_frame_period_us() {
 }
 
 void gdxsv_emu_mainui_loop_start() {
-	currentDupeFrames = config::DupeFrames;
 	gdxsv_set_timer_resolution();
 	nextFrame = {};
 }
 
 void gdxsv_emu_mainui_loop_end() {
 	gdxsv_reset_timer_resolution();
-}
-
-bool gdxsv_emu_mainui_reinit_needed() {
-	if (currentDupeFrames == config::DupeFrames)
-		return false;
-	currentDupeFrames = config::DupeFrames;
-	return true;
 }
 
 void gdxsv_frame_limiter_wait() {

@@ -53,9 +53,6 @@ void gdxsv_emu_mainui_loop_start();
 void gdxsv_emu_mainui_loop(bool rendered);
 void gdxsv_emu_mainui_loop_end();
 
-// True when a setting changed that needs the graphics context recreated.
-bool gdxsv_emu_mainui_reinit_needed();
-
 void gdxsv_emu_rpc();
 
 void gdxsv_emu_savestate(int slot);

@@ -169,10 +169,6 @@ msgstr ""
 "防止畫面撕裂，但係會增加輸入延遲。\n"
 "如果唔覺有撕裂問題，建議停用。"
 
-msgid ""
-"Duplicate frames on high refresh rate monitors (120 Hz and higher)"
-msgstr "會重複顯示同一個畫面兩次。120Hz螢幕適用。"
-
 msgid "Network Settings"
 msgstr "網絡設定"
 

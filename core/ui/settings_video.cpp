@@ -20,6 +20,7 @@
 #include "gui.h"
 #include "wsi/context.h"
 #include "gdxsv/gdxsv_emu_hooks.h"
+#include "gdxsv/gdxsv_video_hooks.h"
 
 enum RenderAPI {
 	OpenGL,
@@ -213,7 +214,7 @@ void gui_settings_video()
 			OptionCheckbox(T("Frame Pacing (Experimental)"), config::FramePacing,
 					T("Provide the GPU with presentation timing for each frame to replicate original frame pacing."));
 #else
-	    	if (isVulkan(config::RendererType))
+	    	if (isVulkan(config::RendererType) && gdxsv_video_dupe_frames)
 	    		OptionCheckbox(T("Duplicate frames"), config::DupeFrames, T("Duplicate frames on high refresh rate monitors (120 Hz and higher)"));
 #endif
     	}

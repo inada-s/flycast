@@ -119,7 +119,7 @@ void mainui_loop(bool forceStart)
 				forceReinit = true;
 			}
 		}
-		if (imguiDriver == nullptr || gdxsv_emu_mainui_reinit_needed())
+		if (imguiDriver == nullptr)
 			forceReinit = true;
 
 		if (config::RendererType != currentRenderer || forceReinit)

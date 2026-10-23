@@ -251,8 +251,7 @@ void DX11Context::Present()
 		hr = DXGI_ERROR_DEVICE_RESET;
 	}
 	else if (swapOnVSync) {
-		// gdxsv: only duplicate frames on high refresh rate monitors when asked to
-		float vsyncsPerFrame = config::DupeFrames && settings.display.refreshRate > 60.f ? settings.display.refreshRate / 60.f : 1.f;
+		float vsyncsPerFrame = gdxsv_video_dupe_frames && settings.display.refreshRate > 60.f ? settings.display.refreshRate / 60.f : 1.f;
 		int swapInterval = std::clamp((int)(vsyncsPerFrame * gameSwapInterval), 1, 4);
 		hr = swapchain->Present(swapInterval, 0);
 	}

@@ -62,7 +62,7 @@ int64_t steady_now_ns() {
 
 void update_active() {
 	gdxsv_video_repeat_active = repeat.present_again != nullptr && repeat.composed && config::GdxRepeatPresent &&
-								!repeat.hidden && config::VSync && !config::DupeFrames && !settings.input.fastForwardMode;
+								!repeat.hidden && config::VSync && !settings.input.fastForwardMode;
 }
 
 bool repeat_now(int64_t until_next_us) {

@@ -788,7 +788,7 @@ void VulkanContext::CreateSwapChain()
 				swapchainPresentMode = vk::PresentModeKHR::eMailbox;
 			}
 #ifndef SWAPPY
-			if (swapOnVSync && config::DupeFrames && settings.display.refreshRate > 60.f)
+			if (swapOnVSync && gdxsv_video_dupe_frames && settings.display.refreshRate > 60.f)
 				swapInterval = settings.display.refreshRate / 60.f;
 			else
 #endif
@@ -1067,7 +1067,7 @@ void VulkanContext::Present() noexcept
 			currentSemaphore = (currentSemaphore + 1) % renderCompleteSemaphores.size();
 #ifndef SWAPPY
 			if (lastFrameView && IsValid() && !gui_is_open()
-					&& swapOnVSync && config::DupeFrames)
+					&& swapOnVSync && gdxsv_video_dupe_frames)
 			{
 				const int interval = swapInterval * gameSwapInterval;
 				for (int i = 1; i < interval; i++)

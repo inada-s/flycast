@@ -23,6 +23,7 @@
 #include "ui/gui.h"
 #include "sdl/sdl.h"
 #include "cfg/option.h"
+#include "gdxsv/gdxsv_video_hooks.h"
 
 SDLGLGraphicsContext::SDLGLGraphicsContext(void *window, void *display)
 	: GLGraphicsContext(window, display)
@@ -90,8 +91,7 @@ bool SDLGLGraphicsContext::init()
 	int swapInterval = 0;
 	if (swapOnVSync)
 	{
-		// gdxsv: only duplicate frames on high refresh rate monitors when asked to
-		if (config::DupeFrames && settings.display.refreshRate > 60.f)
+		if (gdxsv_video_dupe_frames && settings.display.refreshRate > 60.f)
 			swapInterval = settings.display.refreshRate / 60.f;
 		else
 			swapInterval = 1;
@@ -144,8 +144,7 @@ void SDLGLGraphicsContext::changeGLSwapInterval()
 	int swapInterval = 0;
 	if (swapOnVSync)
 	{
-		// gdxsv: only duplicate frames on high refresh rate monitors when asked to
-		if (config::DupeFrames && settings.display.refreshRate > 60.f)
+		if (gdxsv_video_dupe_frames && settings.display.refreshRate > 60.f)
 			swapInterval = settings.display.refreshRate / 60.f * gameSwapInterval;
 		else
 			swapInterval = gameSwapInterval;

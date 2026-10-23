@@ -53,11 +53,11 @@ Hooks into `core/gdxsv` (`gdxsv_emu_*` in `gdxsv_emu_hooks.h`) unless stated.
 | Determinism | `core/hw/sh4/interpr/sh4_fpu.cpp`, `core/rec-ARM/rec_arm.cpp`, `core/rec-ARM64/rec_arm64.cpp`, `core/rec-x64/rec_x64.cpp`, `core/hw/sh4/dyna/shil_canonical.h` | `fmac` without fused multiply-add (`GDXSV_FP_COMPAT`) |
 | Dynarec | `core/rec-x64/rec_x64.cpp`, `core/hw/sh4/dyna/blockmanager.cpp`, `core/hw/sh4/dyna/decoder.cpp`, `core/hw/arm7/arm7_rec_x64.cpp` | x64 block linking (all games; a linked exit is patched to a direct jump); output-only game functions skipped on seek frames (hook call); slow idle loop hack; ARM7 `cpuid` probed once |
 | Memory | `core/windows/win_vmem.cpp`, `core/linux/posix_vmem.cpp` | Windows: fixed RAM base (host address low 28 bits = guest address); Linux: one shared-memory name per process (four-screen replay) |
-| Frame pacing | `core/ui/mainui.cpp` (hooks into `core/gdxsv/gdxsv_frame_limiter.cpp`), `core/cfg/option.cpp/.h` | `FixedFrequency` limiter with precise sleep and a replay trim; context recreated when `DupeFrames` changes; `LimitFPS` an option, not a constant |
+| Frame pacing | `core/ui/mainui.cpp` (hooks into `core/gdxsv/gdxsv_frame_limiter.cpp`), `core/cfg/option.cpp/.h` | `FixedFrequency` limiter with precise sleep and a replay trim; `LimitFPS` an option, not a constant |
 | Audio | `core/audio/audiostream.cpp/.h` (hooks into `core/gdxsv/gdxsv_audio.cpp`), `audiobackend_coreaudio.cpp`, `audiobackend_directsound.cpp`, `audiobackend_sdl2.cpp`, `core/hw/aica/sgc_if.cpp` | rate control for replay and spectating (backends report their queue level); per-instance volume (four-screen replay) and fade; a muted replay seek or rollback rerun steps the channels without mixing |
 | Input | `core/input/gamepad_device.cpp/.h`, `core/sdl/sdl.cpp/.h` | joystick polling from the emulation thread; XInput / DirectInput switches; opposite directions cancel for the game; mapped Fast-forward uses gdxsv playback speed during replays |
 | Crash reports | `core/oslib/oslib.cpp/.h` | own crash list file; gdxsv log, tags and `emu.cfg` attached to a report; four-screen replay guests do not upload |
-| Window | `core/sdl/sdl.cpp`, `core/wsi/sdl.cpp`, `core/rend/dx11/dx11context.cpp`, `core/wsi/switcher.cpp`, `core/linux-dist/main.cpp` | headless (no graphics API), borderless, hidden rendering guests, window position for several instances, four-screen grid; frames duplicated on a monitor over 60 Hz only with `DupeFrames` (OpenGL, DirectX 11); DirectX 11 window presents the last frame again at every vsync (`RepeatPresent`) |
+| Window | `core/sdl/sdl.cpp`, `core/wsi/sdl.cpp`, `core/rend/dx11/dx11context.cpp`, `core/rend/vulkan/vulkan_context.cpp`, `core/ui/settings_video.cpp`, `core/wsi/switcher.cpp`, `core/linux-dist/main.cpp` | headless (no graphics API), borderless, hidden rendering guests, window position for several instances, four-screen grid; frames never duplicated for a monitor over 60 Hz (`DupeFrames` ignored, its checkbox hidden); DirectX 11 window presents the last frame again at every vsync (`RepeatPresent`) |
 | Video routing | `core/wsi/switcher.cpp`, `core/rend/vulkan/vulkan_context.cpp`, `core/rend/gles/gldraw.cpp`, `core/rend/dx11/dx11_renderer.cpp`, `core/windows/winmain.cpp`, `shell/apple/emulator-osx/emulator-osx/osx-main.mm` | Spout / Syphon sender names; the unified replay scales the final host image before UI drawing, receives guest video in gdxsv, and releases receivers before graphics shutdown |
 | Config | `core/cfg/cfg.cpp` | a new `emu.cfg` gets the gdxsv defaults |
 | UI | `core/ui/gui.cpp/.h`, `core/ui/settings*.cpp/.h`, `core/ui/gui_font.cpp`, `core/oslib/i18n.cpp` | gdxsv settings page, Live & Replays menu, update popup, gdxsv translations, Japanese fonts always loaded |
@@ -260,7 +260,7 @@ every spot is marked and the list is current (`--write` updates it).
 | `core/rend/dx11/dx11context.cpp` |  | include `gdxsv/gdxsv_video_hooks.h` |
 | `core/rend/dx11/dx11context.cpp` | `DX11Context::init` | `gdxsv_video_max_frame_latency`: `SetMaximumFrameLatency` (`gdxsv:MaxFrameLatency`) |
 | `core/rend/dx11/dx11context.cpp` | `DX11Context::init`, `DX11Context::term` | `gdxsv_video_dx11_attach`: the function presenting the last frame again, for `gdxsv:RepeatPresent` |
-| `core/rend/dx11/dx11context.cpp` | `DX11Context::Present` | only duplicate frames on high refresh rate monitors when asked to |
+| `core/rend/dx11/dx11context.cpp` | `DX11Context::Present` | `gdxsv_video_dupe_frames`: no frame duplication for a high refresh rate |
 | `core/rend/dx11/dx11context.cpp` | `DX11Context::Present` | `gdxsv_video_dx11_presented`: whether the compositor composes the window |
 | `core/rend/dx11/dx11_renderer.cpp` |  | include `gdxsv/gdxsv_video_hooks.h` |
 | `core/rend/dx11/dx11_renderer.cpp` | `DX11Renderer::displayFramebuffer` | `gdxsv_video_grid_active`, `gdxsv_video_viewport` |
@@ -273,6 +273,8 @@ every spot is marked and the list is current (`--write` updates it).
 | `core/rend/norend/norend.cpp` |  | Render or RenderFramebuffer since the last Present |
 | `core/rend/vulkan/vulkan_context.cpp` |  | include `gdxsv/gdxsv_video_hooks.h` |
 | `core/rend/vulkan/vulkan_context.cpp` | `VulkanContext::InitDevice` | `gdxsv_video_vulkan_extensions` |
+| `core/rend/vulkan/vulkan_context.cpp` | `VulkanContext::CreateSwapChain` | `gdxsv_video_dupe_frames`: no frame duplication for a high refresh rate |
+| `core/rend/vulkan/vulkan_context.cpp` | `VulkanContext::Present` | `gdxsv_video_dupe_frames`: no duplicate presents |
 | `core/rend/vulkan/vulkan_context.cpp` | `VulkanContext::DrawFrame` | scale the final game image into the host's quadrant, before UI. |
 | `core/sdl/sdl.cpp` |  | include `gdxsv/gdxsv_emu_hooks.h` |
 | `core/sdl/sdl.cpp` | `isWindowFullscreen` | native window controls can change SDL's flags directly |
@@ -321,7 +323,6 @@ every spot is marked and the list is current (`--write` updates it).
 | `core/ui/mainui.cpp` | `mainui_rend_frame` | `gui_loadDeferredState` after the frame |
 | `core/ui/mainui.cpp` | `mainui_loop` | `gdxsv_emu_mainui_loop_start` |
 | `core/ui/mainui.cpp` | `mainui_loop` | gdxsv_emu_mainui_loop gets whether a frame was rendered |
-| `core/ui/mainui.cpp` | `mainui_loop` | `gdxsv_emu_mainui_reinit_needed` |
 | `core/ui/mainui.cpp` | `mainui_loop` | `gdxsv_emu_mainui_loop` |
 | `core/ui/mainui.cpp` | `mainui_loop` | `gdxsv_emu_mainui_loop_end` |
 | `core/ui/settings.cpp` |  | include `gdxsv/gdxsv_emu_hooks.h` |
@@ -332,7 +333,9 @@ every spot is marked and the list is current (`--write` updates it).
 | `core/ui/settings_general.cpp` | `manageSinglePath` | not static, the gdxsv replay folder setting uses it |
 | `core/ui/settings_general.cpp` | `gui_settings_general` | `gdxsv_emu_settings_replay_folder` |
 | `core/ui/settings_video.cpp` |  | include `gdxsv/gdxsv_emu_hooks.h` |
+| `core/ui/settings_video.cpp` |  | include `gdxsv/gdxsv_video_hooks.h` |
 | `core/ui/settings_video.cpp` | `gui_settings_video` | `gdxsv_emu_settings_video` |
+| `core/ui/settings_video.cpp` | `gui_settings_video` | `gdxsv_video_dupe_frames`: Duplicate frames hidden |
 | `core/windows/win_vmem.cpp` | `LPVOID` | fixed base address for deterministic memory layout (useful for Cheat Engine). |
 | `core/windows/win_vmem.cpp` | `init` | place base_alloc so that ram_base (base_alloc + sizeof(Sh4RCB)) lands on a 0x10000000 boundary. |
 | `core/windows/winmain.cpp` |  | breakpad include path of the MSVC (clang-cl) build |
@@ -341,8 +344,9 @@ every spot is marked and the list is current (`--write` updates it).
 | `core/windows/winmain.cpp` | `getThreadName` | include `gdxsv/gdxsv_video_hooks.h` |
 | `core/windows/winmain.cpp` | `os_VideoRoutingPublishFrameTexture` | `gdxsv_video_sender_name` |
 | `core/windows/winmain.cpp` | `os_VideoRoutingPublishFrameTexture` | `gdxsv_video_sender_name` |
-| `core/wsi/sdl.cpp` | `SDLGLGraphicsContext::init` | only duplicate frames on high refresh rate monitors when asked to |
-| `core/wsi/sdl.cpp` | `SDLGLGraphicsContext::changeGLSwapInterval` | only duplicate frames on high refresh rate monitors when asked to |
+| `core/wsi/sdl.cpp` |  | include `gdxsv/gdxsv_video_hooks.h` |
+| `core/wsi/sdl.cpp` | `SDLGLGraphicsContext::init` | `gdxsv_video_dupe_frames`: no frame duplication for a high refresh rate |
+| `core/wsi/sdl.cpp` | `SDLGLGraphicsContext::changeGLSwapInterval` | `gdxsv_video_dupe_frames`: no frame duplication for a high refresh rate |
 | `core/wsi/switcher.cpp` |  | include `gdxsv/gdxsv_null_imgui_driver.h` |
 | `core/wsi/switcher.cpp` | `initRenderApi` | `gdxsv_headless`, `GdxsvNullImGuiDriver` |
 | `core/wsi/switcher.cpp` | `termRenderApi` | `gdxsv_headless`, `gdxsv_video_term` |

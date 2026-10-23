@@ -10,6 +10,11 @@ void gdxsv_video_term();
 // DXGI frame latency for the DX11 device (gdxsv:MaxFrameLatency); 0 keeps the driver default.
 int gdxsv_video_max_frame_latency();
 
+// gdxsv never duplicates frames for a high refresh rate display, neither by the swap interval nor by extra presents,
+// whatever config::DupeFrames says: a refresh rate read at startup can be another display's, and the repeat present
+// (gdxsv:RepeatPresent) shows each frame for the same number of vblanks instead.
+constexpr bool gdxsv_video_dupe_frames = false;
+
 // Repeat present (gdxsv_repeat_present.h). Render thread only.
 #ifdef _WIN32
 struct IDXGISwapChain;
