@@ -295,6 +295,11 @@ void gdxsv_gui_settings_tab()
 
 		OptionCheckbox(T("Duplicate frames"), config::DupeFrames,
 			T("Duplicate frames on high refresh rate monitors (120 Hz and higher)"));
+#ifdef _WIN32
+		OptionCheckbox(T("Smooth windowed display"), config::GdxRepeatPresent,
+			T("DirectX 11 window: show the last frame again at every monitor refresh until the next one is ready. "
+			  "Smoother on high refresh rate monitors; the display is a few milliseconds later"));
+#endif
 	}
 	ImGui::Unindent();
 

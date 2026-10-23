@@ -286,6 +286,7 @@ target_sources(${PROJECT_NAME} PRIVATE
 		core/gdxsv/gdxsv_emu_hooks.h
 		core/gdxsv/gdxsv_frame_limiter.cpp
 		core/gdxsv/gdxsv_frame_limiter.h
+		core/gdxsv/gdxsv_repeat_present.h
 		core/gdxsv/gdxsv_perf_trace.cpp
 		core/gdxsv/gdxsv_perf_trace.h
 		core/gdxsv/gdxsv_press_sweep.cpp
@@ -348,6 +349,7 @@ if(WIN32)
 	if(NOT WINDOWS_STORE)
 		target_sources(${PROJECT_NAME} PRIVATE core/gdxsv/gdxsv_https_latency_win.cpp)
 	endif()
+	target_sources(${PROJECT_NAME} PRIVATE core/gdxsv/gdxsv_repeat_present_win.cpp)
 endif()
 if(UNIX AND NOT APPLE AND NOT ANDROID AND NOT NINTENDO_SWITCH)
 	target_sources(${PROJECT_NAME} PRIVATE core/gdxsv/gdxsv_https_latency_curl.cpp)

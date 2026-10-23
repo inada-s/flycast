@@ -189,6 +189,14 @@ bool DX11Context::init(bool keepCurrentWindow)
 		return false;
 	}
 
+	gdxsv_video_dx11_attach([] {
+		// gdxsv: present the last frame again
+		DX11Context* context = DX11Context::Instance();
+		if (ImGui::GetDrawData() == nullptr)
+			return;
+		context->EndImGuiFrame();
+		context->Present();
+	});
 #ifndef TARGET_UWP
 	// Prevent DXGI from monitoring our message queue for ALT+Enter
 	dxgiFactory->MakeWindowAssociation((HWND)window, DXGI_MWA_NO_WINDOW_CHANGES);
@@ -217,6 +225,7 @@ void DX11Context::term()
 	overlay.term();
 	samplers.term();
 	shaders.term();
+	gdxsv_video_dx11_attach(nullptr);
 	imguiDriver.reset();
 	renderTargetView.reset();
 	swapchain1.reset();
@@ -250,6 +259,8 @@ void DX11Context::Present()
 	else {
 		hr = swapchain->Present(0, allowTearing ? DXGI_PRESENT_ALLOW_TEARING : DXGI_PRESENT_DO_NOT_WAIT);
 	}
+	if (SUCCEEDED(hr))
+		gdxsv_video_dx11_presented(swapchain);
 	if (hr == DXGI_ERROR_DEVICE_REMOVED || hr == DXGI_ERROR_DEVICE_RESET) {
 		WARN_LOG(RENDERER, "Present failed: device removed/reset");
 		handleDeviceLost();

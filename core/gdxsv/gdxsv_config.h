@@ -21,6 +21,7 @@ extern Option<std::string, false> GdxReplayPath;  // empty: data/replays
 extern Option<bool> GdxSkipRenderingHack;
 extern Option<bool> GdxSlowIdleLoopHack;
 extern Option<int> GdxMaxFrameLatency;  // DX11: frames DXGI may queue for display; 0: driver default
+extern Option<bool> GdxRepeatPresent;   // DX11 window: present the last frame again at every vsync (gdxsv_repeat_present.h)
 extern Option<bool> GdxReplayHideName;
 extern Option<bool> GdxReplayShowAllyHP;
 extern Option<bool> GdxReplayKeyDisplay;

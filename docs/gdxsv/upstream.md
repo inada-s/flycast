@@ -48,7 +48,7 @@ Hooks into `core/gdxsv` (`gdxsv_emu_*` in `gdxsv_emu_hooks.h`) unless stated.
 |---|---|---|
 | Start, reset, save states | `core/nullDC.cpp`, `core/emulator.cpp/.h`, `core/serialize.cpp` | gdxsv init, start and reset hooks; restore hook after a state load; find content in the working directory; a load-state hotkey without threaded rendering loads after the frame (`core/ui/gui.cpp/.h`, `core/ui/mainui.cpp`) |
 | Game RPC | `core/hw/holly/sb_mem.cpp` | the payload's `gdx_rpc` call reaches the host through area 0 |
-| Frame hooks | `core/hw/pvr/Renderer_if.cpp/.h`, `core/hw/pvr/ta_ctx.cpp`, `core/rend/norend/norend.cpp` | vblank and end-of-frame hooks; headless skips rendering and presents once per frame; fast-forward counts in frame skip |
+| Frame hooks | `core/hw/pvr/Renderer_if.cpp/.h`, `core/hw/pvr/ta_ctx.cpp`, `core/rend/norend/norend.cpp` | vblank and end-of-frame hooks; headless skips rendering and presents once per frame; fast-forward counts in frame skip; the render thread repeats the last frame while it waits for the next one |
 | Rollback | `core/network/ggpo.cpp/.h` (session start and stats in `core/gdxsv/gdxsv_ggpo.cpp`, hash log in `core/gdxsv/gdxsv_ggpo_hooks.cpp`), `core/hw/pvr/elan.cpp`, `core/hw/mem/mem_watch.h`, `core/hw/maple/maple_cfg.h` | gdxsv rollback session on top of upstream GGPO; flag bits sent beside the pad input; state hash log; test logs; memory watch shared with gdxsv; a fault on an already-saved page no longer loops |
 | Determinism | `core/hw/sh4/interpr/sh4_fpu.cpp`, `core/rec-ARM/rec_arm.cpp`, `core/rec-ARM64/rec_arm64.cpp`, `core/rec-x64/rec_x64.cpp`, `core/hw/sh4/dyna/shil_canonical.h` | `fmac` without fused multiply-add (`GDXSV_FP_COMPAT`) |
 | Dynarec | `core/rec-x64/rec_x64.cpp`, `core/hw/sh4/dyna/blockmanager.cpp`, `core/hw/sh4/dyna/decoder.cpp`, `core/hw/arm7/arm7_rec_x64.cpp` | x64 block linking (all games; a linked exit is patched to a direct jump); output-only game functions skipped on seek frames (hook call); slow idle loop hack; ARM7 `cpuid` probed once |
@@ -57,7 +57,7 @@ Hooks into `core/gdxsv` (`gdxsv_emu_*` in `gdxsv_emu_hooks.h`) unless stated.
 | Audio | `core/audio/audiostream.cpp/.h` (hooks into `core/gdxsv/gdxsv_audio.cpp`), `audiobackend_coreaudio.cpp`, `audiobackend_directsound.cpp`, `audiobackend_sdl2.cpp`, `core/hw/aica/sgc_if.cpp` | rate control for replay and spectating (backends report their queue level); per-instance volume (four-screen replay) and fade; a muted replay seek or rollback rerun steps the channels without mixing |
 | Input | `core/input/gamepad_device.cpp/.h`, `core/sdl/sdl.cpp/.h` | joystick polling from the emulation thread; XInput / DirectInput switches; opposite directions cancel for the game; mapped Fast-forward uses gdxsv playback speed during replays |
 | Crash reports | `core/oslib/oslib.cpp/.h` | own crash list file; gdxsv log, tags and `emu.cfg` attached to a report; four-screen replay guests do not upload |
-| Window | `core/sdl/sdl.cpp`, `core/wsi/sdl.cpp`, `core/rend/dx11/dx11context.cpp`, `core/wsi/switcher.cpp`, `core/linux-dist/main.cpp` | headless (no graphics API), borderless, hidden rendering guests, window position for several instances, four-screen grid; frames duplicated on a monitor over 60 Hz only with `DupeFrames` (OpenGL, DirectX 11) |
+| Window | `core/sdl/sdl.cpp`, `core/wsi/sdl.cpp`, `core/rend/dx11/dx11context.cpp`, `core/wsi/switcher.cpp`, `core/linux-dist/main.cpp` | headless (no graphics API), borderless, hidden rendering guests, window position for several instances, four-screen grid; frames duplicated on a monitor over 60 Hz only with `DupeFrames` (OpenGL, DirectX 11); DirectX 11 window presents the last frame again at every vsync (`RepeatPresent`) |
 | Video routing | `core/wsi/switcher.cpp`, `core/rend/vulkan/vulkan_context.cpp`, `core/rend/gles/gldraw.cpp`, `core/rend/dx11/dx11_renderer.cpp`, `core/windows/winmain.cpp`, `shell/apple/emulator-osx/emulator-osx/osx-main.mm` | Spout / Syphon sender names; the unified replay scales the final host image before UI drawing, receives guest video in gdxsv, and releases receivers before graphics shutdown |
 | Config | `core/cfg/cfg.cpp` | a new `emu.cfg` gets the gdxsv defaults |
 | UI | `core/ui/gui.cpp/.h`, `core/ui/settings*.cpp/.h`, `core/ui/gui_font.cpp`, `core/oslib/i18n.cpp` | gdxsv settings page, Live & Replays menu, update popup, gdxsv translations, Japanese fonts always loaded |
@@ -137,7 +137,9 @@ every spot is marked and the list is current (`--write` updates it).
 | `core/hw/mem/mem_watch.h` | `Watcher::protectRestored` | protect the restored and the dirty pages after `load_game_state`, not the hot pages; take the hot pages' copies again; include `<unordered_set>` |
 | `core/hw/mem/mem_watch.h` | `Watcher` (`hot`, `faultStreak`), `Watcher::save`, `Watcher::restoreHot`, `Watcher::hit`, `Watcher::reset` | hot pages for the rollback save: a page written in 2 consecutive saves stays unprotected and is compared with its copy at each save instead of faulting; protected again after 60 unchanged saves |
 | `core/hw/pvr/Renderer_if.cpp` |  | include `gdxsv/gdxsv_emu_hooks.h` |
+| `core/hw/pvr/Renderer_if.cpp` |  | include `gdxsv/gdxsv_video_hooks.h` |
 | `core/hw/pvr/Renderer_if.cpp` | `rend_create_renderer` | `gdxsv_headless` |
+| `core/hw/pvr/Renderer_if.cpp` | `rend_single_frame` | `gdxsv_video_repeat_present_waiting`: the render thread presents the last frame again while it waits for the next one |
 | `core/hw/pvr/Renderer_if.cpp` | `rend_start_render` | `gdxsv_emu_end_frame` |
 | `core/hw/pvr/Renderer_if.cpp` | `rend_vblank` | `gdxsv_emu_vblank` |
 | `core/hw/pvr/Renderer_if.h` |  | caches reloaded after a rollback or replay session |
@@ -257,7 +259,9 @@ every spot is marked and the list is current (`--write` updates it).
 | `core/rend/CustomTexture.cpp` | `CustomTexture::loadCustomTextureAsync` | `gdxsv_custom_texture_on_queue`: gdxsv copies the cells from VRAM when the load is queued and keeps them for the loader thread |
 | `core/rend/dx11/dx11context.cpp` |  | include `gdxsv/gdxsv_video_hooks.h` |
 | `core/rend/dx11/dx11context.cpp` | `DX11Context::init` | `gdxsv_video_max_frame_latency`: `SetMaximumFrameLatency` (`gdxsv:MaxFrameLatency`) |
+| `core/rend/dx11/dx11context.cpp` | `DX11Context::init`, `DX11Context::term` | `gdxsv_video_dx11_attach`: the function presenting the last frame again, for `gdxsv:RepeatPresent` |
 | `core/rend/dx11/dx11context.cpp` | `DX11Context::Present` | only duplicate frames on high refresh rate monitors when asked to |
+| `core/rend/dx11/dx11context.cpp` | `DX11Context::Present` | `gdxsv_video_dx11_presented`: whether the compositor composes the window |
 | `core/rend/dx11/dx11_renderer.cpp` |  | include `gdxsv/gdxsv_video_hooks.h` |
 | `core/rend/dx11/dx11_renderer.cpp` | `DX11Renderer::displayFramebuffer` | `gdxsv_video_grid_active`, `gdxsv_video_viewport` |
 | `core/rend/gles/gldraw.cpp` |  | include `gdxsv/gdxsv_video_hooks.h` |

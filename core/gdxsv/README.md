@@ -63,6 +63,7 @@ options and changed upstream files: `docs/gdxsv/`.
 | `gdxsv_https_latency*.cpp/.h/.mm` | HTTPS latency to each server region, per platform (`_win`, `_curl`, `_apple`) |
 | `gdxsv_prof.cpp/.h` | named timers for profiling |
 | `gdxsv_frame_limiter.cpp/.h` | FixedFrequency frame limiter of the main UI loop (period, replay trim) |
+| `gdxsv_repeat_present.h`, `gdxsv_repeat_present_win.cpp` | DirectX 11 window: the last frame presented again at every vsync while the limiter waits |
 | `gdxsv_perf_trace.cpp/.h` | event trace for the pre-release perf check, on with env `GDXSV_PERF_TRACE` |
 | `gdxsv_press_sweep.cpp/.h` | timed dpad presses on the test joystick for the input latency metric, on with env `GDXSV_PRESS_SWEEP` |
 | `gdxsv_sleep.cpp/.h` | precise sleep for the frame limiter and network threads |

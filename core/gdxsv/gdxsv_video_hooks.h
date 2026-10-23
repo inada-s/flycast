@@ -10,6 +10,22 @@ void gdxsv_video_term();
 // DXGI frame latency for the DX11 device (gdxsv:MaxFrameLatency); 0 keeps the driver default.
 int gdxsv_video_max_frame_latency();
 
+// Repeat present (gdxsv_repeat_present.h). Render thread only.
+#ifdef _WIN32
+struct IDXGISwapChain;
+// DX11 context created (its function presenting the last frame again) or destroyed (nullptr).
+void gdxsv_video_dx11_attach(void (*present_again)());
+// After each DX11 present: whether the compositor composes the window.
+void gdxsv_video_dx11_presented(IDXGISwapChain* swapchain);
+extern bool gdxsv_video_repeat_active;
+// While waiting for the next frame from the emulation thread: presents the last frame again if there is room; true
+// if it did.
+bool gdxsv_video_repeat_present_waiting();
+#else
+constexpr bool gdxsv_video_repeat_active = false;
+inline bool gdxsv_video_repeat_present_waiting() { return false; }
+#endif
+
 // A background replay worker still renders, but never shows its SDL window.
 bool gdxsv_video_hidden_window();
 // Optional stable name for video routing; empty keeps the ordinary sender name.

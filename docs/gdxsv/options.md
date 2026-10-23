@@ -31,6 +31,7 @@ Upstream options it changes are in [upstream.md](upstream.md).
 | `SkipRenderingHack` | yes | replay seek runs only the game logic of skipped frames |
 | `SlowIdleLoopHack` | yes | dynarec hack for the game's idle loop |
 | `MaxFrameLatency` | 1 | DirectX 11: frames DXGI may queue for display (1 to 16); 0 keeps the driver default; read when the renderer starts |
+| `RepeatPresent` | yes | DirectX 11 window, vsync on: present the last frame again at every vsync while waiting for the next one |
 | `ReplayHideName` | no | replay: generic player names |
 | `ReplayShowAllyHP` | yes | replay: the total HP field shows the ally's HP |
 | `ReplayKeyDisplay` | yes | replay: show the inputs |

@@ -415,3 +415,9 @@ msgstr "SIDE 7 內部"
 
 msgid "Choose the horizontal boundary used for the battle HUD:\n    4:3 (Original): Keep the stock positions\n    Up to 16:9: Use the viewport width, capped at a 16:9 safe area\n    Full Width: Move the HUD to the current viewport edges"
 msgstr "選擇戰鬥 HUD 的水平範圍：\n    4:3 (Original)：保持原本位置\n    Up to 16:9：跟畫面闊度，最多 16:9\n    Full Width：HUD 貼住畫面邊緣"
+
+msgid "Smooth windowed display"
+msgstr "平滑視窗顯示"
+
+msgid "DirectX 11 window: show the last frame again at every monitor refresh until the next one is ready. Smoother on high refresh rate monitors; the display is a few milliseconds later"
+msgstr "DirectX 11 視窗模式：下一格畫面準備好之前，每次螢幕更新都重新顯示上一格。高更新率螢幕會更流暢，但顯示會遲幾毫秒。"

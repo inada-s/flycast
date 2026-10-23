@@ -13,6 +13,7 @@
 #include "network/ggpo.h"
 
 #include "gdxsv/gdxsv_emu_hooks.h"
+#include "gdxsv/gdxsv_video_hooks.h"
 
 #include <mutex>
 #include <deque>
@@ -293,7 +294,7 @@ bool rend_single_frame(const bool& enabled)
 	const int timeout = SPG_CONTROL.isPAL() ? 23 : 20;
 	presented = false;
 	while (enabled && !presented)
-		if (!pvrQueue.waitAndExecute(timeout))
+		if (!(gdxsv_video_repeat_active && gdxsv_video_repeat_present_waiting()) && !pvrQueue.waitAndExecute(timeout))
 			return false;
 	return true;
 }

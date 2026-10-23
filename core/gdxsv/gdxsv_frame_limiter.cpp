@@ -9,6 +9,7 @@
 #include "cfg/option.h"
 #include "gdxsv_emu_hooks.h"
 #include "gdxsv_perf_trace.h"
+#include "gdxsv_repeat_present.h"
 #include "gdxsv_sleep.h"
 #include "log/Log.h"
 #include "ui/gui.h"
@@ -61,6 +62,7 @@ bool gdxsv_emu_mainui_reinit_needed() {
 void gdxsv_frame_limiter_wait() {
 	if (!config::FixedFrequency || gui_is_open() || settings.input.fastForwardMode) {
 		nextFrame = {};
+		gdxsv_repeat_present_next_frame(0);
 		return;
 	}
 
@@ -69,7 +71,9 @@ void gdxsv_frame_limiter_wait() {
 
 	auto now = std::chrono::steady_clock::now();
 	if (nextFrame == decltype(nextFrame){}) nextFrame = now;
-	const auto remaining = std::chrono::duration_cast<std::chrono::microseconds>(nextFrame - now).count();
+	auto remaining = std::chrono::duration_cast<std::chrono::microseconds>(nextFrame - now).count();
+	while (0 < remaining && gdxsv_repeat_present(remaining))
+		remaining = std::chrono::duration_cast<std::chrono::microseconds>(nextFrame - std::chrono::steady_clock::now()).count();
 	if (remaining > 0)
 		overSlept = gdxsv_sleep_and_busy_wait(remaining);
 
@@ -79,6 +83,7 @@ void gdxsv_frame_limiter_wait() {
 	now = std::chrono::steady_clock::now();
 	if (now - nextFrame >= period) nextFrame += (now - nextFrame) / period * period;
 	nextFrame += period;
+	gdxsv_repeat_present_next_frame(std::chrono::duration_cast<std::chrono::nanoseconds>(nextFrame.time_since_epoch()).count());
 	// arg: the slack waited before this wake, us; negative: the frame was late
 	GDXSV_PERF_TRACE("wake", -1, remaining);
 	if (1000 <= overSlept)
