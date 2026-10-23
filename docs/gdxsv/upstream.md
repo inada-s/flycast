@@ -139,7 +139,8 @@ every spot is marked and the list is current (`--write` updates it).
 | `core/hw/pvr/Renderer_if.cpp` |  | include `gdxsv/gdxsv_emu_hooks.h` |
 | `core/hw/pvr/Renderer_if.cpp` |  | include `gdxsv/gdxsv_video_hooks.h` |
 | `core/hw/pvr/Renderer_if.cpp` | `rend_create_renderer` | `gdxsv_headless` |
-| `core/hw/pvr/Renderer_if.cpp` | `rend_single_frame` | `gdxsv_video_repeat_present_waiting`: the render thread presents the last frame again while it waits for the next one |
+| `core/hw/pvr/Renderer_if.cpp` | `PvrMessageQueue::dequeue` | a 0 ms timeout polls the queue without a timed wait, which can last a timer tick |
+| `core/hw/pvr/Renderer_if.cpp` | `rend_single_frame` | `gdxsv_video_repeat_wait_ms`: until the next frame starts rendering, the render thread presents the last frame again, or polls the queue every 1 ms (own sleep) while the limiter's thread still runs (same total timeout) |
 | `core/hw/pvr/Renderer_if.cpp` | `rend_start_render` | `gdxsv_emu_end_frame` |
 | `core/hw/pvr/Renderer_if.cpp` | `rend_vblank` | `gdxsv_emu_vblank` |
 | `core/hw/pvr/Renderer_if.h` |  | caches reloaded after a rollback or replay session |

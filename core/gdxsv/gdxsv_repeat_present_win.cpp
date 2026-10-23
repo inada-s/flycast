@@ -15,6 +15,7 @@
 #include "cfg/option.h"
 #include "gdxsv_config.h"
 #include "gdxsv_perf_trace.h"
+#include "gdxsv_sleep.h"
 #include "gdxsv_video_hooks.h"
 #include "windows/comptr.h"
 
@@ -105,11 +106,15 @@ void gdxsv_video_dx11_presented(IDXGISwapChain* swapchain) {
 	GDXSV_PERF_TRACE("present_mode", -1, stats.CompositionMode);
 }
 
-bool gdxsv_video_repeat_present_waiting() {
-	if (!repeat.limiter_elsewhere.load(std::memory_order_relaxed)) return false;
+int gdxsv_video_repeat_wait_ms(int timeout) {
+	if (!repeat.limiter_elsewhere.load(std::memory_order_relaxed)) return timeout;
 	const int64_t next = repeat.next_frame.load(std::memory_order_relaxed);
-	if (next == 0) return false;
-	return repeat_now((next - steady_now_ns()) / 1000);
+	if (next == 0) {
+		// An OS sleep, not a busy wait: a late check only starts the repeats a little later.
+		gdxsv_sleep_us(1000);
+		return 0;
+	}
+	return repeat_now((next - steady_now_ns()) / 1000) ? -1 : timeout;
 }
 
 bool gdxsv_repeat_present(int64_t until_next_us) { return repeat_now(until_next_us); }

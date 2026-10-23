@@ -23,12 +23,14 @@ void gdxsv_video_dx11_attach(void (*present_again)());
 // After each DX11 present: whether the compositor composes the window.
 void gdxsv_video_dx11_presented(IDXGISwapChain* swapchain);
 extern bool gdxsv_video_repeat_active;
-// While waiting for the next frame from the emulation thread: presents the last frame again if there is room; true
-// if it did.
-bool gdxsv_video_repeat_present_waiting();
+// While the render thread waits for the next frame from the emulation thread, before that frame starts rendering:
+// -1 after presenting the last frame again; 0 after sleeping 1 ms while the limiter's thread runs (a rollback, the next
+// frame), so that the queue is only polled and the repeats start as soon as that thread waits; timeout otherwise (ms).
+// A 1 ms condition variable wait can last a timer tick, hence the own sleep.
+int gdxsv_video_repeat_wait_ms(int timeout);
 #else
 constexpr bool gdxsv_video_repeat_active = false;
-inline bool gdxsv_video_repeat_present_waiting() { return false; }
+inline int gdxsv_video_repeat_wait_ms(int timeout) { return timeout; }
 #endif
 
 // A background replay worker still renders, but never shows its SDL window.

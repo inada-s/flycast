@@ -169,7 +169,7 @@ private:
 			}
 			if (timeoutMs == -1)
 				enqueueEvent.Wait();
-			else if (!enqueueEvent.Wait(timeoutMs))
+			else if (timeoutMs == 0 || !enqueueEvent.Wait(timeoutMs)) // gdxsv: 0 polls; a 0 ms timed wait can last a timer tick
 				break;
 		}
 		return msg;
@@ -293,9 +293,20 @@ bool rend_single_frame(const bool& enabled)
 
 	const int timeout = SPG_CONTROL.isPAL() ? 23 : 20;
 	presented = false;
+	// gdxsv: until the next frame starts rendering, gdxsv_video_repeat_wait_ms may present the last frame again (-1)
+	// or sleep 1 ms itself and only poll the queue (0); the steps add up to the same timeout
+	bool started = false;
+	int waited = 0;
 	while (enabled && !presented)
-		if (!(gdxsv_video_repeat_active && gdxsv_video_repeat_present_waiting()) && !pvrQueue.waitAndExecute(timeout))
+	{
+		const int wait = started || !gdxsv_video_repeat_active ? timeout : gdxsv_video_repeat_wait_ms(timeout);
+		if (wait < 0)
+			continue;
+		if (pvrQueue.waitAndExecute(wait))
+			started = true;
+		else if ((waited += std::max(wait, 1)) >= timeout)
 			return false;
+	}
 	return true;
 }
 

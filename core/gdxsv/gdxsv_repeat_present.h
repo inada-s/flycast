@@ -14,7 +14,8 @@
 // Limiter, before it sleeps: presents the last frame again if the wait has room for it (it blocks until a vsync).
 // until_next_us: time to the next scheduled frame. Returns true if it presented. Render thread only.
 bool gdxsv_repeat_present(int64_t until_next_us);
-// Limiter: when the next frame is due (steady_clock nanoseconds), 0 while the limiter is off.
+// Limiter: while it waits, when it wakes (steady_clock nanoseconds); 0 once awake or off. The render thread repeats
+// only while the limiter's thread waits, not while it runs a rollback or the next frame.
 void gdxsv_repeat_present_next_frame(int64_t steady_ns);
 #else
 inline bool gdxsv_repeat_present(int64_t) { return false; }

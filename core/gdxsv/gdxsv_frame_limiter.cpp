@@ -63,10 +63,12 @@ void gdxsv_frame_limiter_wait() {
 	auto now = std::chrono::steady_clock::now();
 	if (nextFrame == decltype(nextFrame){}) nextFrame = now;
 	auto remaining = std::chrono::duration_cast<std::chrono::microseconds>(nextFrame - now).count();
+	gdxsv_repeat_present_next_frame(std::chrono::duration_cast<std::chrono::nanoseconds>(nextFrame.time_since_epoch()).count());
 	while (0 < remaining && gdxsv_repeat_present(remaining))
 		remaining = std::chrono::duration_cast<std::chrono::microseconds>(nextFrame - std::chrono::steady_clock::now()).count();
 	if (remaining > 0)
 		overSlept = gdxsv_sleep_and_busy_wait(remaining);
+	gdxsv_repeat_present_next_frame(0);
 
 	// The schedule is absolute: a frame late by less than a period is paid back by the next waits.
 	// A frame late by a period or more skips whole periods, so a stall is not followed by a burst
@@ -74,7 +76,6 @@ void gdxsv_frame_limiter_wait() {
 	now = std::chrono::steady_clock::now();
 	if (now - nextFrame >= period) nextFrame += (now - nextFrame) / period * period;
 	nextFrame += period;
-	gdxsv_repeat_present_next_frame(std::chrono::duration_cast<std::chrono::nanoseconds>(nextFrame.time_since_epoch()).count());
 	// arg: the slack waited before this wake, us; negative: the frame was late
 	GDXSV_PERF_TRACE("wake", -1, remaining);
 	if (1000 <= overSlept)
