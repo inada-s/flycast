@@ -257,6 +257,7 @@ void GdxsvTexturePackSource::preloadTextures(TextureCallback callback, std::atom
 void GdxsvTexturePackSource::terminate() {
 	if (texp_zip != nullptr) zip_close(texp_zip);
 	texture_map.clear();
+	font.Close();
 	texp_zip = nullptr;
 }
 
@@ -349,7 +350,7 @@ bool GdxsvTexturePackSource::loadMap() {
 
 u8* GdxsvTexturePackSource::loadCustomTexture(u32 hash, int& width, int& height) {
 	const auto it = texture_map.find(hash);
-	if (it == texture_map.end()) return nullptr;
+	if (it == texture_map.end()) return config::GdxFontRaster ? font.Render(hash, width, height) : nullptr;
 
 	// Load texture from texture pack file
 	zip_stat_t z_stat;
@@ -381,5 +382,5 @@ u8* GdxsvTexturePackSource::loadCustomTexture(u32 hash, int& width, int& height)
 }
 
 bool GdxsvTexturePackSource::isTextureReplaced(u32 hash) {
-	return texture_map.find(hash) != texture_map.end();
+	return texture_map.find(hash) != texture_map.end() || (config::GdxFontRaster && font.HasGlyph(hash));
 }
