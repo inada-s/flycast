@@ -400,6 +400,7 @@ void GdxsvBackendRollback::OnMainUiLoop() {
 			report_.mutable_render()->set_threaded_rendering(config::ThreadedRendering);
 			report_.mutable_render()->set_vsync(config::VSync);
 			report_.mutable_render()->set_renderer(static_cast<int>(config::RendererType.get()));
+			report_.mutable_render()->set_refresh_rate(settings.display.refreshRate);
 			config::GGPOEnable.override(true);
 			config::GGPODelay.override(delay);
 			config::NetworkStats.override(false);

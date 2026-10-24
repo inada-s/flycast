@@ -246,11 +246,11 @@ void DX11Context::Present()
 		float vsyncsPerFrame = config::DupeFrames && settings.display.refreshRate > 60.f ? settings.display.refreshRate / 60.f : 1.f;
 		int swapInterval = std::clamp((int)(vsyncsPerFrame * gameSwapInterval), 1, 4);
 		hr = swapchain->Present(swapInterval, 0);
-		gdxsv_video_dx11_presented(swapchain, hr, swapInterval);
+		gdxsv_video_dx11_presented(swapchain, hr);
 	}
 	else {
 		hr = swapchain->Present(0, allowTearing ? DXGI_PRESENT_ALLOW_TEARING : DXGI_PRESENT_DO_NOT_WAIT);
-		gdxsv_video_dx11_presented(swapchain, hr, 1);
+		gdxsv_video_dx11_presented(swapchain, hr);
 	}
 	if (hr == DXGI_ERROR_DEVICE_REMOVED || hr == DXGI_ERROR_DEVICE_RESET) {
 		WARN_LOG(RENDERER, "Present failed: device removed/reset");

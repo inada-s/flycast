@@ -27,9 +27,9 @@ void gdxsv_video_vulkan_extensions(uint32_t device_version, const std::set<std::
 #include <atomic>
 struct IDXGISwapChain;
 extern std::atomic<bool> gdxsv_net_report_on;
-void gdxsv_video_dx11_presented_stats(IDXGISwapChain* swapchain, long presentResult, int vsyncsPerFrame);
-// DX11, after each Present: frame statistics for the display misses of P2PMatchingReport.
-inline void gdxsv_video_dx11_presented(IDXGISwapChain* swapchain, long presentResult, int vsyncsPerFrame) {
-	if (gdxsv_net_report_on.load(std::memory_order_relaxed)) gdxsv_video_dx11_presented_stats(swapchain, presentResult, vsyncsPerFrame);
+void gdxsv_video_dx11_presented_stats(IDXGISwapChain* swapchain, long presentResult);
+// DX11, after each Present: frame statistics for the late images of P2PMatchingReport.
+inline void gdxsv_video_dx11_presented(IDXGISwapChain* swapchain, long presentResult) {
+	if (gdxsv_net_report_on.load(std::memory_order_relaxed)) gdxsv_video_dx11_presented_stats(swapchain, presentResult);
 }
 #endif

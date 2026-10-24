@@ -260,7 +260,7 @@ every spot is marked and the list is current (`--write` updates it).
 | `core/rend/dx11/dx11context.cpp` |  | include `gdxsv/gdxsv_video_hooks.h` |
 | `core/rend/dx11/dx11context.cpp` | `DX11Context::init` | `gdxsv_video_max_frame_latency`: `SetMaximumFrameLatency` (`gdxsv:MaxFrameLatency`) |
 | `core/rend/dx11/dx11context.cpp` | `DX11Context::Present` | only duplicate frames on high refresh rate monitors when asked to |
-| `core/rend/dx11/dx11context.cpp` | `DX11Context::Present` | `gdxsv_video_dx11_presented` after each Present: display misses for P2PMatchingReport |
+| `core/rend/dx11/dx11context.cpp` | `DX11Context::Present` | `gdxsv_video_dx11_presented` after each Present: late images for P2PMatchingReport |
 | `core/rend/dx11/dx11_renderer.cpp` |  | include `gdxsv/gdxsv_video_hooks.h` |
 | `core/rend/dx11/dx11_renderer.cpp` | `DX11Renderer::displayFramebuffer` | `gdxsv_video_grid_active`, `gdxsv_video_viewport` |
 | `core/rend/gles/gldraw.cpp` |  | include `gdxsv/gdxsv_video_hooks.h` |
