@@ -7,7 +7,8 @@ Each cell: metrics from analyze.py -> <out>/<cell>_<run>.json; with --baseline, 
 failing cell is re-run up to 2 more times and judged on the median.
 
 usage: battle.py --exe flycast.exe [--cells all|20_tr1_vs1,...] [--runs N] [--baseline gdxsv_tests/perf/baseline.json]
-                 [--out DIR] [--presentmon PresentMon.exe] [--write-baseline FILE]
+                 [--out DIR] [--presentmon PresentMon.exe] [--write-baseline FILE] [--config ...] [--p1-config window:left=2600 ...] [--p2-headless]
+                 [--hz HZ]
 Environment as run.py (GDXSV_ROM_DIR); GDXSV_STATE_DIR: the rollback suite's state dir; PRESENTMON: PresentMon 2.x exe.
 """
 import argparse
@@ -82,7 +83,34 @@ def pattern(path: str) -> None:
             f.write(f"{n * PATTERN_FRAMES} b {button} {n % 2}\n")
 
 
-def run_cell(s, name: str, tag: str, out: str, presentmon: str) -> dict:
+def cpu_seconds(pid: int):
+    """User + kernel CPU time of a process (Windows), None elsewhere or once it ended."""
+    if os.name != "nt":
+        return None
+    import ctypes
+    from ctypes import wintypes
+    k32 = ctypes.windll.kernel32
+    h = k32.OpenProcess(0x1000, False, pid)  # PROCESS_QUERY_LIMITED_INFORMATION
+    if not h:
+        return None
+    t = [wintypes.FILETIME() for _ in range(4)]
+    ok = k32.GetProcessTimes(h, *[ctypes.byref(x) for x in t])
+    k32.CloseHandle(h)
+    ft = lambda f: (f.dwHighDateTime << 32 | f.dwLowDateTime) / 1e7
+    return ft(t[2]) + ft(t[3]) if ok else None
+
+
+def sample_cpu(pid: int, result: dict) -> None:
+    """E1: peer 1's CPU use from 10 s to 40 s after its start (the battle), in % of one core."""
+    time.sleep(10)
+    c0, w0 = cpu_seconds(pid), time.time()
+    time.sleep(30)
+    c1, w1 = cpu_seconds(pid), time.time()
+    if c0 is not None and c1 is not None:
+        result["cpu_pct"] = round(100 * (c1 - c0) / (w1 - w0), 1)
+
+
+def run_cell(s, name: str, tag: str, out: str, presentmon: str, config: list, p1_config: list, hz: float, p2_headless: bool) -> dict:
     d1, d2, tr, vs, *extra = CELLS[name]
     p1_pad = os.path.join(out, "p1.joystick")
     p2_pad = os.path.join(out, "p2.joystick")
@@ -93,11 +121,13 @@ def run_cell(s, name: str, tag: str, out: str, presentmon: str) -> dict:
     peer_env = {1: {"GDXSV_TEST_JOYSTICK": p1_pad, "GDXSV_PRESS_SWEEP": SWEEP},
                 2: {"GDXSV_TEST_JOYSTICK": p2_pad}}
     cfg = [f"config:rend.ThreadedRendering={tr}", "input:JoystickPolling=yes", f"config:rend.vsync={vs}",
-           "config:rend.DelayFrameSwapping=no", "config:pvr.rend=2"] + (extra[1] if len(extra) > 1 else [])
+           "config:rend.DelayFrameSwapping=no", "config:pvr.rend=2"] + (extra[1] if len(extra) > 1 else []) + config
     pm_csv = os.path.join(out, tag + "_pm.csv")
     pm_proc = []
+    cpu = {}
 
     def on_start(m):
+        threading.Thread(target=sample_cpu, args=(m.peers[0].inst.proc.pid, cpu), daemon=True).start()
         if presentmon:
             pm_proc.append(subprocess.Popen(
                 [presentmon, "--process_id", str(m.peers[0].inst.proc.pid), "--qpc_time", "--v1_metrics", "--no_console_stats",
@@ -106,7 +136,7 @@ def run_cell(s, name: str, tag: str, out: str, presentmon: str) -> dict:
 
     # peer 2 without random input: its pad pattern alone drives it. Peer 1's sweep turns its random input off.
     m = rbk_lib.run_match(s, tag, [s.exe] * 2, [d1, d2], headless=False, env=env, config=cfg, timeout=RUN_S,
-                          on_start=on_start, peer_env=peer_env, peer_config={1: extra[2] if len(extra) > 2 else [], 2: ["gdxsv:rand_input=0"]})
+                          on_start=on_start, peer_env=peer_env, peer_config={1: (extra[2] if len(extra) > 2 else []) + p1_config, 2: ["gdxsv:rand_input=0"] + (["gdxsv:headless=yes"] if p2_headless else [])})
     for p in pm_proc:  # --terminate_on_proc_exit does not fire when flycast is killed
         subprocess.run([presentmon, "--terminate_existing_session"], capture_output=True, timeout=30)
         try:
@@ -114,9 +144,11 @@ def run_cell(s, name: str, tag: str, out: str, presentmon: str) -> dict:
         except subprocess.TimeoutExpired:
             p.kill()
     p1, p2 = m.peers
-    r = analyze.analyze(os.path.join(p1.dir, "perf.csv"), pm_csv if presentmon else None, SETTLE, FRAMES)
+    r = analyze.analyze(os.path.join(p1.dir, "perf.csv"), pm_csv if presentmon else None, SETTLE, FRAMES, hz)
     # D1: the rollback suite's checks that apply to a match cut before its end (state hashes differ per peer
     # by design; round winners and last frames need a finished match, the hash log is cut at the kill).
+    if "cpu_pct" in cpu:
+        r["E1"] = cpu
     r["D1"] = {"failures": sum(len(p.errors) for p in m.peers) + len(m.stalled)}
     r["checks"] = {"delay2": all("delay=2" in p.log for p in m.peers), "rtt": all("rtt=" in p.log for p in m.peers),
                    "p2_no_rand": "RandomInput" not in p2.log, "sweep": "press sweep: player 0" in p1.log,
@@ -151,6 +183,10 @@ def main() -> int:
     ap.add_argument("--write-baseline")
     ap.add_argument("--presentmon", default=os.environ.get("PRESENTMON"))
     ap.add_argument("--out", default=os.path.join(TESTS, "out", "perf"))
+    ap.add_argument("--config", nargs="*", default=[], help="more config for both peers, after the cell's")
+    ap.add_argument("--p2-headless", action="store_true", help="no window for peer 2: only peer 1 presents to the desktop")
+    ap.add_argument("--p1-config", nargs="*", default=[], help="more peer 1 config, e.g. window:left=2600 to open on a second display")
+    ap.add_argument("--hz", type=float, help="peer 1's display refresh rate, for J1")
     a = ap.parse_args()
     rom = os.path.join(os.environ.get("GDXSV_ROM_DIR", ""), "gdx-disc2", "gdx-disc2.gdi")
     state = os.environ.get("GDXSV_STATE_DIR", os.path.join(TESTS, "out", "state"))
@@ -167,7 +203,7 @@ def main() -> int:
         runs = []
         while True:
             t = time.time()
-            runs.append(run_cell(s, name, f"{name}_{len(runs) + 1}", a.out, pm))
+            runs.append(run_cell(s, name, f"{name}_{len(runs) + 1}", a.out, pm, a.config, a.p1_config, a.hz, a.p2_headless))
             print(f"{name} run {len(runs)}: {time.time() - t:.0f} s, checks {runs[-1]['checks']}", flush=True)
             if len(runs) < a.runs:
                 continue

@@ -18,6 +18,7 @@
 
 #include "gdxsv/gdxsv_emu_hooks.h"
 
+#include <atomic>
 #include <mutex>
 #include <deque>
 
@@ -133,9 +134,17 @@ public:
 		}
 	}
 
-	bool waitAndExecute(int timeoutMs = -1)
+	// gdxsv: wakeable: wake() ends the wait if the queue is empty
+	bool waitAndExecute(int timeoutMs = -1, bool wakeable = false)
 	{
-		return execute(dequeue(timeoutMs));
+		return execute(dequeue(timeoutMs, wakeable));
+	}
+
+	// gdxsv: the render thread waiting for a frame re-presents the last one (gdxsv_represent.h)
+	void wake()
+	{
+		woken = true;
+		enqueueEvent.Set();
 	}
 
 	void reset() {
@@ -156,7 +165,7 @@ public:
 		dequeueEvent.Set();
 	}
 private:
-	Message dequeue(int timeoutMs = -1)
+	Message dequeue(int timeoutMs, bool wakeable)
 	{
 		FC_PROFILE_SCOPE;
 
@@ -175,6 +184,8 @@ private:
 				dequeueEvent.Set();
 				break;
 			}
+			if (wakeable && woken.exchange(false))
+				break;
 			if (timeoutMs == -1)
 				enqueueEvent.Wait();
 			else if (!enqueueEvent.Wait(timeoutMs))
@@ -303,6 +314,7 @@ private:
 	cResetEvent enqueueEvent;
 	cResetEvent dequeueEvent;
 	std::deque<Message> queue;
+	std::atomic<bool> woken{false};
 };
 
 static PvrMessageQueue pvrQueue;
@@ -313,10 +325,19 @@ bool rend_single_frame(const bool& enabled)
 
 	const int timeout = SPG_CONTROL.isPAL() ? 23 : 20;
 	presented = false;
+	// gdxsv: woken only before the frame's first message
+	bool wakeable = true;
 	while (enabled && !presented)
-		if (!pvrQueue.waitAndExecute(timeout))
+	{
+		if (!pvrQueue.waitAndExecute(timeout, wakeable))
 			return false;
+		wakeable = false;
+	}
 	return true;
+}
+
+void rend_wake_render_thread() {
+	pvrQueue.wake();
 }
 
 class SwapIntervalDetector

@@ -1,8 +1,9 @@
 #!/usr/bin/env python3
 """Metrics of one perf battle cell from the GDXSV_PERF_TRACE csv of peer 1 and its PresentMon csv.
 
-usage: analyze.py <perf.csv> [--pm pm.csv] [--settle FRAMES] [--frames FRAMES]   (prints the metrics JSON)
+usage: analyze.py <perf.csv> [--pm pm.csv] [--settle FRAMES] [--frames FRAMES] [--hz HZ]   (prints the metrics JSON)
 The measured window starts at GGPO frame --settle and lasts --frames frames. Times in ms.
+--hz: the display's refresh rate, for J1 (how many vblanks each frame stays on screen).
 """
 import argparse
 import bisect
@@ -47,7 +48,34 @@ def read_pm(path):
     return [r for r in rows if r.get("TimeInQPC", "NA") != "NA"]
 
 
-def analyze(trace: str, pm: str = None, settle: int = 180, frames: int = 2100) -> dict:
+def judder(P, hz, window_ms, starts):
+    """J1: vblanks each frame stays on screen, and per minute how often that is not the steady count (2 at 120 Hz).
+    starts: (qpc, is a re-present) of the trace events right before each Present ("frame_present", "represent").
+    A re-present adds its time on screen to the frame it repeats."""
+    vblank = 1000 / hz
+    steady = max(1, round(FRAME_MS / vblank))
+    shown = lambda r: float(r["MsBetweenDisplayChange"]) if r["MsBetweenDisplayChange"] not in ("NA", "0.0") else 0.0
+    held, repeats = [], 0
+    for r in P:
+        q = int(r["TimeInQPC"])
+        i = bisect.bisect_right(starts, (q, True))
+        if held and i > 0 and starts[i - 1][1]:
+            held[-1] += shown(r)
+            repeats += 1
+        else:
+            held.append(shown(r))
+    held = [round(x / vblank) for x in held]
+    hist = {}
+    for n in held:
+        hist[n] = hist.get(n, 0) + 1
+    per_min = 60000 / window_ms
+    return {"hz": hz, "steady": steady, "off_per_min": round(sum(n != steady for n in held) * per_min, 1),
+            "not_shown_per_min": round(sum(n == 0 for n in held) * per_min, 1),
+            "represents_per_min": round(repeats * per_min, 1), "presents_per_s": round(len(P) * per_min / 60, 1),
+            "hist": " ".join(f"{k}:{v}" for k, v in sorted(hist.items()))}
+
+
+def analyze(trace: str, pm: str = None, settle: int = 180, frames: int = 2100, hz: float = None) -> dict:
     rows, freq = read_trace(trace)
     ms = lambda d: d * 1000.0 / freq
     nb = [(q, fr) for q, t, fr, e, a in rows if e == "next_b"]
@@ -162,7 +190,12 @@ def analyze(trace: str, pm: str = None, settle: int = 180, frames: int = 2100) -
         refresh = statistics.median(disp) if disp else None
         m["B1"] = {"presents": len(P), "over_20ms_pct": round(100 * sum(x > 20 for x in between) / len(between), 3) if between else None,
                    "not_one_vblank_pct": round(100 * sum(abs(x - refresh) > refresh / 4 for x in disp) / len(disp), 3) if disp else None,
-                   "refresh_ms": round(refresh, 4) if refresh else None}
+                   "refresh_ms": round(refresh, 4) if refresh else None,
+                   "gpu_active_ms_per_s": round(sum(float(r["MsGPUActive"]) for r in P if r.get("MsGPUActive", "NA") != "NA")
+                                                / ms(t1 - t0) * 1000, 2)}
+        if hz:
+            m["J1"] = judder(P, hz, ms(t1 - t0), [(q, e == "represent") for q, t, fr, e, a in W
+                                                      if e in ("represent", "frame_present")])
         m["C3"]["in_present"] = stats([float(r["MsInPresentAPI"]) for r in P if r["MsInPresentAPI"] != "NA"])
         # A1/A2: press -> GGPO frame N whose add carries it -> end_frame of N+2 -> the next present (start, display)
         pq = [int(r["TimeInQPC"]) for r in P]
@@ -202,8 +235,9 @@ def main():
     ap.add_argument("--pm")
     ap.add_argument("--settle", type=int, default=180)
     ap.add_argument("--frames", type=int, default=2100)
+    ap.add_argument("--hz", type=float)
     a = ap.parse_args()
-    print(json.dumps(analyze(a.trace, a.pm, a.settle, a.frames), indent=1))
+    print(json.dumps(analyze(a.trace, a.pm, a.settle, a.frames, a.hz), indent=1))
 
 
 if __name__ == "__main__":

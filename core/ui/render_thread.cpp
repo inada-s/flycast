@@ -25,6 +25,9 @@
 #include "stdclass.h"
 #include "wsi/context.h"
 #include "gdxsv/gdxsv_emu_hooks.h"
+#include "gdxsv/gdxsv_perf_trace.h"
+#include "gdxsv/gdxsv_represent.h"
+#include "hw/pvr/Renderer_if.h"
 
 #include <atomic>
 #include <chrono>
@@ -76,34 +79,65 @@ static void applyDisplayChange()
 		gui_updateStyle();
 }
 
+// The last frame with its OSD, presented again (gdxsv_represent.h)
+static void represent()
+{
+	ImDrawData *drawData = ImGui::GetDrawData();
+	if (drawData == nullptr)
+		return;
+	imguiDriver->renderDrawData(drawData, true);
+	GDXSV_PERF_TRACE("represent", -1, 0);
+	imguiDriver->present();
+	gdxsv_represent_presented();
+}
+
 static void loop()
 {
 	ThreadName _("Flycast-render");
 	onRenderThread = true;
 	INFO_LOG(RENDERER, "Render thread started");
 	makeCurrent(true);
+	gdxsv_represent_start(rend_wake_render_thread);
 	try {
 		while (!stopRequested && emu.running() && !gui_is_open())
 		{
 			applyDisplayChange();
 			if (GraphicsContext::Instance() != nullptr)
+			{
+				// a new frame must not wait for a re-presented one to show
+				GraphicsContext::Instance()->setPresentWait(!gdxsv_represent_active());
 				GraphicsContext::Instance()->waitPresentReady();
-			if (!emu.render())
+			}
+			const bool rendered = emu.render();
+			if (!rendered && !gdxsv_represent_due())
 				continue;
-			if (config::ProfilerEnabled && config::ProfilerDrawToGUI)
+			if (rendered && config::ProfilerEnabled && config::ProfilerDrawToGUI)
 				gui_display_profiler();
 			try {
-				imguiDriver->present();
+				if (rendered)
+				{
+					GDXSV_PERF_TRACE("frame_present", -1, 0);
+					imguiDriver->present();
+				}
+				else
+					represent();
 			} catch (const FlycastException&) {
 				reinit = true;
 				break;
 			}
+			if (!rendered)
+				continue;
+			gdxsv_represent_presented();
 			MainFrameCount++;
 			gdxsv_emu_render_presented();
 		}
 	} catch (...) {
 		error = std::current_exception();
 	}
+	gdxsv_represent_stop();
+	// the GUI's presents wait again
+	if (GraphicsContext::Instance() != nullptr)
+		GraphicsContext::Instance()->setPresentWait(true);
 	makeCurrent(false);
 	done = true;
 	wakeMainThread();

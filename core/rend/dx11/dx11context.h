@@ -45,6 +45,7 @@ public:
 
 	void resize() override;
 	void waitPresentReady() override; // gdxsv: render thread
+	void setPresentWait(bool on) override { presentWait = on; }
 	void setOverlay(bool overlayOnly) { this->overlayOnly = overlayOnly; }
 	std::string getDriverName() override {
 		return adapterDesc;
@@ -99,6 +100,7 @@ private:
 	bool allowTearing = false;
 	HANDLE frameLatencyWaitable = nullptr; // gdxsv: threaded rendering
 	bool presentWaited = false;
+	bool presentWait = true;
 	bool swapOnVSync = false;
 	bool frameRendered = false;
 	std::string adapterDesc;

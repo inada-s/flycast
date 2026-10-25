@@ -288,7 +288,7 @@ void DX11Context::Present()
 // gdxsv: render thread. Waits until the last frame is rendered, so that the frame taken next is the newest one
 void DX11Context::waitPresentReady()
 {
-	if (frameLatencyWaitable == nullptr || presentWaited)
+	if (frameLatencyWaitable == nullptr || presentWaited || !presentWait)
 		return;
 	WaitForSingleObjectEx(frameLatencyWaitable, 100, TRUE);
 	presentWaited = true;

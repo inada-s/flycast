@@ -42,6 +42,8 @@ public:
 	virtual void makeCurrent(bool current) {}
 	// gdxsv: the render thread waits here before it takes the newest frame, once per Present
 	virtual void waitPresentReady() {}
+	// gdxsv: off, waitPresentReady and Present do not wait (the render thread re-presents frames)
+	virtual void setPresentWait(bool on) {}
 
 	void setWindow(void *window, void *display = nullptr) {
 		this->window = window;

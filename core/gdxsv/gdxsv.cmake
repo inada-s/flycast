@@ -317,6 +317,7 @@ target_sources(${PROJECT_NAME} PRIVATE
 		core/gdxsv/gdxsv_save_state.cpp
 		core/gdxsv/gdxsv_save_state.h
 		core/gdxsv/gdxsv_sleep.cpp
+		core/gdxsv/gdxsv_represent.h
 		core/gdxsv/gdxsv_sleep.h
 		core/gdxsv/gdxsv_multi_pov.cpp
 		core/gdxsv/gdxsv_multi_pov_audio.cpp
@@ -348,7 +349,7 @@ if(WIN32)
 	set(CMAKE_VS_SDK_INCLUDE_DIRECTORIES ${CUSTOM_INCLUDE_DIRECTORIES})
 	target_sources(${PROJECT_NAME} PRIVATE core/gdxsv/textures.rc core/gdxsv/gdxsv_net_report_dxgi_win.cpp)
 	if(NOT WINDOWS_STORE)
-		target_sources(${PROJECT_NAME} PRIVATE core/gdxsv/gdxsv_https_latency_win.cpp)
+		target_sources(${PROJECT_NAME} PRIVATE core/gdxsv/gdxsv_https_latency_win.cpp core/gdxsv/gdxsv_represent_win.cpp)
 	endif()
 endif()
 if(UNIX AND NOT APPLE AND NOT ANDROID AND NOT NINTENDO_SWITCH)

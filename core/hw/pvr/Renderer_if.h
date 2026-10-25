@@ -13,6 +13,8 @@ void rend_start_render();
 int rend_end_render(int tag, int cycles, int jitter, void *arg);
 void rend_cancel_emu_wait();
 bool rend_single_frame(const bool& enabled);
+// gdxsv: ends the render thread's wait for a frame, before the frame starts (rend_single_frame returns false)
+void rend_wake_render_thread();
 void rend_swap_frame(u32 fb_r_sof1);
 void rend_set_fb_write_addr(u32 fb_w_sof1);
 void rend_reset();
