@@ -15,6 +15,7 @@
 #include "gdxsv_video_hooks.h"
 #include "log/LogManager.h"
 #include "types.h"
+#include "ui/render_thread.h"
 #ifdef USE_SDL
 #include "sdl/sdl.h"
 #endif
@@ -148,15 +149,18 @@ void gdxsv_video_term() {
 }
 
 const char* gdxsv_multi_pov_viewer_tick() {
-	std::string requested;
-	bool release;
+	std::string requested = viewer.session;
+	bool release = false;
 	std::packaged_task<std::string()> prepare;
 	{
 		std::lock_guard<std::mutex> lock(viewer.mutex);
 		viewer.ui_thread = std::this_thread::get_id();
-		requested = viewer.requested;
-		release = viewer.release_requested;
-		viewer.release_requested = false;
+		// The render thread draws with the receivers and holds the GL context: a session change waits until it stops.
+		if (!renderthread::started()) {
+			requested = viewer.requested;
+			release = viewer.release_requested;
+			viewer.release_requested = false;
+		}
 		prepare = std::move(viewer.prepare);
 	}
 	if (viewer.session != requested || release) {

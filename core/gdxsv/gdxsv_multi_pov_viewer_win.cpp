@@ -41,7 +41,9 @@ GdxsvViewerBackend CurrentBackend() {
 #ifdef USE_VULKAN
 	if (dynamic_cast<VulkanContext*>(GraphicsContext::Instance())) return GdxsvViewerBackend::Vulkan;
 #endif
-	return SDL_GL_GetCurrentContext() ? GdxsvViewerBackend::OpenGL : GdxsvViewerBackend::Unsupported;
+	// The GL context is current only on the thread drawing: the render thread while a game runs.
+	SDL_Window* window = sdl_get_window();
+	return window && (SDL_GetWindowFlags(window) & SDL_WINDOW_OPENGL) ? GdxsvViewerBackend::OpenGL : GdxsvViewerBackend::Unsupported;
 }
 
 GdxsvMultiPovVideoFrame ReceiveGL(GdxsvSpoutReceiver& receiver, const std::string& name) {
