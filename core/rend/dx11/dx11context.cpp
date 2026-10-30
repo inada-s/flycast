@@ -149,7 +149,7 @@ bool DX11Context::init(bool keepCurrentWindow)
 		if (allowTearing)
 			desc.Flags = DXGI_SWAP_CHAIN_FLAG_ALLOW_TEARING;
 		// gdxsv: threaded rendering presents the newest frame (waitPresentReady, Present)
-		const bool latestFrame = config::ThreadedRendering;
+		bool latestFrame = config::ThreadedRendering;
 		if (latestFrame)
 		{
 			desc.Flags |= DXGI_SWAP_CHAIN_FLAG_FRAME_LATENCY_WAITABLE_OBJECT;
@@ -163,6 +163,15 @@ bool DX11Context::init(bool keepCurrentWindow)
 		hr = dxgiFactory2->CreateSwapChainForCoreWindow(pDevice, (IUnknown *)window, &desc, nullptr, &swapchain1.get());
 #else
 		hr = dxgiFactory2->CreateSwapChainForHwnd(pDevice, (HWND)window, &desc, nullptr, nullptr, &swapchain1.get());
+		if (FAILED(hr) && latestFrame)
+		{
+			// gdxsv: Windows 7 rejects the waitable object flag and the swap chain with it
+			NOTICE_LOG(RENDERER, "DX11: no waitable swap chain (%x), presenting without it", hr);
+			latestFrame = false;
+			desc.Flags &= ~DXGI_SWAP_CHAIN_FLAG_FRAME_LATENCY_WAITABLE_OBJECT;
+			desc.BufferCount = 2;
+			hr = dxgiFactory2->CreateSwapChainForHwnd(pDevice, (HWND)window, &desc, nullptr, nullptr, &swapchain1.get());
+		}
 #endif
 		if (SUCCEEDED(hr))
 			swapchain1.as(swapchain);

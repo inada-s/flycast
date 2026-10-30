@@ -297,6 +297,7 @@ every spot is marked and the list is current (`--write` updates it).
 | `core/rend/dx11/dx11context.cpp` |  | include `gdxsv/gdxsv_video_hooks.h` |
 | `core/rend/dx11/dx11context.cpp` | `DX11Context::init` | `gdxsv_video_max_frame_latency` |
 | `core/rend/dx11/dx11context.cpp` | `DX11Context::init` | threaded rendering presents the newest frame (waitPresentReady, Present) |
+| `core/rend/dx11/dx11context.cpp` | `DX11Context::init` | Windows 7 rejects the waitable object flag and the swap chain with it |
 | `core/rend/dx11/dx11context.cpp` | `DX11Context::init` | threaded rendering |
 | `core/rend/dx11/dx11context.cpp` | `DX11Context::term` | threaded rendering |
 | `core/rend/dx11/dx11context.cpp` | `DX11Context::Present` | one wait per Present, also for one the render thread did not wait for (the GUI) |
