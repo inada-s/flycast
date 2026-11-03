@@ -23,3 +23,9 @@ void gdxsv_camera_reset();
 void gdxsv_camera_state_loaded();
 // Render thread, inside the ImGui frame, in battle: the nameplates, trails and lock pointers of the god's eye view.
 void gdxsv_camera_render_overlay();
+// Inside the replay's Tab menu, after its "POV" label: a button for each mode, the one in use lit, and a gear that opens
+// the god's eye view's settings beside the menu. cell and height: one round button's size, the gear's. True when the
+// mode changed, which a paused replay shows only after a frame.
+bool gdxsv_camera_render_pov_row(int pov_player, float cell, float height);
+// A frame without the Tab menu: closes the POV row's popup, so that it does not come back with the menu.
+void gdxsv_camera_pov_row_hidden();

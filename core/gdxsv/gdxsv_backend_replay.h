@@ -144,6 +144,8 @@ class GdxsvBackendReplay {
 			ExitReplay,
 			TakeoverInput,
 			ToggleFastForward,
+			// One frame with the pause menu open, so a POV change shows on the paused picture.
+			StepFrameInMenu,
 		};
 
 		ReplayCtrlCommand() = default;
@@ -230,6 +232,7 @@ class GdxsvBackendReplay {
 	bool pause_menu_opend_ = false;
 	int ctrl_play_speed_ = 0;
 	bool ctrl_step_frame_ = false;
+	bool menu_step_frame_ = false;
 	bool ctrl_pause_ = false;
 	bool ctrl_loading_ = false;
 	int ctrl_loading_wait_frames_ = 0;

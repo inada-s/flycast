@@ -190,6 +190,7 @@ void GdxsvBackendReplay::Reset() {
 	ctrl_play_speed_ = 0;
 	fast_forward_pending_ = false;
 	ctrl_step_frame_ = false;
+	menu_step_frame_ = false;
 	ctrl_pause_ = false;
 	ctrl_loading_ = false;
 	ctrl_loading_wait_frames_ = 0;
@@ -1200,6 +1201,7 @@ void GdxsvBackendReplay::OnNextFrameInternal() {
 		if (ctrl.cmd == ReplayCtrlCommand::TogglePauseMenu) {
 			if (takeover_countdown_ == 0) {
 				pause_menu_opend_ = !pause_menu_opend_;
+				menu_step_frame_ = false;
 				if (pause_menu_opend_) {
 					if (!recv_buf_.empty()) {
 						BeginSilentSeek();
@@ -1710,6 +1712,8 @@ void GdxsvBackendReplay::DisplayOSD() {
 	if (!gdxsv_is_multi_pov_guest()) {
 		if (!ui.seeking && ui.pauseMenuOpen) {
 			RenderPauseMenu(ui);
+		} else {
+			gdxsv_camera_pov_row_hidden();
 		}
 		UpdateControlBarVisibility(ui);
 		RenderControlBar(ui);
@@ -1912,8 +1916,16 @@ void GdxsvBackendReplay::ProcessUiCommands() {
 		case ReplayCtrlCommand::ResumePlayback:
 			ctrl_pause_ = false;
 			ctrl_step_frame_ = false;
+			menu_step_frame_ = false;
 			pause_menu_opend_ = false;
 			break;
+		case ReplayCtrlCommand::StepFrameInMenu: {
+			if (!pause_menu_opend_ || takeover_ || state_ != State::McsInBattle || !IsInGame()) break;
+			int roundStart, roundEnd, totalRounds;
+			GetRoundReplayBounds(roundStart, roundEnd, totalRounds);
+			menu_step_frame_ = key_msg_count_ < roundEnd;
+			break;
+		}
 		case ReplayCtrlCommand::ExitReplay:
 			exit_requested_ = true;
 			Stop();
@@ -2100,12 +2112,12 @@ u32 GdxsvBackendReplay::OnSockRead(u32 addr, u32 size) {
 		return 0;
 	}
 
-	if (ctrl_pause_ && !seeking_) {
+	if (ctrl_pause_ && !seeking_ && !menu_step_frame_) {
 		if (!ctrl_step_frame_ && (!multi_pov_guest_ || key_msg_count_ >= multi_pov_step_target_)) return 0;
 		ctrl_step_frame_ = false;
 	}
 
-	if (pause_menu_opend_ && !seeking_) {
+	if (pause_menu_opend_ && !seeking_ && !menu_step_frame_) {
 		return 0;
 	}
 
@@ -2116,6 +2128,7 @@ u32 GdxsvBackendReplay::OnSockRead(u32 addr, u32 size) {
 		gdxsv_WriteMem8(addr + i, recv_buf_.front());
 		recv_buf_.pop_front();
 	}
+	if (0 < n) menu_step_frame_ = false;
 
 	return n;
 }
@@ -2902,30 +2915,37 @@ void GdxsvBackendReplay::RenderPauseMenu(const UiState& ui) {
 		// intake cap and the starve guard. Not in a 4-player replay: the guests
 		// play the recording.
 		if (!ui.liveMode && !multi_pov_host_) {
-			ImGui::BeginDisabled(!ui.inGame);
+			// The POV player is taken over from their own view, which the god's eye view does not show.
+			const bool gods_eye = gdxsv_camera_pov_mode() == GdxsvPovMode::GodsEye;
+			ImGui::BeginDisabled(!ui.inGame || gods_eye);
 			if (ImGui::Button((std::string(ICON_FA_GAMEPAD "  ") + T("Take Over")).c_str(), ScaledVec2(300, 40))) {
 				ui_commands_.emplace_back(ReplayCtrlCommand::TakeOver);
 			}
 			ImGui::EndDisabled();
+			if (gods_eye && ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled))
+				ImGui::SetTooltip("%s", T("Switch the POV to the player to take over"));
 		}
 
-		// Round control: buttons
+		// Round and POV rows, with one label column: five columns of round buttons (wrapping past 5), and the POV buttons
+		// over four columns with their gear in the fifth. The god's eye view is Disc 2's, and a four-screen replay shows
+		// the players' own views.
+		const bool pov_row = !multi_pov_host_ && gdxsv.Disk() == 2;
+		const ImGuiStyle& style = ImGui::GetStyle();
+		const float labelWidth = std::max(ImGui::CalcTextSize(T("Round")).x, pov_row ? ImGui::CalcTextSize(T("POV")).x : 0.0f);
+		const float buttonHeight = uiScaled(40.0f);
+		const float cellsX = ImGui::GetCursorPosX() + labelWidth + style.ItemSpacing.x;
+		const float cell = (uiScaled(300.0f) - labelWidth - style.ItemSpacing.x * 5) / 5;
+		if (ui.canChangeRound || pov_row) ImGui::Separator();
 		if (ui.canChangeRound) {
-			ImGui::Separator();
-
 			const int totalRounds = ui.roundCount;
+			const float initialY = ImGui::GetCursorPosY();
 
-			ImGui::BeginGroup();
-			float buttonHeight = uiScaled(40.0f);
-			float textHeight = ImGui::GetFontSize();
-			float initialY = ImGui::GetCursorPosY();
-
-			ImGui::SetCursorPosY(initialY + (buttonHeight - textHeight) * 0.5f);
+			ImGui::SetCursorPosY(initialY + (buttonHeight - ImGui::GetFontSize()) * 0.5f);
 			ImGui::TextUnformatted(T("Round"));
-			ImGui::SameLine();
 
 			for (int i = 1; i <= totalRounds; i++) {
-				ImGui::SetCursorPosY(initialY);
+				const int k = i - 1;
+				ImGui::SetCursorPos(ImVec2(cellsX + (k % 5) * (cell + style.ItemSpacing.x), initialY + (k / 5) * (buttonHeight + style.ItemSpacing.y)));
 				char label[16];
 				snprintf(label, sizeof(label), "%d", i);
 
@@ -2934,7 +2954,7 @@ void GdxsvBackendReplay::RenderPauseMenu(const UiState& ui) {
 					ImGui::PushStyleColor(ImGuiCol_Button, ImGui::GetStyle().Colors[ImGuiCol_ButtonActive]);
 				}
 
-				if (ImGui::Button(label, ScaledVec2(40, 40))) {
+				if (ImGui::Button(label, ImVec2(cell, buttonHeight))) {
 					// A round the viewer picked, unlike the automatic jump on
 					// connect, which must keep following.
 					ui_commands_.emplace_back(ReplayCtrlCommand::SetRound, i);
@@ -2999,22 +3019,33 @@ void GdxsvBackendReplay::RenderPauseMenu(const UiState& ui) {
 				if (is_current) {
 					ImGui::PopStyleColor();
 				}
-
-				if (i < totalRounds) {
-					ImGui::SameLine();
-				}
 			}
-			ImGui::EndGroup();
+		}
+		if (pov_row) {
+			const float rowY = ImGui::GetCursorPosY();
+			ImGui::SetCursorPosY(rowY + (buttonHeight - ImGui::GetFontSize()) * 0.5f);
+			ImGui::TextUnformatted(T("POV"));
+			ImGui::SetCursorPos(ImVec2(cellsX, rowY));
+			if (gdxsv_camera_render_pov_row(pov_, cell, buttonHeight)) ui_commands_.emplace_back(ReplayCtrlCommand::StepFrameInMenu);
 		}
 
 		ImGui::Separator();
 
+		// The POV player's cockpit HP and inputs: the god's eye view shows neither. Disabled, not hidden, so the menu
+		// keeps its place and the choices come back with the player's POV.
+		const bool playerPov = gdxsv_camera_pov_mode() == GdxsvPovMode::Player;
+		ImGui::BeginGroup();
+		ImGui::BeginDisabled(!playerPov);
 		OptionCheckbox(T("Show Ally HP"), config::GdxReplayShowAllyHP, T("Hack the total HP field to display Ally HP"));
 
 		// Key Display and Skip MS Selection do nothing during Live Spectate, so
 		// they are not offered there rather than sitting inert.
+		if (!ui.liveMode) OptionCheckbox(T("Key Display"), config::GdxReplayKeyDisplay, T("Display controller inputs"));
+		ImGui::EndDisabled();
+		ImGui::EndGroup();
+		if (!playerPov && ImGui::IsItemHovered(ImGuiHoveredFlags_ForTooltip | ImGuiHoveredFlags_AllowWhenDisabled))
+			ImGui::SetTooltip(T("Not shown in %s"), T(gdxsv_camera_pov_mode_label(gdxsv_camera_pov_mode())));
 		if (!ui.liveMode) {
-			OptionCheckbox(T("Key Display"), config::GdxReplayKeyDisplay, T("Display controller inputs"));
 			OptionCheckbox(T("Skip MS Selection"), config::GdxReplaySkipMsSelection,
 						   T("Fast-forward through the mobile suit selection screen"));
 		}

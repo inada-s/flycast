@@ -674,6 +674,9 @@ msgstr "プレイヤー操作に切り替え"
 msgid "Retry Takeover"
 msgstr "プレイヤー操作をやり直す"
 
+msgid "Switch the POV to the player to take over"
+msgstr "プレイヤー操作に切り替えるには視点をプレイヤーに戻してください"
+
 msgid "Back to Pause Menu"
 msgstr "ポーズメニューに戻る"
 
@@ -701,11 +704,71 @@ msgstr "再生に戻る"
 msgid "Exit Replay"
 msgstr "リプレイを終了"
 
+msgid "POV"
+msgstr "視点"
+
 msgid "God's Eye View"
+msgstr "神視点"
+
+msgid "God's Eye"
 msgstr "神視点"
 
 msgid "God"
 msgstr "神"
+
+msgid "%s settings"
+msgstr "%sの設定"
+
+msgid "No settings for %s"
+msgstr "%sの設定はありません"
+
+msgid "Not shown in %s"
+msgstr "%sでは表示されません"
+
+msgid "Angle"
+msgstr "角度"
+
+msgid "How far the view leans back from straight down"
+msgstr "真上からの傾き"
+
+msgid "Closest"
+msgstr "最小距離"
+
+msgid "How close the camera may zoom in"
+msgstr "カメラが寄れる最小の距離"
+
+msgid "Nameplates"
+msgstr "ネームプレート"
+
+msgid "Pilot name and HP above each MS"
+msgstr "各機体の上にパイロットネームとHPを表示"
+
+msgid "Boost"
+msgstr "ブースト"
+
+msgid "Boost gauge under each nameplate"
+msgstr "ネームプレートの下にブーストゲージを表示"
+
+msgid "Team colors"
+msgstr "チームカラー"
+
+msgid "Color the HP gauges by team"
+msgstr "HPゲージをチーム色で表示"
+
+msgid "MS image"
+msgstr "MS画像"
+
+msgid "Fade on overlap"
+msgstr "重なりを薄く"
+
+msgid "Fade a nameplate while it overlaps another nameplate or MS"
+msgstr "他のネームプレートや機体と重なる間、ネームプレートを薄くする"
+
+msgid "Trail"
+msgstr "軌跡"
+
+msgid "seconds"
+msgstr "秒"
 
 msgid "Skip ahead to live"
 msgstr "ライブに追いつく"
