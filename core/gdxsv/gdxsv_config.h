@@ -30,6 +30,8 @@ extern Option<bool> GdxReplayHideName;
 extern Option<bool> GdxReplayShowAllyHP;
 extern Option<bool> GdxReplayKeyDisplay;
 extern Option<bool> GdxReplaySkipMsSelection;
+extern Option<float> GdxReplayGodsEyeClosest;
+extern Option<float> GdxReplayGodsEyeAngle;
 extern Option<bool> GdxLiveAutoNext;
 
 }  // namespace config

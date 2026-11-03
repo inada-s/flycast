@@ -25,6 +25,7 @@
 #include "ui/mainui.h"
 #include "gdx_rpc.h"
 #include "gdxsv.h"
+#include "gdxsv_camera.h"
 #include "gdxsv_emu_hooks.h"
 #include "gdxsv_translation.h"
 #include "gdxsv_replay_util.h"
@@ -1087,8 +1088,10 @@ void GdxsvBackendReplay::OnNextFrameInternal() {
 	}
 
 	// Never in Live Spectate: it is an analysis overlay, and it shows the
-	// players' inputs while they are still playing.
-	gdxsv.key_display_.enabled(config::GdxReplayKeyDisplay && IsInGame() && !live_mode_);
+	// players' inputs while they are still playing. Nor in the god's eye view, which
+	// shows no POV player.
+	gdxsv.key_display_.enabled(config::GdxReplayKeyDisplay && IsInGame() && !live_mode_ &&
+							   gdxsv_camera_pov_mode() == GdxsvPovMode::Player);
 	regular_save_state();
 
 	// Hysteresis stabilizes the indicator without changing live-following intent

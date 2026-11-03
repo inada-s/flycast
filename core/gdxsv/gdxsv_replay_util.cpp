@@ -19,6 +19,7 @@
 
 #include "dirent.h"
 #include "gdxsv.h"
+#include "gdxsv_camera.h"
 #include "gdxsv_multi_pov.h"
 #include "gdxsv_multi_pov_viewer.h"
 #include "json.hpp"
@@ -1988,6 +1989,9 @@ static bool start_live_battle(const std::string& battle_code, int pov, bool four
 void gdxsv_start_live_spectate(const std::string& battle_code, int pov, bool four_screen) {
 	live_autoplay_stop();
 	if (start_live_battle(battle_code, pov, four_screen)) {
+		// A battle the viewer picks opens in the player's POV, after the slot-99 load that can apply the command line's;
+		// autoplay's next battles keep the one chosen.
+		gdxsv_camera_set_pov_mode(GdxsvPovMode::Player);
 		gdxsv_live_autoplay_begin(battle_code, pov, four_screen);
 	} else if (four_screen) {
 		gdxsv_multi_pov_close();
@@ -2090,6 +2094,7 @@ void gdxsv_start_replay(const std::string& replay_file, int pov, bool four_scree
 		if (four_screen && gdxsv_multi_pov_begin_host_session(replay_file, hosted_replay, &video_error)) {
 			dc_loadstate(99);
 			if (gdxsv.StartReplayBuffer(hosted_replay, 0)) {
+				gdxsv_camera_set_pov_mode(GdxsvPovMode::Player);
 				gui_state = GuiState::Closed;
 				gdxsv_notify_replay_played(replay_file);
 			} else {
@@ -2107,6 +2112,8 @@ void gdxsv_start_replay(const std::string& replay_file, int pov, bool four_scree
 
 		dc_loadstate(99);
 		if (gdxsv.StartReplayFile(replay_file.c_str(), pov)) {
+			// A replay the viewer picks opens in the player's POV, after the slot-99 load that can apply the command line's.
+			gdxsv_camera_set_pov_mode(GdxsvPovMode::Player);
 			gui_state = GuiState::Closed;
 			gdxsv_notify_replay_played(replay_file);
 		} else {

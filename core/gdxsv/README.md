@@ -18,6 +18,7 @@ options and changed upstream files: `docs/gdxsv/`.
 | replay | a recorded battle played back from its inputs |
 | live | spectating a battle while it is played: uplink from a player, downlink to a spectator |
 | POV | point of view: which player's screen a replay shows |
+| god's eye view | the replay POV from above every player, leaning back from straight down by its angle setting (`GdxsvPovMode::GodsEye`), Disc 2 |
 | hook header | `gdxsv_*_hooks.h`: what an upstream file calls into this directory |
 | 2D, 3D, ex | texture pack layers: 2D everything but mobile suits and stages, 3D mobile suits and stages, ex images gdxsv features read by name, downloaded by every player without a setting |
 | battle-message sheet | DC1/DC2's texture (hash `eb90a6d4`) of 20-texel cells holding the characters the INFORMATION panel's messages are built from, and the army emblems |
@@ -45,6 +46,7 @@ options and changed upstream files: `docs/gdxsv/`.
 | `gdxsv_ggpo.cpp/.h` | gdxsv GGPO session (up to 4 peers, relays) on top of `core/network/ggpo.cpp`; disconnect, network stats, random input |
 | `gdxsv_ggpo_hooks.cpp/.h` | called from `core/network/ggpo.cpp`: per-frame state hash log (`gdxsv:hashlog`), session state `gdxsv_ggpo_state`; `gdxsv_ggpo_upstream` gives `gdxsv_ggpo.cpp` the upstream session state |
 | `gdxsv_backend_replay.cpp/.h` | replay backend: plays a recorded battle |
+| `gdxsv_camera.cpp/.h`, `gdxsv_camera_internal.h` | replay god's eye view: POV mode, guest code install and hooks, framing, settings; the internal header is shared by the camera files only |
 | `gdxsv_replay_util.cpp/.h`, `gdxsv_replay_ui.h` | replay files, bootstrap save state, replay UI data |
 | `gdxsv_save_state.cpp/.h` | in-memory save states for rollback |
 | `gdxsv_spectator_uplink.cpp/.h` | sends a player's confirmed inputs to LBS for live spectating |

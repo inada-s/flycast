@@ -26,6 +26,8 @@ Option<bool> GdxReplayHideName("ReplayHideName", false, "gdxsv");
 Option<bool> GdxReplayShowAllyHP("ReplayShowAllyHP", true, "gdxsv");
 Option<bool> GdxReplayKeyDisplay("ReplayKeyDisplay", true, "gdxsv");
 Option<bool> GdxReplaySkipMsSelection("ReplaySkipMsSelection", true, "gdxsv");
+Option<float> GdxReplayGodsEyeClosest("ReplayGodsEyeClosest", 150.f, "gdxsv");
+Option<float> GdxReplayGodsEyeAngle("ReplayGodsEyeAngle", 45.f, "gdxsv");
 Option<bool> GdxLiveAutoNext("LiveAutoNext", false, "gdxsv");
 
 }  // namespace config
