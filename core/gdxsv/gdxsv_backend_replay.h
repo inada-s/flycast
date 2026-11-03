@@ -34,6 +34,9 @@ class GdxsvBackendReplay {
 	void OnFastForward();
 	void DisplayOSD();
 	bool Seeking() const { return seeking_; }
+	int KeyMsgCount() const { return key_msg_count_; }
+	// As the game shows it in battle; empty past the replay's players.
+	std::string PilotName(int player) const;
 
 	bool StartFile(const char* path, int pov);
 	bool StartBuffer(const std::vector<u8>& buf, int pov);

@@ -1713,6 +1713,7 @@ void GdxsvBackendReplay::DisplayOSD() {
 		}
 		UpdateControlBarVisibility(ui);
 		RenderControlBar(ui);
+		if (ui.state >= State::McsInBattle && !ui.takeover) gdxsv_camera_render_overlay();
 	}
 	RenderLoadingHud(ui);
 }
@@ -2038,6 +2039,13 @@ void GdxsvBackendReplay::Open() {
 	recv_buf_.assign({0x0e, 0x61, 0x00, 0x22, 0x10, 0x31, 0x66, 0x77, 0x88, 0x99, 0xaa, 0xbb, 0xcc, 0xdd});
 	state_ = State::McsSessionExchange;
 	ApplyPatch(true);
+}
+
+std::string GdxsvBackendReplay::PilotName(int player) const {
+	if (player < 0 || log_file_.users_size() <= player) return "";
+	if (config::GdxReplayHideName) return "PILOT0" + std::to_string(player + 1);
+	const auto& user = log_file_.users(player);
+	return user.pilot_name().empty() ? user.user_name() : user.pilot_name();
 }
 
 void GdxsvBackendReplay::Close() {

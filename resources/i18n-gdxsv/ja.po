@@ -701,6 +701,12 @@ msgstr "再生に戻る"
 msgid "Exit Replay"
 msgstr "リプレイを終了"
 
+msgid "God's Eye View"
+msgstr "神視点"
+
+msgid "God"
+msgstr "神"
+
 msgid "Skip ahead to live"
 msgstr "ライブに追いつく"
 

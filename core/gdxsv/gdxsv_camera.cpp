@@ -11,6 +11,7 @@
 
 #include "cfg/option.h"
 #include "emulator.h"
+#include "gdxsv_camera_art.h"
 #include "gdxsv_camera_internal.h"
 #include "gdxsv_config.h"
 #include "libs.h"
@@ -36,6 +37,8 @@ constexpr u32 kSysBattleOver = 0x274;  // system work: set when the mission text
 constexpr u8 kViewIdShots = 5;		   // the game's own shots, 5 + the local player: before a battle, and the losing MS's end after it
 constexpr u32 kScene = 0x0c3d16d4;	   // the game's scene id
 constexpr u32 kSceneBattle = 0x0702;
+constexpr u32 kCameraWork = 0x0c3dce00;	 // each player's own camera record
+constexpr u32 kCameraStride = 0x140;
 constexpr u8 kStateGone = 3;
 constexpr u8 kPhaseArriving = 1;
 constexpr u8 kPhaseControl = 3;
@@ -46,6 +49,8 @@ enum : u32 {
 	kOffEnabled = 0x04,
 	kOffStatus = 0x08,
 	kOffRenderArmed = 0x10,
+	kOffSwapCamera = 0x1c,
+	kOffSavedCamera = 0x20,
 };
 
 // Offsets in gdx_top_t of camera.c.
@@ -135,6 +140,7 @@ float GameAspect() {
 void ViewOff() {
 	cam.framing.live = false;
 	gdxsv_WriteMem32(kCamTop + kTopReady, 0);
+	gdxsv_camera_overlay_clear();
 }
 
 // Stage fog is tuned for battle distances and washes out a view from high above.
@@ -319,6 +325,7 @@ void UpdateView() {
 	frame.eye = {framing.center.x - f.x * dist + r.x * shift_right + u.x * shift_up, framing.center.y - f.y * dist + u.y * shift_up,
 				 framing.center.z - f.z * dist + r.z * shift_right + u.z * shift_up};
 	WriteView(frame, dist);
+	gdxsv_camera_overlay_update(frame);
 }
 
 // After the mission text the game shows the end of the losing MS, through its filter: the god's eye view leaves that to it.
@@ -343,6 +350,13 @@ void LoadSettings() {
 	GdxsvCameraSettings &settings = gdxsv_camera_settings;
 	settings.closest = std::clamp(config::GdxReplayGodsEyeClosest.get(), kGdxsvCameraClosestMin, kGdxsvCameraClosestMax);
 	settings.angle = std::clamp(config::GdxReplayGodsEyeAngle.get(), 0.f, kGdxsvCameraAngleMax);
+	settings.nameplates = config::GdxReplayGodsEyeNameplates.get();
+	settings.boost = config::GdxReplayGodsEyeBoost.get();
+	settings.team_colors = config::GdxReplayGodsEyeTeamColors.get();
+	settings.ms_image = config::GdxReplayGodsEyeMsImage.get();
+	settings.fade = config::GdxReplayGodsEyeFade.get();
+	settings.trail = config::GdxReplayGodsEyeTrail.get();
+	settings.trail_seconds = std::clamp(config::GdxReplayGodsEyeTrailSeconds.get(), 1.f, kGdxsvCameraTrailSecondsMax);
 }
 }  // namespace
 
@@ -364,6 +378,13 @@ void gdxsv_camera_save_settings() {
 	const GdxsvCameraSettings &settings = gdxsv_camera_settings;
 	config::GdxReplayGodsEyeClosest.set(settings.closest);
 	config::GdxReplayGodsEyeAngle.set(settings.angle);
+	config::GdxReplayGodsEyeNameplates.set(settings.nameplates);
+	config::GdxReplayGodsEyeBoost.set(settings.boost);
+	config::GdxReplayGodsEyeTeamColors.set(settings.team_colors);
+	config::GdxReplayGodsEyeMsImage.set(settings.ms_image);
+	config::GdxReplayGodsEyeFade.set(settings.fade);
+	config::GdxReplayGodsEyeTrail.set(settings.trail);
+	config::GdxReplayGodsEyeTrailSeconds.set(settings.trail_seconds);
 	config::Settings::instance().save();
 }
 
@@ -382,6 +403,14 @@ bool gdxsv_camera_set_pov_mode_name(const std::string &name) {
 }
 
 GdxsvPovMode gdxsv_camera_pov_mode() { return gdxsv_camera_settings.pov_mode; }
+
+const char *gdxsv_camera_pov_mode_label(GdxsvPovMode mode) { return mode == GdxsvPovMode::GodsEye ? "God's Eye View" : ""; }
+
+float gdxsv_camera_player_camera(int player, u32 offset) {
+	const u32 record = kCameraWork + player * kCameraStride;
+	if (gdxsv_ReadMem32(kCamData + kOffSwapCamera) == record + 4) return gdxsv_camera_read_float(kCamData + kOffSavedCamera + offset - 4);
+	return gdxsv_camera_read_float(record + offset);
+}
 
 void gdxsv_camera_next_frame(int disk, bool replaying) {
 	const bool want = gdxsv_camera_settings.pov_mode != GdxsvPovMode::Player && replaying && disk == 2 && !GameEndingShot();
@@ -436,6 +465,8 @@ void gdxsv_camera_reset() {
 	settings.zoom = 1.f;
 	settings.focus = kGdxsvCameraEveryone;
 	LoadSettings();
+	gdxsv_camera_art_reset();
+	gdxsv_camera_overlay_clear();
 	ViewFog(false);
 	cam.framing = Framing{};
 	cam.installed = false;

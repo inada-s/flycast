@@ -284,8 +284,11 @@ target_sources(${PROJECT_NAME} PRIVATE
 		core/gdxsv/gdxsv_backend_udp.h
 		core/gdxsv/gdxsv_camera.cpp
 		core/gdxsv/gdxsv_camera.h
+		core/gdxsv/gdxsv_camera_art.cpp
+		core/gdxsv/gdxsv_camera_art.h
 		core/gdxsv/gdxsv_camera_blob.inc
 		core/gdxsv/gdxsv_camera_internal.h
+		core/gdxsv/gdxsv_camera_overlay.cpp
 		core/gdxsv/gdxsv_emu_hooks.cpp
 		core/gdxsv/gdxsv_emu_hooks.h
 		core/gdxsv/gdxsv_font_glyphs.inc

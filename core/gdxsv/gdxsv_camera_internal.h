@@ -17,6 +17,7 @@ constexpr float kGdxsvCameraClosestMax = 1500.f;
 constexpr float kGdxsvCameraZoomMin = 0.25f;
 constexpr float kGdxsvCameraZoomMax = 4.f;
 constexpr u32 kGdxsvCameraEveryone = 0xf;
+constexpr float kGdxsvCameraTrailSecondsMax = 20.f;
 // World units: a standing Gundam or Gelgoog, from its feet up.
 constexpr float kGdxsvCameraMsHeight = 18.f;
 
@@ -38,6 +39,13 @@ struct GdxsvCameraSettings {
 	std::atomic<float> zoom{1.f};
 	std::atomic<u32> focus{kGdxsvCameraEveryone};  // a bit per player the framing follows
 	std::atomic<s64> hand_until{0};				   // steady clock, ns: a hand turns or tilts the view until then
+	std::atomic<bool> nameplates{true};
+	std::atomic<bool> boost{true};	// a boost gauge under each nameplate
+	std::atomic<bool> team_colors{true};
+	std::atomic<bool> ms_image{false};
+	std::atomic<bool> fade{true};  // a nameplate fades while it overlaps another nameplate or MS
+	std::atomic<bool> trail{true};
+	std::atomic<float> trail_seconds{6.f};
 };
 
 extern GdxsvCameraSettings gdxsv_camera_settings;
@@ -61,6 +69,12 @@ struct GdxsvCameraFrame {
 
 float gdxsv_camera_read_float(u32 addr);
 
+// A float of a player's own camera record. While the game renders, the guest code has the god's eye view in the POV player's
+// record and keeps that player's own words.
+float gdxsv_camera_player_camera(int player, u32 offset);
+// Emulator thread: what the overlay shows of this frame of the god's eye view, or nothing.
+void gdxsv_camera_overlay_update(const GdxsvCameraFrame &frame);
+void gdxsv_camera_overlay_clear();
 // The aspect of the game's picture in a window of this aspect.
 float gdxsv_camera_picture_aspect(float window_aspect);
 // Called every frame a hand turns or tilts the view: its distance stays put until a little after the last call.

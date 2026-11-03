@@ -47,6 +47,8 @@ options and changed upstream files: `docs/gdxsv/`.
 | `gdxsv_ggpo_hooks.cpp/.h` | called from `core/network/ggpo.cpp`: per-frame state hash log (`gdxsv:hashlog`), session state `gdxsv_ggpo_state`; `gdxsv_ggpo_upstream` gives `gdxsv_ggpo.cpp` the upstream session state |
 | `gdxsv_backend_replay.cpp/.h` | replay backend: plays a recorded battle |
 | `gdxsv_camera.cpp/.h`, `gdxsv_camera_internal.h` | replay god's eye view: POV mode, guest code install and hooks, framing, settings; the internal header is shared by the camera files only |
+| `gdxsv_camera_overlay.cpp` | the god's eye view's overlay: nameplates, trails, lock pointers, cannot-damage marks |
+| `gdxsv_camera_art.cpp/.h` | MS images and force logos of the nameplates, from one image of the ex texture pack |
 | `gdxsv_replay_util.cpp/.h`, `gdxsv_replay_ui.h` | replay files, bootstrap save state, replay UI data |
 | `gdxsv_save_state.cpp/.h` | in-memory save states for rollback |
 | `gdxsv_spectator_uplink.cpp/.h` | sends a player's confirmed inputs to LBS for live spectating |
