@@ -734,6 +734,19 @@ void gdxsv_camera_overlay_clear() {
 	}
 }
 
+bool gdxsv_camera_overlay_battle(GdxsvCameraBattle &battle) {
+	std::lock_guard<std::mutex> lock(overlay.mutex);
+	if (!overlay.valid) return false;
+	battle.timer_slide = overlay.timer_slide * 240.f / kHudHalfHeight;
+	for (int i = 0; i < 4; i++) {
+		battle.team[i] = overlay.team[i];
+		battle.name[i] = overlay.name[i];
+	}
+	return true;
+}
+
+u32 gdxsv_camera_team_color(int team) { return kTeamColors[team != 0 ? 1 : 0]; }
+
 void gdxsv_camera_render_overlay() {
 	const GdxsvPovMode mode = gdxsv_camera_pov_mode();
 	if (mode == GdxsvPovMode::Player) return;

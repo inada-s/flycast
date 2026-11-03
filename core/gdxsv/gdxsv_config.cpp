@@ -35,6 +35,7 @@ Option<bool> GdxReplayGodsEyeMsImage("ReplayGodsEyeMsImage", false, "gdxsv");
 Option<bool> GdxReplayGodsEyeFade("ReplayGodsEyeFade", true, "gdxsv");
 Option<bool> GdxReplayGodsEyeTrail("ReplayGodsEyeTrail", true, "gdxsv");
 Option<float> GdxReplayGodsEyeTrailSeconds("ReplayGodsEyeTrailSeconds", 6.f, "gdxsv");
+Option<bool> GdxReplayGodsEyeDpad("ReplayGodsEyeDpad", true, "gdxsv");
 Option<bool> GdxLiveAutoNext("LiveAutoNext", false, "gdxsv");
 
 }  // namespace config

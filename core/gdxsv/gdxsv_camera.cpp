@@ -357,6 +357,7 @@ void LoadSettings() {
 	settings.fade = config::GdxReplayGodsEyeFade.get();
 	settings.trail = config::GdxReplayGodsEyeTrail.get();
 	settings.trail_seconds = std::clamp(config::GdxReplayGodsEyeTrailSeconds.get(), 1.f, kGdxsvCameraTrailSecondsMax);
+	settings.dpad = config::GdxReplayGodsEyeDpad.get();
 }
 }  // namespace
 
@@ -385,6 +386,7 @@ void gdxsv_camera_save_settings() {
 	config::GdxReplayGodsEyeFade.set(settings.fade);
 	config::GdxReplayGodsEyeTrail.set(settings.trail);
 	config::GdxReplayGodsEyeTrailSeconds.set(settings.trail_seconds);
+	config::GdxReplayGodsEyeDpad.set(settings.dpad);
 	config::Settings::instance().save();
 }
 
@@ -467,6 +469,7 @@ void gdxsv_camera_reset() {
 	LoadSettings();
 	gdxsv_camera_art_reset();
 	gdxsv_camera_overlay_clear();
+	gdxsv_camera_panel_reset();
 	ViewFog(false);
 	cam.framing = Framing{};
 	cam.installed = false;

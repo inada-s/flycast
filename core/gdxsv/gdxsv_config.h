@@ -39,6 +39,7 @@ extern Option<bool> GdxReplayGodsEyeMsImage;
 extern Option<bool> GdxReplayGodsEyeFade;
 extern Option<bool> GdxReplayGodsEyeTrail;
 extern Option<float> GdxReplayGodsEyeTrailSeconds;
+extern Option<bool> GdxReplayGodsEyeDpad;
 extern Option<bool> GdxLiveAutoNext;
 
 }  // namespace config

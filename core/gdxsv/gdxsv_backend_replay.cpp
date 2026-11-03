@@ -222,6 +222,8 @@ void GdxsvBackendReplay::Reset() {
 	ctrl_bar_dragging_ = false;
 	ctrl_bar_drag_target_frame_ = -1;
 	ctrl_input_release_pending_ = false;
+	mouse_holds_a_ = false;
+	key_holds_ = 0;
 	settings.gdxsv.replayModeActive = false;
 	settings.aica.audioFade = 1.0f;
 	takeover_ = false;
@@ -286,6 +288,24 @@ void GdxsvBackendReplay::OnMainUiLoop() {
 		if ((input.fullAxes[0] >> 8) + 128 >= 128 + 0x20) input.kcode &= ~DC_DPAD_RIGHT;
 		if ((input.fullAxes[1] >> 8) + 128 <= 128 - 0x20) input.kcode &= ~DC_DPAD_UP;
 		if ((input.fullAxes[1] >> 8) + 128 >= 128 + 0x20) input.kcode &= ~DC_DPAD_DOWN;
+		// In the god's eye view with the gamepad toggle on, the ` and 1 to 4 keys pick players: game buttons the keyboard
+		// maps to them are held back, as long as the keys are held or the poll, which can trail them, still has them.
+		const u32 key_buttons = !ui.takeover && ui.inGame ? gdxsv_camera_key_buttons() : 0;
+		key_holds_ = key_buttons | (key_holds_ & ~input.kcode);
+		input.kcode |= key_holds_;
+		// The god's eye view may take the d-pad to turn and zoom the camera, X and Y to tilt it, and B to step whom it follows.
+		if (!ui.takeover && ui.inGame && gdxsv_camera_pov_mode() == GdxsvPovMode::GodsEye) {
+			gdxsv_camera_steer(input.kcode);
+			if (gdxsv_camera_dpad_steers()) input.kcode |= DC_DPAD_UP | DC_DPAD_DOWN | DC_DPAD_LEFT | DC_DPAD_RIGHT;
+		}
+		// In the god's eye view the left mouse button turns the view: a click on A it may stand for does not pause. This
+		// input is the emulator's last controller poll, which can trail the mouse by a frame, so A stays held back until
+		// the poll has let it go too.
+		if (!ui.takeover && ui.inGame && gdxsv_camera_takes_mouse())
+			mouse_holds_a_ = true;
+		else if (input.kcode & DC_BTN_A)
+			mouse_holds_a_ = false;
+		if (mouse_holds_a_) input.kcode |= DC_BTN_A;
 
 		static u32 prev_kcode = 0;
 		if (prev_kcode == 0) prev_kcode = input.kcode;
@@ -1717,7 +1737,10 @@ void GdxsvBackendReplay::DisplayOSD() {
 		}
 		UpdateControlBarVisibility(ui);
 		RenderControlBar(ui);
-		if (ui.state >= State::McsInBattle && !ui.takeover) gdxsv_camera_render_overlay();
+		if (ui.state >= State::McsInBattle && !ui.takeover) {
+			gdxsv_camera_render_overlay();
+			gdxsv_camera_render_view_control();
+		}
 	}
 	RenderLoadingHud(ui);
 }
@@ -3165,6 +3188,9 @@ void GdxsvBackendReplay::UpdateControlBarVisibility(const UiState& ui) {
 	if ((axes[0] >> 8) + 128 >= 128 + 0x20) cur_kcode &= ~DC_DPAD_RIGHT;
 	if ((axes[1] >> 8) + 128 <= 128 - 0x20) cur_kcode &= ~DC_DPAD_UP;
 	if ((axes[1] >> 8) + 128 >= 128 + 0x20) cur_kcode &= ~DC_DPAD_DOWN;
+	// The god's eye view's camera buttons do not bring up the bar: the d-pad when it steers the view, B, X and Y always.
+	if (ui.inGame && gdxsv_camera_dpad_steers()) cur_kcode |= DC_DPAD_UP | DC_DPAD_DOWN | DC_DPAD_LEFT | DC_DPAD_RIGHT;
+	if (ui.inGame && gdxsv_camera_pov_mode() == GdxsvPovMode::GodsEye) cur_kcode |= DC_BTN_B | DC_BTN_X | DC_BTN_Y;
 	bool holding_lr = (~cur_kcode & DC_DPAD_LEFT) || (~cur_kcode & DC_DPAD_RIGHT);
 	if (cur_kcode != ctrl_bar_prev_kcode_ || holding_lr) {
 		ctrl_bar_idle_timer_ = 3.0f;

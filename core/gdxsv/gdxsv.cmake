@@ -290,6 +290,7 @@ target_sources(${PROJECT_NAME} PRIVATE
 		core/gdxsv/gdxsv_camera_internal.h
 		core/gdxsv/gdxsv_camera_menu.cpp
 		core/gdxsv/gdxsv_camera_overlay.cpp
+		core/gdxsv/gdxsv_camera_panel.cpp
 		core/gdxsv/gdxsv_emu_hooks.cpp
 		core/gdxsv/gdxsv_emu_hooks.h
 		core/gdxsv/gdxsv_font_glyphs.inc

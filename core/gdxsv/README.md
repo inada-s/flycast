@@ -48,6 +48,7 @@ options and changed upstream files: `docs/gdxsv/`.
 | `gdxsv_backend_replay.cpp/.h` | replay backend: plays a recorded battle |
 | `gdxsv_camera.cpp/.h`, `gdxsv_camera_internal.h` | replay god's eye view: POV mode, guest code install and hooks, framing, settings; the internal header is shared by the camera files only |
 | `gdxsv_camera_menu.cpp` | the Tab menu's POV row and the god's eye view's settings popup |
+| `gdxsv_camera_panel.cpp` | the god's eye view's CAMERA panel, and its mouse, d-pad, X/Y and key controls |
 | `gdxsv_camera_overlay.cpp` | the god's eye view's overlay: nameplates, trails, lock pointers, cannot-damage marks |
 | `gdxsv_camera_art.cpp/.h` | MS images and force logos of the nameplates, from one image of the ex texture pack |
 | `gdxsv_replay_util.cpp/.h`, `gdxsv_replay_ui.h` | replay files, bootstrap save state, replay UI data |

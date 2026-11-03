@@ -259,6 +259,8 @@ class GdxsvBackendReplay {
 	bool ctrl_bar_dragging_ = false;
 	int ctrl_bar_drag_target_frame_ = -1;
 	bool ctrl_input_release_pending_ = false;
+	bool mouse_holds_a_ = false;  // the god's eye view held back an A the mouse stands for, until the input lets A go
+	u32 key_holds_ = 0;			  // and buttons the ` and 1 to 4 keys stand for, while they pick players
 
 	// ---- Live Spectate ----
 	// Replays a match that is still being played: live_downlink_ feeds log_file_

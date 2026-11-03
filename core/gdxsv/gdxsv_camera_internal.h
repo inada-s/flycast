@@ -3,6 +3,7 @@
 // What the files of the replay god's eye view share. Only they include this header.
 #pragma once
 #include <atomic>
+#include <string>
 
 #include "gdxsv_camera.h"
 #include "types.h"
@@ -46,6 +47,7 @@ struct GdxsvCameraSettings {
 	std::atomic<bool> fade{true};  // a nameplate fades while it overlaps another nameplate or MS
 	std::atomic<bool> trail{true};
 	std::atomic<float> trail_seconds{6.f};
+	std::atomic<bool> dpad{true};  // the d-pad turns and zooms the view, not the replay
 };
 
 extern GdxsvCameraSettings gdxsv_camera_settings;
@@ -75,6 +77,18 @@ float gdxsv_camera_player_camera(int player, u32 offset);
 // Emulator thread: what the overlay shows of this frame of the god's eye view, or nothing.
 void gdxsv_camera_overlay_update(const GdxsvCameraFrame &frame);
 void gdxsv_camera_overlay_clear();
+// What the CAMERA panel shows of the battle: how far the TIME block has slid, in the game's pixels, and each player's
+// force and name, empty past the replay's players.
+struct GdxsvCameraBattle {
+	float timer_slide = 0.f;
+	int team[4] = {};
+	std::string name[4];
+};
+// Render thread: false while the battle view is not up.
+bool gdxsv_camera_overlay_battle(GdxsvCameraBattle &battle);
+// A force's color as the overlay draws it: 0 Federation, 1 Zeon.
+u32 gdxsv_camera_team_color(int team);
+void gdxsv_camera_panel_reset();
 // The aspect of the game's picture in a window of this aspect.
 float gdxsv_camera_picture_aspect(float window_aspect);
 // Called every frame a hand turns or tilts the view: its distance stays put until a little after the last call.

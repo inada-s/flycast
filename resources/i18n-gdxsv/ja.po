@@ -770,6 +770,27 @@ msgstr "軌跡"
 msgid "seconds"
 msgstr "秒"
 
+msgid "Drag anywhere on the picture to turn and tilt the view. Double-click here for the default view"
+msgstr "画面上のどこでもドラッグで視点を回転・傾斜。ここをダブルクリックで初期の視点に戻す"
+
+msgid "Zoom. Double-click for the automatic zoom"
+msgstr "ズーム。ダブルクリックで自動ズームに戻す"
+
+msgid "Turn 90° left"
+msgstr "左に90°回転"
+
+msgid "Turn 90° right"
+msgstr "右に90°回転"
+
+msgid "The d-pad turns and zooms the view. Click to give it back to the replay controls"
+msgstr "十字キーで視点を回転・ズームします。クリックでリプレイ操作に戻す"
+
+msgid "The d-pad controls the replay. Click to turn and zoom the view with it"
+msgstr "十字キーはリプレイ操作です。クリックで視点の操作に切り替え"
+
+msgid "Every MS, at the automatic zoom (` key)"
+msgstr "全機体を自動ズームで映す（`キー）"
+
 msgid "Skip ahead to live"
 msgstr "ライブに追いつく"
 
