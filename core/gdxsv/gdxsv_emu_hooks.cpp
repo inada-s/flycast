@@ -502,6 +502,10 @@ void gdxsv_emu_settings_loaded() {
 	// Threaded rendering only: the frames render from snapshots on the render thread (docs/gdxsv/features.md).
 	// Overridden, so never saved: the config file keeps the user's value for an older version.
 	config::ThreadedRendering.override(true);
+
+	if (config::GdxTextureResolution == -1) {
+		config::GdxTextureResolution.set(config::loadBool("gdxsv", "UseTexturePack", false) ? 2 : 1);
+	}
 }
 
 const char* gdxsv_emu_settings_text_for_preparing_font() { return gdxsv_gui_settings_text_for_preparing_font(); }
@@ -674,13 +678,11 @@ static void gdxsv_update_popup() {
 }
 
 static void gdxsv_texture_update_popup() {
-	static bool update_triggered = false;
 	static std::shared_future<bool> self_update_result;
 	bool no_popup_opened = !ImGui::IsPopupOpen(nullptr, ImGuiPopupFlags_AnyPopupId);
 
-	if (!update_triggered && no_popup_opened && gdxsv_custom_texture_update.IsUpdateAvailable()) {
+	if (no_popup_opened && gdxsv_custom_texture_update.IsUpdateAvailable()) {
 		self_update_result = gdxsv_custom_texture_update.StartUpdate();
-		update_triggered = true;
 	}
 
 	if (self_update_result.valid() && no_popup_opened) {
@@ -688,24 +690,21 @@ static void gdxsv_texture_update_popup() {
 	}
 
 	push_update_dialog_style();
-	const std::string title = std::string(i18n::T("Updating texture")) + "###UpdatingTexture";
+	const std::string title = std::string(i18n::T("Preparing textures")) + "###UpdatingTexture";
 	if (ImGui::BeginPopupModal(title.c_str(), NULL, ImGuiWindowFlags_AlwaysAutoResize | ImGuiWindowFlags_NoMove)) {
 		if (self_update_result.wait_for(std::chrono::milliseconds(0)) == std::future_status::ready) {
 			if (self_update_result.get()) {
-				textCentered(ImVec4(0, 0.8, 0, 1), i18n::T("Update Completed"));
-				if (ImGui::Button(icon_label(ICON_FA_CHECK, i18n::T("Continue")).c_str(), ScaledVec2(-1, 40))) {
-					self_update_result = {};
-					ImGui::CloseCurrentPopup();
-				}
+				self_update_result = {};
+				ImGui::CloseCurrentPopup();
 			} else {
-				textCentered(ImVec4(0.8, 0, 0, 1), i18n::T("Update Failed"));
+				textCentered(ImVec4(0.8, 0, 0, 1), i18n::T("Could not prepare the textures"));
 				if (ImGui::Button(icon_label(ICON_FA_XMARK, i18n::T("Close")).c_str(), ScaledVec2(-1, 40))) {
 					self_update_result = {};
 					ImGui::CloseCurrentPopup();
 				}
 			}
 		} else {
-			ImGui::TextUnformatted(i18n::T("Updating..."));
+			ImGui::TextUnformatted(i18n::T("Preparing..."));
 			ImGui::PushStyleColor(ImGuiCol_PlotHistogram, ImVec4(0.557f, 0.268f, 0.965f, 1.f));
 			ImGui::ProgressBar(gdxsv_custom_texture_update.UpdateProgress(), ScaledVec2(-1, 24.f));
 			ImGui::PopStyleColor();

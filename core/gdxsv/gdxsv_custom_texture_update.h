@@ -29,6 +29,7 @@ class GdxsvCustomTexutreUpdate {
 	std::shared_future<LatestVersionInfo> fetch_latest_version_future_;
 	std::vector<uint8_t> download_buf_;
 	int download_completed_size_ = 0;
+	bool update_started_ = false;
 };
 
 extern GdxsvCustomTexutreUpdate gdxsv_custom_texture_update;

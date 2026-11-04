@@ -101,13 +101,16 @@ void gdxsv_gui_settings_tab()
 	ImGui::SameLine();
 	ShowHelpMarker(T("Patch game language and texture, for DX only"));
 	ImGui::NextColumn();
-	OptionRadioButton(u8"日本語", config::GdxLanguage, 0);
+	bool language_changed = OptionRadioButton(u8"日本語", config::GdxLanguage, 0);
 	ImGui::NextColumn();
-	OptionRadioButton(u8"廣東話", config::GdxLanguage, 1);
+	language_changed |= OptionRadioButton(u8"廣東話", config::GdxLanguage, 1);
 	ImGui::NextColumn();
-	OptionRadioButton("English", config::GdxLanguage, 2);
+	language_changed |= OptionRadioButton("English", config::GdxLanguage, 2);
 	ImGui::NextColumn();
-	OptionRadioButton("Disabled", config::GdxLanguage, 3);
+	language_changed |= OptionRadioButton("Disabled", config::GdxLanguage, 3);
+	if (language_changed) {
+		gdxsv_custom_texture_update.Reset();
+	}
 	ImGui::Columns(1, nullptr, false);
 
 	auto setting = [](const char* name, const char* value) -> std::string {
@@ -231,8 +234,15 @@ void gdxsv_gui_settings_tab()
 		"Mid-Spec:\nWell-balanced setting that allows for comfortable gameplay with medium load.\n\n"
 		"High-Spec:\nAllows for comfortable gameplay by utilizing high load options."));
 
-	bool pressed = OptionCheckbox(T("Use Texture Pack"), config::GdxUseTexturePack,
-		T("Use up-scaled textures."));
+	ImGui::Text("%s", T("Texture Resolution:"));
+	ImGui::SameLine();
+	bool pressed = OptionRadioButton("1x", config::GdxTextureResolution, 1);
+	ImGui::SameLine();
+	pressed |= OptionRadioButton("2x", config::GdxTextureResolution, 2);
+	ImGui::SameLine();
+	pressed |= OptionRadioButton("4x", config::GdxTextureResolution, 4);
+	ImGui::SameLine();
+	ShowHelpMarker(T("Higher resolutions look sharper and use more memory.\nTakes effect at the next game start."));
 	if (pressed) {
 		gdxsv_custom_texture_update.Reset();
 	}

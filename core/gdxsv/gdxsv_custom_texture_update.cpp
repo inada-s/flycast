@@ -1,5 +1,6 @@
 #include "gdxsv_custom_texture_update.h"
 #include "gdxsv_config.h"
+#include "gdxsv_custom_texture_source.h"
 #include "gdxsv_update.h"
 
 #include <locale>
@@ -23,18 +24,27 @@ static std::string base_url() {
 	return config::loadStr("gdxsv", "TexturePackUrl", "https://storage.googleapis.com/gdxsv/custom-texture/");
 }
 
+static std::string channel_file_name() {
+	std::string name = config::GdxTexturePackChannel.get().empty() ? "release" : config::GdxTexturePackChannel.get();
+	if (config::GdxTextureResolution == 1) {
+		return name + "-localized.json";
+	}
+	return name + (config::GdxTextureResolution == 4 ? "-4x.json" : "-2x.json");
+}
+
 std::string get_texture_pack_path() {
 	return get_writable_data_path("T13306M.texp");
 }
 
 void GdxsvCustomTexutreUpdate::Reset() {
 	fetch_latest_version_future_ = {};
+	update_started_ = false;
 	download_buf_.clear();
 	download_buf_.shrink_to_fit();
 }
 
 bool GdxsvCustomTexutreUpdate::IsUpdateAvailable() {
-	if (!config::GdxUseTexturePack) {
+	if (update_started_ || !gdxsv_texture_pack_wanted()) {
 		return false;
 	}
 
@@ -58,17 +68,14 @@ void GdxsvCustomTexutreUpdate::FetchLatestVersionInfo() {
 
 	const auto future_fn = [this]() -> LatestVersionInfo {
 		LatestVersionInfo latest{};
-		if (!config::GdxUseTexturePack) {
+		if (!gdxsv_texture_pack_wanted()) {
 			return latest;
 		}
 
 		std::vector<u8> dl;
 		std::string content_type;
 		http::init();
-		std::string name = "release.json";
-		if (!config::GdxTexturePackChannel.get().empty()) {
-			name = config::GdxTexturePackChannel.get() + ".json";
-		}
+		const std::string name = channel_file_name();
 
 		const auto t = std::chrono::steady_clock::now().time_since_epoch().count();
 		const std::string url = base_url() + name + "?t=" + std::to_string(t);
@@ -94,6 +101,7 @@ std::string GdxsvCustomTexutreUpdate::GetLatestVersion() const {
 
 std::shared_future<bool> GdxsvCustomTexutreUpdate::StartUpdate() {
 	download_completed_size_ = 0;
+	update_started_ = true;
 	verify(future_is_ready(fetch_latest_version_future_));
 
 	auto update_fn = [this]() -> bool {
