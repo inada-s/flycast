@@ -20,10 +20,9 @@ Upstream options it changes are in [upstream.md](upstream.md).
 | `server` | `zdxsv.net` | lobby server host |
 | `loginkey` | empty | lobby account key; generated when empty |
 | `language` | -1 | translation patch: 0 Japanese, 1 Cantonese, 2 English, 3 off |
-| `UseTexturePack` | no | download and use the texture pack; when off, a language other than `language`'s off still downloads its images |
+| `TextureResolution` | -1 | downloaded textures: 1 only the language's images (`<channel>-localized.json`; nothing with `language` off), 2 `<channel>-2x.json`, 4 `<channel>-4x.json`; -1 takes 2 from an old `UseTexturePack=yes`, else 1 |
 | `FontRaster` | no | DC1/DC2: draw the game font glyphs from the embedded GDXGothic Medium instead of the 24 px bitmaps: text with the game's edge, the in-battle pilot names smaller with a see-through dark outline, and the battle-message sheet (the INFORMATION panel's messages) at the names' size; wins over the embedded translation textures and the texture pack, a `data/textures` folder wins over it; Use High-Resolution Font in the gdxsv settings; takes effect at the next game start |
 | `TexturePackChannel` | empty | texture pack channel to download |
-| `TexturePackResolution` | 2 | texture pack with `UseTexturePack`: 2 reads `<channel>-2x.json`, 4 reads `<channel>-4x.json` |
 | `WidescreenHudLayout` | 1 | HUD in widescreen: 0 stock 4:3, 1 up to 16:9, 2 viewport edges |
 | `LocalPort` | 0 | UDP port for battles; 0 picks a random one |
 | `MinDelay` | 2 | lowest input delay of a rollback battle and of a takeover, in frames |

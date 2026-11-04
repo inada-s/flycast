@@ -224,7 +224,7 @@ u8* GdxsvEmbedTextureSource::LoadExtraTexture(const char* name, bool v_flip, int
 GdxsvEmbedTextureSource::~GdxsvEmbedTextureSource() { gdxsv_custom_texture_cells_remove_source(this); }
 
 bool gdxsv_texture_pack_wanted() {
-	return config::GdxUseTexturePack || GdxsvLanguage::Language() != GdxsvLanguage::Lang::Disabled;
+	return config::GdxTextureResolution != 1 || GdxsvLanguage::Language() != GdxsvLanguage::Lang::Disabled;
 }
 
 GdxsvTexturePackSource::GdxsvTexturePackSource() {
@@ -335,8 +335,8 @@ bool GdxsvTexturePackSource::loadMap() {
 				if (name.find("Japanese/") != std::string::npos) lang = GdxsvLanguage::Lang::Japanese;
 				if (name.find("Cantonese/") != std::string::npos) lang = GdxsvLanguage::Lang::Cantonese;
 
-				// With the setting off, a pack still on disk only gives its language images.
-				if (!config::GdxUseTexturePack && lang == GdxsvLanguage::Lang::Disabled) continue;
+				// At 1x, a pack still on disk only gives its language images.
+				if (config::GdxTextureResolution == 1 && lang == GdxsvLanguage::Lang::Disabled) continue;
 
 				if (mapping.find(hash) == mapping.end()) {
 					if (lang == GdxsvLanguage::Lang::Disabled || lang == GdxsvLanguage::Language()) {

@@ -103,12 +103,6 @@ msgstr ""
 "高スペック向け:\n"
 "快適なプレイが可能で負荷の高いオプションも使用する設定です。"
 
-msgid "Use Texture Pack"
-msgstr "高解像度テクスチャを使用"
-
-msgid "Use up-scaled textures."
-msgstr "ゲーム内で高品質なテクスチャを使用します. "
-
 msgid "Use High-Resolution Font"
 msgstr "高解像度フォントを使用"
 
@@ -755,20 +749,11 @@ msgstr "ラウンド %d/%d  %d/%d fr"
 msgid "Frame %d"
 msgstr "フレーム %d"
 
-msgid "Updating texture"
-msgstr "テクスチャの更新"
-
 msgid "Updating..."
 msgstr "更新中..."
 
-msgid "Update Completed"
-msgstr "更新が完了しました"
-
 msgid "Continue"
 msgstr "続ける"
-
-msgid "Update Failed"
-msgstr "更新に失敗しました"
 
 msgid "New version"
 msgstr "新しいバージョン"
@@ -796,3 +781,18 @@ msgstr "ダウンロードに失敗しました"
 
 msgid "Please download the latest version manually"
 msgstr "最新版を手動でダウンロードしてください"
+
+msgid "Texture Resolution:"
+msgstr "テクスチャ解像度:"
+
+msgid "Higher resolutions look sharper and use more memory.\nTakes effect at the next game start."
+msgstr "解像度を上げると鮮明になり、メモリを多く使います。\n次回のゲーム開始時に反映されます。"
+
+msgid "Preparing textures"
+msgstr "テクスチャを準備中"
+
+msgid "Preparing..."
+msgstr "準備中..."
+
+msgid "Could not prepare the textures"
+msgstr "テクスチャを準備できませんでした"

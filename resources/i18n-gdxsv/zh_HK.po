@@ -136,12 +136,6 @@ msgstr ""
 "高階:\n"
 "最爽亦係最高負荷嘅設定"
 
-msgid "Use Texture Pack"
-msgstr "高解像度紋理"
-
-msgid "Use up-scaled textures."
-msgstr "遊戲內使用高品質圖檔"
-
 msgid "Use High-Resolution Font"
 msgstr "高解像度字型"
 
@@ -415,3 +409,18 @@ msgstr "SIDE 7 內部"
 
 msgid "Choose the horizontal boundary used for the battle HUD:\n    4:3 (Original): Keep the stock positions\n    Up to 16:9: Use the viewport width, capped at a 16:9 safe area\n    Full Width: Move the HUD to the current viewport edges"
 msgstr "選擇戰鬥 HUD 的水平範圍：\n    4:3 (Original)：保持原本位置\n    Up to 16:9：跟畫面闊度，最多 16:9\n    Full Width：HUD 貼住畫面邊緣"
+
+msgid "Texture Resolution:"
+msgstr "材質解像度:"
+
+msgid "Higher resolutions look sharper and use more memory.\nTakes effect at the next game start."
+msgstr "解像度越高越清晰，但會使用更多記憶體。\n下次開始遊戲時生效。"
+
+msgid "Preparing textures"
+msgstr "正在準備材質"
+
+msgid "Preparing..."
+msgstr "準備中..."
+
+msgid "Could not prepare the textures"
+msgstr "無法準備材質"

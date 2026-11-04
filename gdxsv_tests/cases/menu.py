@@ -58,7 +58,7 @@ def update_check(ctx):
                    {"what": "no error in the log", "ok": not r["errors"]}], **r)
 
 
-# Texture pack (UseTexturePack, TexturePackChannel, gdxsv:TexturePackUrl)
+# Texture pack (TextureResolution, TexturePackChannel, gdxsv:TexturePackUrl)
 
 CHANNEL = "e2e"
 PACK_4X = f"{CHANNEL}-4x"
@@ -84,7 +84,7 @@ def texture_runs(ctx, name: str, bad_chunk: bool) -> dict:
     """Run 1 from an empty data dir: download. Run 2, same dir: the pack is current, nothing fetched."""
     if recheck.ACTIVE:
         raise Skip("not recheckable: run 2 rewrites run 1's log in the same dir")
-    cfg = [WIRED, "gdxsv:UseTexturePack=yes", "gdxsv:TexturePackResolution=4", f"gdxsv:TexturePackChannel={CHANNEL}",
+    cfg = [WIRED, "gdxsv:TextureResolution=4", f"gdxsv:TexturePackChannel={CHANNEL}",
            "gdxsv:TexturePackUrl={url}/"]
     routes = pack_routes(bad_chunk)
     first = main_menu(ctx, name, cfg, "texture pack updated" if not bad_chunk else "chunk hash missmatch", routes)
@@ -144,21 +144,21 @@ def pack_channel_checks(r: dict, channel: str) -> list:
             {"what": "T13306M.texp installed", "ok": r["installed"]}]
 
 
-@case("X3", "texture pack: by default asks <channel>-2x.json and installs it")
+@case("X3", "texture pack: an old UseTexturePack=yes asks <channel>-2x.json and installs it")
 def texture_pack_2x(ctx):
     r = pack_channel_run(ctx, "X3", f"{CHANNEL}-2x", ["gdxsv:UseTexturePack=yes"])
     return result(pack_channel_checks(r, f"{CHANNEL}-2x"), **r)
 
 
-@case("X4", "texture pack: off with the language set asks <channel>-localized.json and installs it")
+@case("X4", "texture pack: 1x with the language set asks <channel>-localized.json and installs it")
 def texture_pack_localized(ctx):
-    r = pack_channel_run(ctx, "X4", f"{CHANNEL}-localized", ["gdxsv:UseTexturePack=no", "gdxsv:language=2"])
+    r = pack_channel_run(ctx, "X4", f"{CHANNEL}-localized", ["gdxsv:TextureResolution=1", "gdxsv:language=2"])
     return result(pack_channel_checks(r, f"{CHANNEL}-localized"), **r)
 
 
-@case("X5", "texture pack: off with the language off asks nothing")
+@case("X5", "texture pack: 1x with the language off asks nothing")
 def texture_pack_not_wanted(ctx):
-    cfg = [WIRED, "gdxsv:UseTexturePack=no", "gdxsv:language=3", f"gdxsv:TexturePackChannel={CHANNEL}",
+    cfg = [WIRED, "gdxsv:TextureResolution=1", "gdxsv:language=3", f"gdxsv:TexturePackChannel={CHANNEL}",
            "gdxsv:TexturePackUrl={url}/"]
     r = main_menu(ctx, "X5", cfg, "update check:", pack_routes(channel=f"{CHANNEL}-localized"))
     return result([{"what": "no channel file asked", "ok": not any("/e2e" in q for q in r["requests"])},

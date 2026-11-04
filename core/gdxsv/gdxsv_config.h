@@ -10,11 +10,10 @@ namespace config {
 extern Option<std::string> GdxLobbyServer;
 extern Option<std::string> GdxLoginKey;
 extern Option<int> GdxLanguage;
-extern Option<bool> GdxUseTexturePack;
+extern Option<int> GdxTextureResolution;
 extern Option<bool> GdxFontRaster;
 extern Option<int> GdxWidescreenHudLayout;	// 0: stock 4:3, 1: up to 16:9, 2: viewport edges
 extern OptionString GdxTexturePackChannel;
-extern Option<int> GdxTexturePackResolution;
 extern Option<int> GdxLocalPort;
 extern Option<int> GdxMinDelay;
 // Frames of the one-way latency left to rollback rather than to input delay; updated after each battle

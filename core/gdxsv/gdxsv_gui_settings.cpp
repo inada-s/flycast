@@ -234,25 +234,18 @@ void gdxsv_gui_settings_tab()
 		"Mid-Spec:\nWell-balanced setting that allows for comfortable gameplay with medium load.\n\n"
 		"High-Spec:\nAllows for comfortable gameplay by utilizing high load options."));
 
-	bool pressed = OptionCheckbox(T("Use Texture Pack"), config::GdxUseTexturePack,
-		T("Use up-scaled textures."));
+	ImGui::Text("%s", T("Texture Resolution:"));
+	ImGui::SameLine();
+	bool pressed = OptionRadioButton("1x", config::GdxTextureResolution, 1);
+	ImGui::SameLine();
+	pressed |= OptionRadioButton("2x", config::GdxTextureResolution, 2);
+	ImGui::SameLine();
+	pressed |= OptionRadioButton("4x", config::GdxTextureResolution, 4);
+	ImGui::SameLine();
+	ShowHelpMarker(T("Higher resolutions look sharper and use more memory.\nTakes effect at the next game start."));
 	if (pressed) {
 		gdxsv_custom_texture_update.Reset();
 	}
-	ImGui::Indent();
-	{
-		DisabledScope scope(!config::GdxUseTexturePack);
-		ImGui::Text("%s", T("Texture Resolution:"));
-		ImGui::SameLine();
-		bool resolution_changed = OptionRadioButton("4x", config::GdxTexturePackResolution, 4);
-		ImGui::SameLine();
-		resolution_changed |= OptionRadioButton("2x", config::GdxTexturePackResolution, 2,
-			T("2x uses less memory and a smaller download. Takes effect at the next game start."));
-		if (resolution_changed) {
-			gdxsv_custom_texture_update.Reset();
-		}
-	}
-	ImGui::Unindent();
 
 	OptionCheckbox(T("Use High-Resolution Font"), config::GdxFontRaster,
 		T("Draw the game's text with a high-resolution font. Takes effect at the next game start."));

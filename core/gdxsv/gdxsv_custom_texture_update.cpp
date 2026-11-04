@@ -26,10 +26,10 @@ static std::string base_url() {
 
 static std::string channel_file_name() {
 	std::string name = config::GdxTexturePackChannel.get().empty() ? "release" : config::GdxTexturePackChannel.get();
-	if (!config::GdxUseTexturePack) {
+	if (config::GdxTextureResolution == 1) {
 		return name + "-localized.json";
 	}
-	return name + (config::GdxTexturePackResolution == 4 ? "-4x.json" : "-2x.json");
+	return name + (config::GdxTextureResolution == 4 ? "-4x.json" : "-2x.json");
 }
 
 std::string get_texture_pack_path() {
