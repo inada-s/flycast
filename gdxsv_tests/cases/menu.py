@@ -84,7 +84,8 @@ def texture_runs(ctx, name: str, bad_chunk: bool) -> dict:
     """Run 1 from an empty data dir: download. Run 2, same dir: the pack is current, nothing fetched."""
     if recheck.ACTIVE:
         raise Skip("not recheckable: run 2 rewrites run 1's log in the same dir")
-    cfg = [WIRED, "gdxsv:UseTexturePack=yes", f"gdxsv:TexturePackChannel={CHANNEL}", "gdxsv:TexturePackUrl={url}/"]
+    cfg = [WIRED, "gdxsv:UseTexturePack=yes", "gdxsv:TexturePackResolution=4", f"gdxsv:TexturePackChannel={CHANNEL}",
+           "gdxsv:TexturePackUrl={url}/"]
     routes = pack_routes(bad_chunk)
     first = main_menu(ctx, name, cfg, "texture pack updated" if not bad_chunk else "chunk hash missmatch", routes)
     path = os.path.join(first["inst"].data_dir, "T13306M.texp")
@@ -143,9 +144,9 @@ def pack_channel_checks(r: dict, channel: str) -> list:
             {"what": "T13306M.texp installed", "ok": r["installed"]}]
 
 
-@case("X3", "texture pack: TexturePackResolution=2 asks <channel>-2x.json and installs it")
+@case("X3", "texture pack: by default asks <channel>-2x.json and installs it")
 def texture_pack_2x(ctx):
-    r = pack_channel_run(ctx, "X3", f"{CHANNEL}-2x", ["gdxsv:UseTexturePack=yes", "gdxsv:TexturePackResolution=2"])
+    r = pack_channel_run(ctx, "X3", f"{CHANNEL}-2x", ["gdxsv:UseTexturePack=yes"])
     return result(pack_channel_checks(r, f"{CHANNEL}-2x"), **r)
 
 

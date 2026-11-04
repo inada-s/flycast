@@ -29,7 +29,7 @@ static std::string channel_file_name() {
 	if (!config::GdxUseTexturePack) {
 		return name + "-localized.json";
 	}
-	return name + (config::GdxTexturePackResolution == 2 ? "-2x.json" : "-4x.json");
+	return name + (config::GdxTexturePackResolution == 4 ? "-4x.json" : "-2x.json");
 }
 
 std::string get_texture_pack_path() {
