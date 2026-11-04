@@ -136,7 +136,7 @@ u8* GdxsvEmbedTextureSource::loadCustomTexture(u32 hash, int& width, int& height
 			void* data = LockResource(memory);
 
 			int n;
-			stbi_set_flip_vertically_on_load(1);
+			stbi_set_flip_vertically_on_load_thread(1);
 			u8* imgData = stbi_load_from_memory(static_cast<unsigned char*>(data), size, &width, &height, &n, STBI_rgb_alpha);
 
 			FreeResource(memory);
@@ -150,7 +150,7 @@ u8* GdxsvEmbedTextureSource::loadCustomTexture(u32 hash, int& width, int& height
 	FILE* file = nowide::fopen(it->second.c_str(), "rb");
 	if (file == nullptr) return nullptr;
 	int n;
-	stbi_set_flip_vertically_on_load(1);
+	stbi_set_flip_vertically_on_load_thread(1);
 	u8* imgData = stbi_load_from_file(file, &width, &height, &n, STBI_rgb_alpha);
 	std::fclose(file);
 	return imgData;
@@ -199,7 +199,7 @@ u8* GdxsvEmbedTextureSource::LoadExtraTexture(const char* name, bool v_flip, int
 			void* data = LockResource(memory);
 
 			int n;
-			stbi_set_flip_vertically_on_load((int)v_flip);
+			stbi_set_flip_vertically_on_load_thread((int)v_flip);
 			imgData = stbi_load_from_memory(static_cast<unsigned char*>(data), size, &width, &height, &n, STBI_rgb_alpha);
 
 			FreeResource(memory);
@@ -213,7 +213,7 @@ u8* GdxsvEmbedTextureSource::LoadExtraTexture(const char* name, bool v_flip, int
 	FILE* file = nowide::fopen(path.c_str(), "rb");
 	if (file == nullptr) return nullptr;
 	int n;
-	stbi_set_flip_vertically_on_load((int)v_flip);
+	stbi_set_flip_vertically_on_load_thread((int)v_flip);
 	u8* imgData = stbi_load_from_file(file, &width, &height, &n, STBI_rgb_alpha);
 	std::fclose(file);
 	return imgData;
@@ -376,7 +376,7 @@ u8* GdxsvTexturePackSource::loadCustomTexture(u32 hash, int& width, int& height)
 			std::free(mem);
 			return nullptr;
 		}
-		stbi_set_flip_vertically_on_load(1);
+		stbi_set_flip_vertically_on_load_thread(1);
 		int n;
 		u8* imgData = stbi_load_from_memory((stbi_uc*)mem, z_stat.size, &width, &height, &n, STBI_rgb_alpha);
 		zip_fclose(zfp);
