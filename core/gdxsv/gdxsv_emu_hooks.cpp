@@ -678,13 +678,11 @@ static void gdxsv_update_popup() {
 }
 
 static void gdxsv_texture_update_popup() {
-	static bool update_triggered = false;
 	static std::shared_future<bool> self_update_result;
 	bool no_popup_opened = !ImGui::IsPopupOpen(nullptr, ImGuiPopupFlags_AnyPopupId);
 
-	if (!update_triggered && no_popup_opened && gdxsv_custom_texture_update.IsUpdateAvailable()) {
+	if (no_popup_opened && gdxsv_custom_texture_update.IsUpdateAvailable()) {
 		self_update_result = gdxsv_custom_texture_update.StartUpdate();
-		update_triggered = true;
 	}
 
 	if (self_update_result.valid() && no_popup_opened) {

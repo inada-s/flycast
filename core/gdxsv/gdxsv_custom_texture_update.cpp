@@ -38,12 +38,13 @@ std::string get_texture_pack_path() {
 
 void GdxsvCustomTexutreUpdate::Reset() {
 	fetch_latest_version_future_ = {};
+	update_started_ = false;
 	download_buf_.clear();
 	download_buf_.shrink_to_fit();
 }
 
 bool GdxsvCustomTexutreUpdate::IsUpdateAvailable() {
-	if (!gdxsv_texture_pack_wanted()) {
+	if (update_started_ || !gdxsv_texture_pack_wanted()) {
 		return false;
 	}
 
@@ -100,6 +101,7 @@ std::string GdxsvCustomTexutreUpdate::GetLatestVersion() const {
 
 std::shared_future<bool> GdxsvCustomTexutreUpdate::StartUpdate() {
 	download_completed_size_ = 0;
+	update_started_ = true;
 	verify(future_is_ready(fetch_latest_version_future_));
 
 	auto update_fn = [this]() -> bool {
