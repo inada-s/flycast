@@ -413,11 +413,11 @@ msgstr "観戦する対戦を選択してください。"
 msgid "That battle has ended."
 msgstr "その対戦は終了しました。"
 
-msgid "Watch %dP"
-msgstr "%dP視点で観戦"
+msgid "Watch live"
+msgstr "ライブを観戦"
 
-msgid "Watch (4 screens)"
-msgstr "4画面で観戦"
+msgid "4 Screens"
+msgstr "4画面"
 
 msgid "This battle is on %s."
 msgstr "この対戦は%sです。"
@@ -524,11 +524,11 @@ msgstr "%sを起動して再生"
 msgid "Load %s to play this replay."
 msgstr "このリプレイを再生するには%sを起動してください。"
 
-msgid "Replay %dP"
-msgstr "%dP視点で再生"
+msgid "Watch replay"
+msgstr "リプレイを再生"
 
-msgid "Replay (4 screens)"
-msgstr "4画面で再生"
+msgid "%dP"
+msgstr "%dP視点"
 
 msgid "Select a Player"
 msgstr "プレイヤーを選択"
@@ -538,6 +538,12 @@ msgstr "4人対戦のみ"
 
 msgid "4 screens unavailable"
 msgstr "4画面は利用できません"
+
+msgid "DX replays only"
+msgstr "DXのリプレイのみ"
+
+msgid "DX battles only"
+msgstr "DXの対戦のみ"
 
 msgid "Failed to start replay. The replay file is corrupted or outdated."
 msgstr "リプレイを開始できませんでした。リプレイファイルが壊れているか、古い形式です。"

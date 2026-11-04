@@ -1,6 +1,8 @@
 #pragma once
 #include <string>
 
+#include "gdxsv_camera.h"
+
 // Ensures the shared slot-99 bootstrap savestate exists for this disk,
 // downloading it if this install has never needed it before. It is a canned
 // "sitting at the network-ready lobby screen" snapshot that file replay,
@@ -18,9 +20,11 @@ std::string gdxsv_replay_dir();
 // Returns the path written, empty on failure.
 std::string gdxsv_save_replay_file(const proto::BattleLogFile& log, const std::string& dir, const std::string& filename);
 
-void gdxsv_start_replay(const std::string& replay_path, int pov, bool four_screen);
-// Live autoplay (gdxsv:LiveAutoNext) carries on from this battle to the next.
-void gdxsv_start_live_spectate(const std::string& battle_code, int pov, bool four_screen = false);
+// pov_mode applies to a single-screen replay; four screens show the players' own views.
+void gdxsv_start_replay(const std::string& replay_path, int pov, bool four_screen, GdxsvPovMode pov_mode);
+// Live autoplay (gdxsv:LiveAutoNext) carries on from this battle to the next. pov_mode applies to a single-screen battle
+// and to those autoplay moves on to.
+void gdxsv_start_live_spectate(const std::string& battle_code, int pov, bool four_screen, GdxsvPovMode pov_mode);
 // For a live battle started elsewhere (the command line).
 void gdxsv_live_autoplay_begin(const std::string& battle_code, int pov, bool four_screen);
 
