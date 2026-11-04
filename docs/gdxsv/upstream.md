@@ -24,7 +24,7 @@ upstream ([flyinghead/flycast](https://github.com/flyinghead/flycast)
 |---|---|
 | `core/gdxsv/` | all gdxsv features: lobby, rollback, replay, spectating, patches, UI; textures of the translation |
 | `gdxsv_patch/` | SH4 network payload of the game (`build.sh`, `abi.py` -> `gdxsv_patch_abi.h`, `gdxsv_patch.inc`) |
-| `gdxsv_langmod/` | translation sources (`translation.csv`, PSD textures) and their generators |
+| `gdxsv_langmod/` | translation sources (`translation.csv`, the PSD of the English person mark) and their generators; the other translated images are in the gdxsv-texture repository |
 | `core/deps/protobuf-3.13.0/` | protobuf runtime (`gdxsv.pb.cc`) |
 | `core/hw/mem/vram_protect.cpp/.h` | VRAM protection with owners (texture cache, memwatch, write tracker) and the VRAM write tracker |
 | `core/hw/pvr/render_snapshot.cpp/.h` | render snapshots: threaded rendering renders each frame from a copy of VRAM, palette and fog table |
