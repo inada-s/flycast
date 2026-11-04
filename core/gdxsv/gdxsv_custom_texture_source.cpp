@@ -223,6 +223,10 @@ u8* GdxsvEmbedTextureSource::LoadExtraTexture(const char* name, bool v_flip, int
 
 GdxsvEmbedTextureSource::~GdxsvEmbedTextureSource() { gdxsv_custom_texture_cells_remove_source(this); }
 
+bool gdxsv_texture_pack_wanted() {
+	return config::GdxUseTexturePack || GdxsvLanguage::Language() != GdxsvLanguage::Lang::Disabled;
+}
+
 GdxsvTexturePackSource::GdxsvTexturePackSource() {
 	gdxsv_custom_texture_cells_add_source(this, false);
 }
@@ -268,7 +272,7 @@ bool GdxsvTexturePackSource::loadMap() {
 
 	// Zipped texture pack
 	const auto texture_pack_path = get_writable_data_path(get_game_id() + ".texp");
-	if (config::GdxUseTexturePack && file_exists(texture_pack_path)) do {
+	if (gdxsv_texture_pack_wanted() && file_exists(texture_pack_path)) do {
 			auto zip_file = nowide::fopen(texture_pack_path.c_str(), "rb");
 			if (zip_file == nullptr) {
 				ERROR_LOG(COMMON, "LoadMap: fopen zip_path failure");
@@ -330,6 +334,9 @@ bool GdxsvTexturePackSource::loadMap() {
 				if (name.find("English/") != std::string::npos) lang = GdxsvLanguage::Lang::English;
 				if (name.find("Japanese/") != std::string::npos) lang = GdxsvLanguage::Lang::Japanese;
 				if (name.find("Cantonese/") != std::string::npos) lang = GdxsvLanguage::Lang::Cantonese;
+
+				// With the setting off, a pack still on disk only gives its language images.
+				if (!config::GdxUseTexturePack && lang == GdxsvLanguage::Lang::Disabled) continue;
 
 				if (mapping.find(hash) == mapping.end()) {
 					if (lang == GdxsvLanguage::Lang::Disabled || lang == GdxsvLanguage::Language()) {

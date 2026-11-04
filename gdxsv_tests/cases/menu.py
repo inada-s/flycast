@@ -61,12 +61,13 @@ def update_check(ctx):
 # Texture pack (UseTexturePack, TexturePackChannel, gdxsv:TexturePackUrl)
 
 CHANNEL = "e2e"
+PACK_4X = f"{CHANNEL}-4x"
 PACK_VERSION = "e2e-1"
 PACK = bytes((i * 7 + i // 251) & 0xff for i in range(100_000))  # stands in for the pack: only hashes are checked
 CHUNKS = 3
 
 
-def pack_routes(bad_chunk: bool = False) -> dict:
+def pack_routes(bad_chunk: bool = False, channel: str = PACK_4X) -> dict:
     step = -(-len(PACK) // CHUNKS)
     parts = [PACK[i:i + step] for i in range(0, len(PACK), step)]
     chunks = [{"path": f"c{i}", "size": len(p), "hash": hexdigest(p)} for i, p in enumerate(parts)]
@@ -74,7 +75,7 @@ def pack_routes(bad_chunk: bool = False) -> dict:
         chunks[1]["hash"] = "0" * 16
     info = {"name": "T13306M.texp", "version": PACK_VERSION, "xxhash": hexdigest(PACK), "size": len(PACK),
             "chunks": chunks}
-    routes = {f"/{CHANNEL}.json": json.dumps(info).encode()}
+    routes = {f"/{channel}.json": json.dumps(info).encode()}
     routes.update({f"/c{i}": p for i, p in enumerate(parts)})
     return routes
 
@@ -101,13 +102,13 @@ def texture_runs(ctx, name: str, bad_chunk: bool) -> dict:
 
 
 def texture_checks(r: dict) -> list:
-    return [{"what": f"channel {CHANNEL}: asked /{CHANNEL}.json", "ok": any(f"/{CHANNEL}.json" in q for q in r["first"]["requests"])},
+    return [{"what": f"channel {CHANNEL}: asked /{PACK_4X}.json", "ok": any(f"/{PACK_4X}.json" in q for q in r["first"]["requests"])},
             {"what": f"downloaded {CHUNKS} chunks, updated to {PACK_VERSION}",
              "ok": sum(q.startswith("GET /c") for q in r["first"]["requests"]) == CHUNKS
              and f"texture pack updated to {PACK_VERSION}" in r["first"]["check"]},
             {"what": "T13306M.texp in the data dir equals the served pack", "ok": r["pack_equal"]},
             {"what": "second start: pack current (new 0), no chunk fetched",
-             "ok": f"texture pack check: {CHANNEL}.json, new 0" in r["second"]["check"]
+             "ok": f"texture pack check: {PACK_4X}.json, new 0" in r["second"]["check"]
              and not any(q.startswith("GET /c") for q in r["second"]["requests"])}]
 
 
@@ -125,6 +126,43 @@ def texture_pack_bad_hash(ctx):
     return result([{"what": "asked the channel", "ok": c[0]["ok"]},
                    {"what": "not installed (update and file checks fail)", "ok": not c[1]["ok"] and not c[2]["ok"]}],
                   detail=c, **r)
+
+
+def pack_channel_run(ctx, name: str, channel: str, settings: list) -> dict:
+    """One start with these settings: which channel file is asked, and the pack is installed from it."""
+    cfg = [WIRED, f"gdxsv:TexturePackChannel={CHANNEL}", "gdxsv:TexturePackUrl={url}/"] + settings
+    r = main_menu(ctx, name, cfg, "texture pack updated", pack_routes(channel=channel))
+    return {"requests": r["requests"], "check": lines(r["log"], "texture pack"),
+            "installed": os.path.exists(os.path.join(r["inst"].data_dir, "T13306M.texp"))}
+
+
+def pack_channel_checks(r: dict, channel: str) -> list:
+    return [{"what": f"asked only /{channel}.json", "ok": [q for q in r["requests"] if ".json" in q and "/e2e" in q]
+             and all(f"/{channel}.json" in q for q in r["requests"] if ".json" in q and "/e2e" in q)},
+            {"what": f"updated to {PACK_VERSION}", "ok": f"texture pack updated to {PACK_VERSION}" in r["check"]},
+            {"what": "T13306M.texp installed", "ok": r["installed"]}]
+
+
+@case("X3", "texture pack: TexturePackResolution=2 asks <channel>-2x.json and installs it")
+def texture_pack_2x(ctx):
+    r = pack_channel_run(ctx, "X3", f"{CHANNEL}-2x", ["gdxsv:UseTexturePack=yes", "gdxsv:TexturePackResolution=2"])
+    return result(pack_channel_checks(r, f"{CHANNEL}-2x"), **r)
+
+
+@case("X4", "texture pack: off with the language set asks <channel>-localized.json and installs it")
+def texture_pack_localized(ctx):
+    r = pack_channel_run(ctx, "X4", f"{CHANNEL}-localized", ["gdxsv:UseTexturePack=no", "gdxsv:language=2"])
+    return result(pack_channel_checks(r, f"{CHANNEL}-localized"), **r)
+
+
+@case("X5", "texture pack: off with the language off asks nothing")
+def texture_pack_not_wanted(ctx):
+    cfg = [WIRED, "gdxsv:UseTexturePack=no", "gdxsv:language=3", f"gdxsv:TexturePackChannel={CHANNEL}",
+           "gdxsv:TexturePackUrl={url}/"]
+    r = main_menu(ctx, "X5", cfg, "update check:", pack_routes(channel=f"{CHANNEL}-localized"))
+    return result([{"what": "no channel file asked", "ok": not any("/e2e" in q for q in r["requests"])},
+                   {"what": "no pack in the data dir", "ok": not os.path.exists(os.path.join(r["inst"].data_dir, "T13306M.texp"))}],
+                  requests=r["requests"])
 
 
 # Wireless warning and VPN toast (gdxsv:ConnectionMedium stands in for the detected adapter)

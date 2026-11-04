@@ -11,6 +11,7 @@ Option<bool> GdxUseTexturePack("UseTexturePack", false, "gdxsv");
 Option<bool> GdxFontRaster("FontRaster", false, "gdxsv");
 Option<int> GdxWidescreenHudLayout("WidescreenHudLayout", 1, "gdxsv");
 OptionString GdxTexturePackChannel("TexturePackChannel", "", "gdxsv");
+Option<int> GdxTexturePackResolution("TexturePackResolution", 4, "gdxsv");
 Option<int> GdxLocalPort("LocalPort", 0, "gdxsv");
 Option<int> GdxMinDelay("MinDelay", 2, "gdxsv");
 Option<float> GdxRollbackBudget("RollbackBudget", 1.f, "gdxsv");

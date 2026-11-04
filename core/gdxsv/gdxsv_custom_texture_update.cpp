@@ -1,5 +1,6 @@
 #include "gdxsv_custom_texture_update.h"
 #include "gdxsv_config.h"
+#include "gdxsv_custom_texture_source.h"
 #include "gdxsv_update.h"
 
 #include <locale>
@@ -23,6 +24,14 @@ static std::string base_url() {
 	return config::loadStr("gdxsv", "TexturePackUrl", "https://storage.googleapis.com/gdxsv/custom-texture/");
 }
 
+static std::string channel_file_name() {
+	std::string name = config::GdxTexturePackChannel.get().empty() ? "release" : config::GdxTexturePackChannel.get();
+	if (!config::GdxUseTexturePack) {
+		return name + "-localized.json";
+	}
+	return name + (config::GdxTexturePackResolution == 2 ? "-2x.json" : "-4x.json");
+}
+
 std::string get_texture_pack_path() {
 	return get_writable_data_path("T13306M.texp");
 }
@@ -34,7 +43,7 @@ void GdxsvCustomTexutreUpdate::Reset() {
 }
 
 bool GdxsvCustomTexutreUpdate::IsUpdateAvailable() {
-	if (!config::GdxUseTexturePack) {
+	if (!gdxsv_texture_pack_wanted()) {
 		return false;
 	}
 
@@ -58,17 +67,14 @@ void GdxsvCustomTexutreUpdate::FetchLatestVersionInfo() {
 
 	const auto future_fn = [this]() -> LatestVersionInfo {
 		LatestVersionInfo latest{};
-		if (!config::GdxUseTexturePack) {
+		if (!gdxsv_texture_pack_wanted()) {
 			return latest;
 		}
 
 		std::vector<u8> dl;
 		std::string content_type;
 		http::init();
-		std::string name = "release.json";
-		if (!config::GdxTexturePackChannel.get().empty()) {
-			name = config::GdxTexturePackChannel.get() + ".json";
-		}
+		const std::string name = channel_file_name();
 
 		const auto t = std::chrono::steady_clock::now().time_since_epoch().count();
 		const std::string url = base_url() + name + "?t=" + std::to_string(t);

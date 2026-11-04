@@ -65,11 +65,13 @@ class GdxsvEmbedTextureSource : public BaseCustomTextureSource, public GdxsvCell
 	std::map<u32, std::string> texture_map;
 };
 
+bool gdxsv_texture_pack_wanted();
+
 class GdxsvTexturePackSource : public BaseCustomTextureSource, public GdxsvCellTextureSource {
    public:
 	GdxsvTexturePackSource();
 	~GdxsvTexturePackSource() override;
-	bool shouldReplace() const override { return config::GdxUseTexturePack; }
+	bool shouldReplace() const override { return gdxsv_texture_pack_wanted(); }
 	bool shouldPreload() const override { return false; }
 	bool loadMap() override;
 	size_t getTextureCount() const override { return texture_map.size(); }

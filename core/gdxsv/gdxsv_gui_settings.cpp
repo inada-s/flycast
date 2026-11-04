@@ -101,13 +101,16 @@ void gdxsv_gui_settings_tab()
 	ImGui::SameLine();
 	ShowHelpMarker(T("Patch game language and texture, for DX only"));
 	ImGui::NextColumn();
-	OptionRadioButton(u8"日本語", config::GdxLanguage, 0);
+	bool language_changed = OptionRadioButton(u8"日本語", config::GdxLanguage, 0);
 	ImGui::NextColumn();
-	OptionRadioButton(u8"廣東話", config::GdxLanguage, 1);
+	language_changed |= OptionRadioButton(u8"廣東話", config::GdxLanguage, 1);
 	ImGui::NextColumn();
-	OptionRadioButton("English", config::GdxLanguage, 2);
+	language_changed |= OptionRadioButton("English", config::GdxLanguage, 2);
 	ImGui::NextColumn();
-	OptionRadioButton("Disabled", config::GdxLanguage, 3);
+	language_changed |= OptionRadioButton("Disabled", config::GdxLanguage, 3);
+	if (language_changed) {
+		gdxsv_custom_texture_update.Reset();
+	}
 	ImGui::Columns(1, nullptr, false);
 
 	auto setting = [](const char* name, const char* value) -> std::string {
@@ -236,6 +239,20 @@ void gdxsv_gui_settings_tab()
 	if (pressed) {
 		gdxsv_custom_texture_update.Reset();
 	}
+	ImGui::Indent();
+	{
+		DisabledScope scope(!config::GdxUseTexturePack);
+		ImGui::Text("%s", T("Texture Resolution:"));
+		ImGui::SameLine();
+		bool resolution_changed = OptionRadioButton("4x", config::GdxTexturePackResolution, 4);
+		ImGui::SameLine();
+		resolution_changed |= OptionRadioButton("2x", config::GdxTexturePackResolution, 2,
+			T("2x uses less memory and a smaller download. Takes effect at the next game start."));
+		if (resolution_changed) {
+			gdxsv_custom_texture_update.Reset();
+		}
+	}
+	ImGui::Unindent();
 
 	OptionCheckbox(T("Use High-Resolution Font"), config::GdxFontRaster,
 		T("Draw the game's text with a high-resolution font. Takes effect at the next game start."));
