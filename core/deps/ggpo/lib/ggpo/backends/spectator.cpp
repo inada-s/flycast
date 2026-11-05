@@ -194,3 +194,10 @@ SpectatorBackend::OnReceived(sockaddr_storage &from, UdpMsg *msg, int len)
 {
    _host.OnReceived(msg, len);
 }
+
+// gdxsv: delayed sends (GGPO_NETWORK_DELAY) flushed on the network thread.
+void
+SpectatorBackend::PumpSendQueues()
+{
+   _host.PumpSendQueue();
+}

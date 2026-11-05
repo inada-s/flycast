@@ -10,7 +10,6 @@ GdxsvGgpoState gdxsv_ggpo_state;
 #ifdef USE_GGPO
 #include <cstdlib>
 #include <cstring>
-#include <thread>
 #include <type_traits>
 
 #include "cfg/option.h"
@@ -115,19 +114,6 @@ void StartSession(const char* sessionCode, int me, const std::vector<std::string
 
 	DEBUG_LOG(NETWORK, "GGPO session started");
 }
-
-// Pumps the GGPO network while the emulation thread is busy elsewhere.
-void IdleLoop() {
-	GdxsvGgpoUpstream u = gdxsv_ggpo_upstream(nullptr);
-	while (ggpo::active()) {
-		{
-			std::lock_guard<std::recursive_mutex> lock(*u.mutex);
-			if (*u.session == nullptr) return;
-			ggpo_idle(*u.session, -1);	// only pump
-		}
-		gdxsv_sleep_us(1000);
-	}
-}
 }  // namespace
 
 std::future<bool> gdxsv_ggpo_start_network(const char* sessionCode, int me, const std::vector<std::string>& ips,
@@ -156,10 +142,6 @@ std::future<bool> gdxsv_ggpo_start_network(const char* sessionCode, int me, cons
 			gdxsv_sleep_us(20 * 1000);
 		}
 		emu.setNetworkState(ggpo::active());
-
-		if (*u.synchronized && ggpo::active()) {
-			std::thread(IdleLoop).detach();
-		}
 		return ggpo::active();
 	});
 }

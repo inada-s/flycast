@@ -39,7 +39,7 @@ upstream ([flyinghead/flycast](https://github.com/flyinghead/flycast)
 
 | Path | Change |
 |---|---|
-| `core/deps/ggpo/` | relays (peers and relay servers), dual-stack (IPv4 and IPv6) sockets, timesync skips replayed in rollbacks, size checks on received packets; sockets read and relayed packets forwarded on a network thread (`Udp::StartNetThread`, `Peer2PeerBackend::TryForward`), so a rollback does not stop them; quality reports (pings) answered and their replies timed there too (`Peer2PeerBackend::OnReceived`); other received packets queued for the game thread; ICMP errors no longer fail `recvfrom` on Windows (`SIO_UDP_CONNRESET`, `SIO_UDP_NETRESET` off in `CreateSocket`) |
+| `core/deps/ggpo/` | relays (peers and relay servers), dual-stack (IPv4 and IPv6) sockets, timesync skips replayed in rollbacks, size checks on received packets; sockets read and relayed packets forwarded on a network thread (`Udp::StartNetThread`, `Peer2PeerBackend::TryForward`), so a rollback does not stop them; quality reports (pings) answered and their replies timed there too (`Peer2PeerBackend::OnReceived`), and with `GGPO_NETWORK_DELAY` set, delayed sends leave when due (`Peer2PeerBackend::PumpSendQueues`, every 1 ms); other received packets queued for the game thread; ICMP errors no longer fail `recvfrom` on Windows (`SIO_UDP_CONNRESET`, `SIO_UDP_NETRESET` off in `CreateSocket`) |
 | `core/deps/implot/` | ImPlot 0.18 WIP (upstream: 0.17) |
 | submodules `SDL`, `asio`, `luabridge`, `rcheevos`, `oboe`, `libadrenotools`, `Spout`, `Syphon` | pinned to older commits than upstream's |
 

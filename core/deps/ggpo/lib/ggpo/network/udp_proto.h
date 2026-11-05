@@ -85,6 +85,7 @@ public:
    // gdxsv: on the network thread, NetMutex held: answers a QualityReport and times a QualityReply as soon as
    // the packet is read, not at the next poll of the game thread.
    void OnReceived(UdpMsg *msg, int len);
+   void PumpSendQueue(); // gdxsv: public, also called on the network thread
    void OnMsg(UdpMsg *msg, int len);
    void Disconnect();
    void SendAppData(const void *data, int len, bool spectators);
@@ -134,7 +135,7 @@ protected:
    void LogEvent(const char *prefix, const UdpProtocol::Event &evt);
    void SendSyncRequest();
    void SendMsg(UdpMsg *msg, sockaddr_storage* to = nullptr);
-   void PumpSendQueue();
+   // gdxsv: PumpSendQueue moved to public
    void SendPendingOutput();
    bool OnInvalid(UdpMsg *msg, int len);
    bool OnSyncRequest(UdpMsg *msg, int len);

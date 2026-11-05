@@ -39,6 +39,7 @@ public:
 public:
    void OnMsg(sockaddr_storage &from, UdpMsg *msg, int len) override;
    void OnReceived(sockaddr_storage &from, UdpMsg *msg, int len) override; // gdxsv: network thread
+   void PumpSendQueues() override; // gdxsv: network thread
 
 protected:
    void PollUdpProtocolEvents(void);
