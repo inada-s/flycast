@@ -789,3 +789,15 @@ GGPOErrorCode Peer2PeerBackend::SendMessage(const void *msg, int len, bool spect
 
 	return GGPO_ERRORCODE_SUCCESS;
 }
+
+// gdxsv: pings answered on the network thread.
+void
+Peer2PeerBackend::OnReceived(sockaddr_storage &from, UdpMsg *msg, int len)
+{
+   for (int i = 0; i < _num_players; i++) {
+      _endpoints[i].OnReceived(msg, len);
+   }
+   for (int i = 0; i < _num_spectators; i++) {
+      _spectators[i].OnReceived(msg, len);
+   }
+}

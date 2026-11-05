@@ -187,3 +187,10 @@ SpectatorBackend::OnMsg(sockaddr_storage &from, UdpMsg *msg, int len)
    }
 }
 
+
+// gdxsv: pings answered on the network thread.
+void
+SpectatorBackend::OnReceived(sockaddr_storage &from, UdpMsg *msg, int len)
+{
+   _host.OnReceived(msg, len);
+}

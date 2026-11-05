@@ -36,6 +36,8 @@ public:
       // gdxsv: called as soon as a packet is read, on the network thread or in OnLoopPoll, with NetMutex held.
       // Returns true if the packet was handled there (relay forwarding); otherwise it is queued for OnMsg.
       virtual bool TryForward(sockaddr_storage &from, UdpMsg *msg, int len) { return false; }
+      // gdxsv: then, for a packet not forwarded, before it is queued: replies sent here do not wait for OnMsg.
+      virtual void OnReceived(sockaddr_storage &from, UdpMsg *msg, int len) { }
    };
 
    Udp();
