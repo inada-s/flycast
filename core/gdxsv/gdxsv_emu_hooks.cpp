@@ -504,9 +504,6 @@ void gdxsv_emu_settings_loaded() {
 	// Overridden, so never saved: the config file keeps the user's value for an older version.
 	config::ThreadedRendering.override(true);
 
-	if (config::GdxTextureResolution == -1) {
-		config::GdxTextureResolution.set(config::loadBool("gdxsv", "UseTexturePack", false) ? 2 : 1);
-	}
 	// Language off is gone: without a language, the game shows its dial-up wording and no player count.
 	if (config::GdxLanguage == (int)GdxsvLanguage::Lang::Disabled) {
 		config::GdxLanguage.set((int)GdxsvLanguage::Lang::Japanese);

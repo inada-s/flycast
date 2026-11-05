@@ -25,15 +25,6 @@
 #include <winuser.h>
 #endif
 
-static std::string get_game_id() {
-	std::string game_id(settings.content.gameId);
-	const size_t str_end = game_id.find_last_not_of(' ');
-	if (str_end == std::string::npos) return "";
-	game_id = game_id.substr(0, str_end + 1);
-	std::replace(game_id.begin(), game_id.end(), ' ', '_');
-	return game_id;
-}
-
 static std::string get_textures_path() {
 #ifdef __APPLE__
 	uint32_t bufSize = PATH_MAX + 1;
@@ -223,8 +214,63 @@ u8* GdxsvEmbedTextureSource::LoadExtraTexture(const char* name, bool v_flip, int
 
 GdxsvEmbedTextureSource::~GdxsvEmbedTextureSource() { gdxsv_custom_texture_cells_remove_source(this); }
 
-bool gdxsv_texture_pack_wanted() {
-	return config::GdxTextureResolution != 1 || GdxsvLanguage::Language() != GdxsvLanguage::Lang::Disabled;
+namespace {
+
+// An ex image is a few MB; a larger entry is not one.
+constexpr zip_uint64_t kMaxExImageSize = 64 * 1024 * 1024;
+
+zip_t* open_texture_pack(const std::string& path) {
+	if (!file_exists(path)) return nullptr;
+	auto zip_file = nowide::fopen(path.c_str(), "rb");
+	if (zip_file == nullptr) {
+		ERROR_LOG(COMMON, "texture pack: fopen failure: %s", path.c_str());
+		return nullptr;
+	}
+
+	zip_error_t error;
+	zip_source_t* source = zip_source_filep_create(zip_file, 0, -1, &error);
+	if (source == nullptr) {
+		ERROR_LOG(COMMON, "texture pack: zip_source_filep_create failure: %s", error.str);
+		std::fclose(zip_file);
+		return nullptr;
+	}
+	// From here the source owns zip_file, and the zip owns the source once opened.
+
+	const auto zip = zip_open_from_source(source, ZIP_RDONLY, &error);
+	if (zip == nullptr) {
+		ERROR_LOG(COMMON, "texture pack: zip_open_from_source failure: %s", error.str);
+		zip_source_free(source);
+		return nullptr;
+	}
+
+#ifdef GDXSV_TEXTURE_PACK_PASS
+	zip_set_default_password(zip, GDXSV_TEXTURE_PACK_PASS);
+#endif
+	return zip;
+}
+
+}  // namespace
+
+u8* gdxsv_texture_pack_ex_image(const char* name, int& width, int& height) {
+	zip_t* zip = open_texture_pack(gdxsv_texture_pack_path(GdxsvTexturePackLayer::Ex));
+	if (zip == nullptr) return nullptr;
+
+	u8* image = nullptr;
+	zip_stat_t stat;
+	const zip_int64_t index = zip_name_locate(zip, name, ZIP_FL_NODIR);
+	if (index < 0 || zip_stat_index(zip, index, 0, &stat) < 0 || !(stat.valid & ZIP_STAT_SIZE) || kMaxExImageSize < stat.size) {
+		WARN_LOG(COMMON, "texture pack: no ex image %s", name);
+	} else if (zip_file_t* file = zip_fopen_index(zip, index, 0)) {
+		std::vector<u8> data(stat.size);
+		if (zip_fread(file, data.data(), stat.size) == (zip_int64_t)stat.size) {
+			int n;
+			stbi_set_flip_vertically_on_load_thread(0);
+			image = stbi_load_from_memory(data.data(), (int)data.size(), &width, &height, &n, STBI_rgb_alpha);
+		}
+		zip_fclose(file);
+	}
+	zip_discard(zip);
+	return image;
 }
 
 GdxsvTexturePackSource::GdxsvTexturePackSource() {
@@ -233,12 +279,16 @@ GdxsvTexturePackSource::GdxsvTexturePackSource() {
 
 GdxsvTexturePackSource::~GdxsvTexturePackSource() {
 	gdxsv_custom_texture_cells_remove_source(this);
-	if (texp_zip != nullptr) zip_close(texp_zip);
-	texp_zip = nullptr;
+	ClosePacks();
+}
+
+void GdxsvTexturePackSource::ClosePacks() {
+	for (zip_t* zip : packs) zip_close(zip);
+	packs.clear();
 }
 
 void GdxsvTexturePackSource::preloadTextures(TextureCallback callback, std::atomic<bool> *stop_flag) {
-	for (const auto& [hash, path] : texture_map)
+	for (const auto& [hash, entry] : texture_map)
 	{
 		if (stop_flag != nullptr && *stop_flag)
 			return;
@@ -259,96 +309,68 @@ void GdxsvTexturePackSource::preloadTextures(TextureCallback callback, std::atom
 }
 
 void GdxsvTexturePackSource::terminate() {
-	if (texp_zip != nullptr) zip_close(texp_zip);
+	ClosePacks();
 	texture_map.clear();
-	texp_zip = nullptr;
 }
 
 bool GdxsvTexturePackSource::loadMap() {
-	if (texp_zip != nullptr) zip_close(texp_zip);
-	texp_zip = nullptr;
+	ClosePacks();
 
-	std::map<u32, int> mapping;
+	std::map<u32, Entry> mapping;
 
-	// Zipped texture pack
-	const auto texture_pack_path = get_writable_data_path(get_game_id() + ".texp");
-	if (gdxsv_texture_pack_wanted() && file_exists(texture_pack_path)) do {
-			auto zip_file = nowide::fopen(texture_pack_path.c_str(), "rb");
-			if (zip_file == nullptr) {
-				ERROR_LOG(COMMON, "LoadMap: fopen zip_path failure");
+	for (const auto layer : {GdxsvTexturePackLayer::TwoD, GdxsvTexturePackLayer::ThreeD}) {
+		if (gdxsv_texture_pack_name(layer).empty()) continue;
+		zip_t* zip = open_texture_pack(gdxsv_texture_pack_path(layer));
+		if (zip == nullptr) continue;
+
+		const auto num_entries = zip_get_num_entries(zip, 0);
+		if (num_entries < 0) {
+			ERROR_LOG(COMMON, "LoadMap: zip_get_num_entries failure");
+			zip_discard(zip);
+			continue;
+		}
+
+		const size_t pack = packs.size();
+		packs.push_back(zip);
+
+		for (zip_int64_t i = 0; i < num_entries; i++) {
+			const char* entry_name = zip_get_name(zip, i, 0);
+			std::string name(entry_name ? entry_name : "");
+			if (name.empty()) {
+				ERROR_LOG(COMMON, "LoadMap: zip_get_name");
 				break;
 			}
 
-			zip_error_t error;
-			zip_source_t* source = zip_source_filep_create(zip_file, 0, -1, &error);
-			if (source == nullptr) {
-				ERROR_LOG(COMMON, "LoadMap: zip_source_filep_create failure: %s", error.str);
-				std::fclose(zip_file);
-				break;
-			}
-			// From here the source owns zip_file, and the zip owns the source once opened.
-
-			const auto zip = zip_open_from_source(source, ZIP_RDONLY, &error);
-			if (zip == nullptr) {
-				ERROR_LOG(COMMON, "LoadMap: zip_open_from_source failure: %s", error.str);
-				zip_source_free(source);
-				break;
+			std::string extension = get_file_extension(name);
+			if (extension != "jpg" && extension != "jpeg" && extension != "png") continue;
+			std::string::size_type begin_pos = 0;
+			std::string::size_type slash_pos = name.find_last_of('/');
+			if (slash_pos != std::string::npos) begin_pos = slash_pos + 1;
+			std::string::size_type dot_pos = name.find_first_of('.', begin_pos);
+			std::string basename = name.substr(begin_pos, dot_pos - begin_pos);
+			char* endptr;
+			u32 hash = (u32)strtoll(basename.c_str(), &endptr, 16);
+			if (endptr - basename.c_str() < (ptrdiff_t)basename.length()) {
+				INFO_LOG(COMMON, "Invalid hash %s", basename.c_str());
+				continue;
 			}
 
-#ifdef GDXSV_TEXTURE_PACK_PASS
-			zip_set_default_password(zip, GDXSV_TEXTURE_PACK_PASS);
-#endif
+			GdxsvLanguage::Lang lang = GdxsvLanguage::Lang::Disabled;
+			if (name.find("English/") != std::string::npos) lang = GdxsvLanguage::Lang::English;
+			if (name.find("Japanese/") != std::string::npos) lang = GdxsvLanguage::Lang::Japanese;
+			if (name.find("Cantonese/") != std::string::npos) lang = GdxsvLanguage::Lang::Cantonese;
 
-			const auto num_entries = zip_get_num_entries(zip, 0);
-			if (num_entries < 0) {
-				ERROR_LOG(COMMON, "LoadMap: zip_get_num_entries failure");
-				zip_discard(zip);
-				break;
-			}
-
-			this->texp_zip = zip;
-
-			for (int i = 0; i < num_entries; i++) {
-				const char* entry_name = zip_get_name(zip, i, 0);
-				std::string name(entry_name ? entry_name : "");
-				if (name.empty()) {
-					ERROR_LOG(COMMON, "LoadMap: zip_get_name");
-					break;
+			if (mapping.find(hash) == mapping.end()) {
+				if (lang == GdxsvLanguage::Lang::Disabled || lang == GdxsvLanguage::Language()) {
+					mapping[hash] = {pack, (zip_uint64_t)i};
 				}
-
-				std::string extension = get_file_extension(name);
-				if (extension != "jpg" && extension != "jpeg" && extension != "png") continue;
-				std::string::size_type begin_pos = 0;
-				std::string::size_type slash_pos = name.find_last_of('/');
-				if (slash_pos != std::string::npos) begin_pos = slash_pos + 1;
-				std::string::size_type dot_pos = name.find_first_of('.', begin_pos);
-				std::string basename = name.substr(begin_pos, dot_pos - begin_pos);
-				char* endptr;
-				u32 hash = (u32)strtoll(basename.c_str(), &endptr, 16);
-				if (endptr - basename.c_str() < (ptrdiff_t)basename.length()) {
-					INFO_LOG(COMMON, "Invalid hash %s", basename.c_str());
-					continue;
-				}
-
-				GdxsvLanguage::Lang lang = GdxsvLanguage::Lang::Disabled;
-				if (name.find("English/") != std::string::npos) lang = GdxsvLanguage::Lang::English;
-				if (name.find("Japanese/") != std::string::npos) lang = GdxsvLanguage::Lang::Japanese;
-				if (name.find("Cantonese/") != std::string::npos) lang = GdxsvLanguage::Lang::Cantonese;
-
-				// At 1x, a pack still on disk only gives its language images.
-				if (config::GdxTextureResolution == 1 && lang == GdxsvLanguage::Lang::Disabled) continue;
-
-				if (mapping.find(hash) == mapping.end()) {
-					if (lang == GdxsvLanguage::Lang::Disabled || lang == GdxsvLanguage::Language()) {
-						mapping[hash] = i;
-					}
-				} else {
-					if (lang == GdxsvLanguage::Language()) {
-						mapping[hash] = i;
-					}
+			} else {
+				if (lang == GdxsvLanguage::Language()) {
+					mapping[hash] = {pack, (zip_uint64_t)i};
 				}
 			}
-		} while (false);
+		}
+	}
 
 	texture_map = mapping;
 	return !texture_map.empty();
@@ -357,15 +379,16 @@ bool GdxsvTexturePackSource::loadMap() {
 u8* GdxsvTexturePackSource::loadCustomTexture(u32 hash, int& width, int& height) {
 	const auto it = texture_map.find(hash);
 	if (it == texture_map.end()) return nullptr;
+	zip_t* zip = packs[it->second.pack];
 
 	// Load texture from texture pack file
 	zip_stat_t z_stat;
-	if (zip_stat_index(texp_zip, it->second, 0, &z_stat) < 0) {
+	if (zip_stat_index(zip, it->second.index, 0, &z_stat) < 0) {
 		ERROR_LOG(COMMON, "LoadCustomTexture: zip_stat_index failure");
 		return nullptr;
 	}
 
-	auto zfp = zip_fopen_index(texp_zip, it->second, 0);
+	auto zfp = zip_fopen_index(zip, it->second.index, 0);
 	if (zfp == nullptr) {
 		ERROR_LOG(COMMON, "LoadCustomTexture: zip_fopen_index failure");
 	} else {

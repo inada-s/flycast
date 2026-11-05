@@ -782,11 +782,20 @@ msgstr "ダウンロードに失敗しました"
 msgid "Please download the latest version manually"
 msgstr "最新版を手動でダウンロードしてください"
 
-msgid "Texture Resolution:"
-msgstr "テクスチャ解像度:"
+msgid "Off"
+msgstr "オフ"
 
-msgid "Higher resolutions look sharper and use more memory.\nTakes effect at the next game start."
-msgstr "解像度を上げると鮮明になり、メモリを多く使います。\n次回のゲーム開始時に反映されます。"
+msgid "Menu & HUD Textures:"
+msgstr "メニュー・HUDテクスチャ:"
+
+msgid "Menus, briefing, the gauges and radar in battle (HUD), and the translated images. 1x keeps the original size.\nTakes effect at the next game start."
+msgstr "メニュー、ブリーフィング、対戦中のゲージやレーダー（HUD）と翻訳画像。1x は元のサイズのままです。\n次回のゲーム開始時に反映されます。"
+
+msgid "Mobile Suit & Stage Textures:"
+msgstr "MS・ステージテクスチャ:"
+
+msgid "Mobile suits, ships and stages.\nTakes effect at the next game start."
+msgstr "MS・艦船・ステージ。\n次回のゲーム開始時に反映されます。"
 
 msgid "Preparing textures"
 msgstr "テクスチャを準備中"

@@ -10,7 +10,9 @@ namespace config {
 extern Option<std::string> GdxLobbyServer;
 extern Option<std::string> GdxLoginKey;
 extern Option<int> GdxLanguage;
-extern Option<int> GdxTextureResolution;
+// Texture pack layers at 1, 2 or 4 (gdxsv_texture_pack_resolution)
+extern Option<int> GdxTextureResolution2D;
+extern Option<int> GdxTextureResolution3D;
 extern Option<bool> GdxFontRaster;
 extern Option<int> GdxWidescreenHudLayout;	// 0: stock 4:3, 1: up to 16:9, 2: viewport edges
 extern OptionString GdxTexturePackChannel;

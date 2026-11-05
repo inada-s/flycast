@@ -7,7 +7,8 @@ namespace config {
 Option<std::string> GdxLobbyServer("server", "lbs.gdxsv.net", "gdxsv");
 Option<std::string> GdxLoginKey("loginkey", "", "gdxsv");
 Option<int> GdxLanguage("language", -1, "gdxsv");
-Option<int> GdxTextureResolution("TextureResolution", -1, "gdxsv");
+Option<int> GdxTextureResolution2D("TextureResolution2D", 1, "gdxsv");
+Option<int> GdxTextureResolution3D("TextureResolution3D", 1, "gdxsv");
 Option<bool> GdxFontRaster("FontRaster", false, "gdxsv");
 Option<int> GdxWidescreenHudLayout("WidescreenHudLayout", 1, "gdxsv");
 OptionString GdxTexturePackChannel("TexturePackChannel", "", "gdxsv");
