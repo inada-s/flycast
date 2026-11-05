@@ -150,17 +150,17 @@ def texture_pack_2x(ctx):
     return result(pack_channel_checks(r, f"{CHANNEL}-2x"), **r)
 
 
-@case("X4", "texture pack: 1x with the language set asks <channel>-localized.json and installs it")
-def texture_pack_localized(ctx):
-    r = pack_channel_run(ctx, "X4", f"{CHANNEL}-localized", ["gdxsv:TextureResolution=1", "gdxsv:language=2"])
-    return result(pack_channel_checks(r, f"{CHANNEL}-localized"), **r)
+@case("X4", "texture pack: 1x with the language set asks <channel>-1x.json and installs it")
+def texture_pack_1x(ctx):
+    r = pack_channel_run(ctx, "X4", f"{CHANNEL}-1x", ["gdxsv:TextureResolution=1", "gdxsv:language=2"])
+    return result(pack_channel_checks(r, f"{CHANNEL}-1x"), **r)
 
 
 @case("X5", "texture pack: 1x with the language off asks nothing")
 def texture_pack_not_wanted(ctx):
     cfg = [WIRED, "gdxsv:TextureResolution=1", "gdxsv:language=3", f"gdxsv:TexturePackChannel={CHANNEL}",
            "gdxsv:TexturePackUrl={url}/"]
-    r = main_menu(ctx, "X5", cfg, "update check:", pack_routes(channel=f"{CHANNEL}-localized"))
+    r = main_menu(ctx, "X5", cfg, "update check:", pack_routes(channel=f"{CHANNEL}-1x"))
     return result([{"what": "no channel file asked", "ok": not any("/e2e" in q for q in r["requests"])},
                    {"what": "no pack in the data dir", "ok": not os.path.exists(os.path.join(r["inst"].data_dir, "T13306M.texp"))}],
                   requests=r["requests"])
