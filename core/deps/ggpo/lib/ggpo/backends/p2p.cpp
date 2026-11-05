@@ -801,3 +801,15 @@ Peer2PeerBackend::OnReceived(sockaddr_storage &from, UdpMsg *msg, int len)
       _spectators[i].OnReceived(msg, len);
    }
 }
+
+// gdxsv: delayed sends (GGPO_NETWORK_DELAY) flushed on the network thread.
+void
+Peer2PeerBackend::PumpSendQueues()
+{
+   for (int i = 0; i < _num_players; i++) {
+      _endpoints[i].PumpSendQueue();
+   }
+   for (int i = 0; i < _num_spectators; i++) {
+      _spectators[i].PumpSendQueue();
+   }
+}

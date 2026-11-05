@@ -175,6 +175,7 @@ Udp::StopNetThread()
 void
 Udp::NetThreadLoop()
 {
+   const bool send_delayed = GGPOPlatform::GetConfigInt("GGPO_NETWORK_DELAY") > 0; // gdxsv
    while (!_net_stop) {
       fd_set readable;
       FD_ZERO(&readable);
@@ -186,15 +187,20 @@ Udp::NetThreadLoop()
          }
       }
       // The timeout only bounds how long StopNetThread waits.
-      timeval timeout{ 0, 10000 };
+      timeval timeout{ 0, send_delayed ? 1000 : 10000 };
       int n = select((int)max_sock + 1, &readable, nullptr, nullptr, &timeout);
       if (n < 0) {
          std::this_thread::sleep_for(std::chrono::milliseconds(10));
          continue;
       }
-      if (n > 0) {
+      if (n > 0 || send_delayed) {
          std::lock_guard<std::mutex> lock(_net_mutex);
-         ReadSockets();
+         if (n > 0) {
+            ReadSockets();
+         }
+         if (send_delayed) {
+            _callbacks->PumpSendQueues(); // gdxsv
+         }
       }
    }
 }
