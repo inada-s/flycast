@@ -28,6 +28,7 @@
 #include "gdxsv_replay_util.h"
 #include "gdxsv_save_state.h"
 #include "gdxsv_sleep.h"
+#include "gdxsv_translation.h"
 #include "gdxsv_update.h"
 #include "gdxsv_video_hooks.h"
 #include "hw/pvr/Renderer_if.h"
@@ -505,6 +506,10 @@ void gdxsv_emu_settings_loaded() {
 
 	if (config::GdxTextureResolution == -1) {
 		config::GdxTextureResolution.set(config::loadBool("gdxsv", "UseTexturePack", false) ? 2 : 1);
+	}
+	// Language off is gone: without a language, the game shows its dial-up wording and no player count.
+	if (config::GdxLanguage == (int)GdxsvLanguage::Lang::Disabled) {
+		config::GdxLanguage.set((int)GdxsvLanguage::Lang::Japanese);
 	}
 }
 

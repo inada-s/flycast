@@ -156,14 +156,10 @@ def texture_pack_1x(ctx):
     return result(pack_channel_checks(r, f"{CHANNEL}-1x"), **r)
 
 
-@case("X5", "texture pack: 1x with the language off asks nothing")
-def texture_pack_not_wanted(ctx):
-    cfg = [WIRED, "gdxsv:TextureResolution=1", "gdxsv:language=3", f"gdxsv:TexturePackChannel={CHANNEL}",
-           "gdxsv:TexturePackUrl={url}/"]
-    r = main_menu(ctx, "X5", cfg, "update check:", pack_routes(channel=f"{CHANNEL}-1x"))
-    return result([{"what": "no channel file asked", "ok": not any("/e2e" in q for q in r["requests"])},
-                   {"what": "no pack in the data dir", "ok": not os.path.exists(os.path.join(r["inst"].data_dir, "T13306M.texp"))}],
-                  requests=r["requests"])
+@case("X5", "texture pack: an old language=3 (off) is read as Japanese, so 1x asks <channel>-1x.json and installs it")
+def texture_pack_language_off_migrated(ctx):
+    r = pack_channel_run(ctx, "X5", f"{CHANNEL}-1x", ["gdxsv:TextureResolution=1", "gdxsv:language=3"])
+    return result(pack_channel_checks(r, f"{CHANNEL}-1x"), **r)
 
 
 # Wireless warning and VPN toast (gdxsv:ConnectionMedium stands in for the detected adapter)
