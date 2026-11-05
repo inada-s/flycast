@@ -10,7 +10,7 @@ namespace config {
 extern Option<std::string> GdxLobbyServer;
 extern Option<std::string> GdxLoginKey;
 extern Option<int> GdxLanguage;
-// Texture pack layers at 1, 2 or 4 (gdxsv_texture_pack_resolution)
+// Texture pack layers at 1, 2 or 4 (gdxsv_texture_pack_resolution); -1 until gdxsv_emu_settings_loaded sets it
 extern Option<int> GdxTextureResolution2D;
 extern Option<int> GdxTextureResolution3D;
 extern Option<bool> GdxFontRaster;

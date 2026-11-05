@@ -13,13 +13,13 @@ WAIT = 30
 WIRED = "gdxsv:ConnectionMedium=Wired"
 
 
-def main_menu(ctx, name: str, config: list, until: str, routes=None, clean: bool = True) -> dict:
+def main_menu(ctx, name: str, config: list, until: str, routes=None, clean: bool = True, files=None) -> dict:
     """Start in the main menu with a local HTTP server (routes: path -> body); stop once `until`
-    is in the log, or after WAIT s."""
+    is in the log, or after WAIT s. files: written before the start, as emu.launch's."""
     with servers.FakeHttp(routes=routes or {}) as http:
         url = f"http://127.0.0.1:{http.port}"
         cfg = ["log:Verbosity=3", "log:LogToFile=1"] + [c.format(url=url) for c in config]
-        inst = emu.launch(ctx.exe, "", os.path.join(ctx.out, name), config=cfg, headless=False, clean=clean)
+        inst = emu.launch(ctx.exe, "", os.path.join(ctx.out, name), config=cfg, headless=False, clean=clean, files=files)
         try:
             inst.wait_log(until, WAIT)
         finally:
@@ -154,31 +154,41 @@ def texture_pack_bad_hash(ctx):
                   **r)
 
 
-def pack_channel_run(ctx, name: str, settings: list, packs: list) -> dict:
+def pack_channel_run(ctx, name: str, settings: list, packs: list, files=None) -> dict:
     """One start with these settings: the channel files asked must be `packs`, each installed."""
     cfg = [WIRED, f"gdxsv:TexturePackChannel={CHANNEL}", "gdxsv:TexturePackUrl={url}/"] + settings
-    r = main_menu(ctx, name, cfg, f"texture pack updated to {PACK_VERSION}: {CHANNEL}-{packs[-1]}.json", pack_routes())
-    return result([{"what": "asked only " + ", ".join(packs), "ok": asked(r["requests"]) == packs}] +
-                  [{"what": f"{pack} installed as {installed_name(pack)}", "ok": installed(r["inst"], pack)} for pack in packs],
-                  requests=r["requests"], check=lines(r["log"], "texture pack"))
+    r = main_menu(ctx, name, cfg, f"texture pack updated to {PACK_VERSION}: {CHANNEL}-{packs[-1]}.json", pack_routes(),
+                  files=files)
+    checks = ([{"what": "asked only " + ", ".join(packs), "ok": asked(r["requests"]) == packs}] +
+              [{"what": f"{pack} installed as {installed_name(pack)}", "ok": installed(r["inst"], pack)} for pack in packs])
+    return {"checks": checks, "inst": r["inst"], "requests": r["requests"], "check": lines(r["log"], "texture pack")}
 
 
-@case("X3", "texture pack: 2D 1x and 3D off ask the ex and 2D 1x packs and install both")
-def texture_pack_1x(ctx):
-    return pack_channel_run(ctx, "X3", ["gdxsv:TextureResolution2D=1", "gdxsv:TextureResolution3D=1", "gdxsv:language=2"],
-                            ["ex", "2d-1x"])
+@case("X3", "texture pack: with the 2D and 3D settings not set, the ex and 2D 1x packs are asked and installed")
+def texture_pack_default(ctx):
+    r = pack_channel_run(ctx, "X3", ["gdxsv:language=2"], ["ex", "2d-1x"])
+    return result(r["checks"], requests=r["requests"], check=r["check"])
 
 
 @case("X4", "texture pack: 2D 2x and 3D 4x ask the ex, 2D 2x and 3D 4x packs and install them")
 def texture_pack_2x_4x(ctx):
-    return pack_channel_run(ctx, "X4", ["gdxsv:TextureResolution2D=2", "gdxsv:TextureResolution3D=4", "gdxsv:language=1"],
-                            ["ex", "2d-2x", "3d-4x"])
+    r = pack_channel_run(ctx, "X4", ["gdxsv:TextureResolution2D=2", "gdxsv:TextureResolution3D=4", "gdxsv:language=1"],
+                         ["ex", "2d-2x", "3d-4x"])
+    return result(r["checks"], requests=r["requests"], check=r["check"])
 
 
-@case("X5", "texture pack: an old language=3 (off) is read as Japanese, so 2D 1x asks the ex and 2D 1x packs")
-def texture_pack_language_off_migrated(ctx):
-    return pack_channel_run(ctx, "X5", ["gdxsv:TextureResolution2D=1", "gdxsv:TextureResolution3D=1", "gdxsv:language=3"],
-                            ["ex", "2d-1x"])
+OLD_PACK = "T13306M.texp"
+
+
+@case("X5", "texture pack: a released build's UseTexturePack=yes asks the ex, 2D 2x and 3D 2x packs, and its old "
+            f"{OLD_PACK} is deleted")
+def texture_pack_use_texture_pack(ctx):
+    probe = emu.Instance(os.path.join(ctx.out, "X5"), ctx.exe)
+    old_pack = os.path.join(os.path.relpath(probe.data_dir, probe.config_dir), OLD_PACK)
+    r = pack_channel_run(ctx, "X5", ["gdxsv:UseTexturePack=yes", "gdxsv:language=0"], ["ex", "2d-2x", "3d-2x"],
+                         files={old_pack: "a pack of an older build"})
+    gone = not os.path.exists(os.path.join(r["inst"].data_dir, OLD_PACK))
+    return result(r["checks"] + [{"what": f"{OLD_PACK} deleted", "ok": gone}], requests=r["requests"], check=r["check"])
 
 
 # Wireless warning and VPN toast (gdxsv:ConnectionMedium stands in for the detected adapter)

@@ -508,6 +508,14 @@ void gdxsv_emu_settings_loaded() {
 	if (config::GdxLanguage == (int)GdxsvLanguage::Lang::Disabled) {
 		config::GdxLanguage.set((int)GdxsvLanguage::Lang::Japanese);
 	}
+
+	// Released builds had UseTexturePack, whose single pack up-scaled both the 2D and the 3D textures.
+	const int old_pack_resolution = config::loadBool("gdxsv", "UseTexturePack", false) ? 2 : 1;
+	if (config::GdxTextureResolution2D == -1) config::GdxTextureResolution2D.set(old_pack_resolution);
+	if (config::GdxTextureResolution3D == -1) config::GdxTextureResolution3D.set(old_pack_resolution);
+	// That pack's file: the layers replaced it.
+	const std::string old_pack = get_writable_data_path("T13306M.texp");
+	if (file_exists(old_pack)) nowide::remove(old_pack.c_str());
 }
 
 const char* gdxsv_emu_settings_text_for_preparing_font() { return gdxsv_gui_settings_text_for_preparing_font(); }

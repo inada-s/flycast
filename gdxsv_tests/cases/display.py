@@ -31,6 +31,20 @@ def translation(ctx):
     return result(sum((lang_text(ctx, lang, lang) for lang in LANG_TEXT), []))
 
 
+# Game offset 0x1ba128: the game's セーブを行うには, which every language, Japanese included, patches to "Flycast > Settings".
+PATCHED_TEXT = 0x8c1ca128
+FLYCAST_SETTINGS = "466c7963617374203e2053657474696e"  # "Flycast > Settin"
+
+
+@case("L2", "language: an old language=3 (off) is read as Japanese, so the game gets the Japanese patch")
+def language_off_migrated(ctx):
+    p = ctx.probe("L2", ctx.rom("dc2"), "memread.lua", {"frame": 30, "reads": [[PATCHED_TEXT, 16]]}, frames=50,
+                  config=["gdxsv:language=3"])
+    got = p.e2e.get(f"0x{PATCHED_TEXT:08x}:16")
+    return result([{"what": "probe ran", "ok": p.clean, **p.facts()},
+                   {"what": "Japanese patch applied", "want": FLYCAST_SETTINGS, "got": got, "ok": got == FLYCAST_SETTINGS}])
+
+
 SYMBOLS = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))),
                        "core", "gdxsv", "gdxsv_patch.inc")
 WS_SYMBOLS = ["gdx_widescreen_transition_left_x", "gdx_widescreen_transition_right_x",
