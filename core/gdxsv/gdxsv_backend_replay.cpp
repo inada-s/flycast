@@ -288,7 +288,7 @@ void GdxsvBackendReplay::OnMainUiLoop() {
 		if ((input.fullAxes[0] >> 8) + 128 >= 128 + 0x20) input.kcode &= ~DC_DPAD_RIGHT;
 		if ((input.fullAxes[1] >> 8) + 128 <= 128 - 0x20) input.kcode &= ~DC_DPAD_UP;
 		if ((input.fullAxes[1] >> 8) + 128 >= 128 + 0x20) input.kcode &= ~DC_DPAD_DOWN;
-		// In the god's eye view with the gamepad toggle on, the ` and 1 to 4 keys pick players: game buttons the keyboard
+		// In the god's eye view with the gamepad toggle on, the 1 to 5 keys pick players: game buttons the keyboard
 		// maps to them are held back, as long as the keys are held or the poll, which can trail them, still has them.
 		const u32 key_buttons = !ui.takeover && ui.inGame ? gdxsv_camera_key_buttons() : 0;
 		key_holds_ = key_buttons | (key_holds_ & ~input.kcode);

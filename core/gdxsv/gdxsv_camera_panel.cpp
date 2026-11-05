@@ -1,7 +1,7 @@
 // SPDX-FileCopyrightText: 2026 gdxsv contributors
 // SPDX-License-Identifier: GPL-2.0-or-later
 // The god's eye view's CAMERA panel in the in-game radar's place, and its controls: a drag on the picture, the d-pad, B,
-// X and Y, and the ` and 1 to 4 keys.
+// X and Y, and the 1 to 5 keys.
 #include <algorithm>
 #include <atomic>
 #include <cfloat>
@@ -43,6 +43,9 @@ constexpr u32 kTrackpadMs = 300;  // a whole step this soon after a fraction of 
 constexpr float kWheelEaseSeconds = 0.1f;
 // The framing moves to the players picked this long after the last pick, and picks this close together add up.
 constexpr double kFocusDelaySeconds = 0.5;
+// A player button pressed by the mouse or its key shows its color solid, then fades back.
+constexpr float kPressHoldSeconds = 0.1f;
+constexpr float kPressFadeSeconds = 0.5f;
 // The panel, in the game's 640x480 pixels: the in-game radar's block, a title band over the body, and a row of player
 // buttons under it. In the body, the circle leaves a lane each side, the zoom slider's on the right.
 constexpr float kPanelLeft = 517.f;
@@ -72,11 +75,14 @@ struct Panel {
 	std::chrono::steady_clock::time_point steer_time;
 	u32 focus_shown = kGdxsvCameraEveryone;	 // the players picked; the framing follows them from focus_at
 	double focus_at = 0.0;
-	bool focus_key[5] = {};	  // [All] and [1] to [4]: their keys held last frame
+	bool focus_key[5] = {};	  // [1] to [4] and [All]: their keys held last frame
 	bool step_held = false;	  // B, when the buttons were last read
+	bool start_held = false;  // START, likewise
 	int focus_steps = 0;	  // B presses the panel has yet to take: it knows which players are there
 	int wheel_frame = -1;	  // the frame the wheel was last taken in
 	float wheel_glide = 0.f;  // log of the zoom the wheel has yet to glide by
+	// The ImGui time each of [1] to [4] and [All] was last pressed.
+	double pressed_at[5] = {-1e9, -1e9, -1e9, -1e9, -1e9};
 };
 
 Panel panel;
@@ -170,17 +176,22 @@ void FocusPick(int player) {
 	panel.focus_at = now + kFocusDelaySeconds;
 }
 
-// Whether a key is held: the ` key or numpad 0 for slot 0, 1 to 4 or numpad 1 to 4 for slots 1 to 4.
+// Whether a slot's key is held: 1 to 4 for [1] to [4] and 5 for [All], on the main row or the numpad, in the same place
+// on every layout.
 bool SlotKeyHeld(int slot) {
 #ifdef USE_SDL
 	const Uint8 *keys = SDL_GetKeyboardState(nullptr);
-	if (keys == nullptr) return false;
-	const int code = slot == 0 ? SDL_SCANCODE_GRAVE : SDL_SCANCODE_1 + slot - 1;
-	const int keypad = slot == 0 ? SDL_SCANCODE_KP_0 : SDL_SCANCODE_KP_1 + slot - 1;
-	return keys[code] || keys[keypad];
+	return keys != nullptr && (keys[SDL_SCANCODE_1 + slot] || keys[SDL_SCANCODE_KP_1 + slot]);
 #else
 	return false;
 #endif
+}
+
+// How much of a player button's press flash is left: solid at first, then fading back.
+float PressFlash(int slot) {
+	const float since = static_cast<float>(ImGui::GetTime() - panel.pressed_at[slot]);
+	const float t = std::clamp((since - kPressHoldSeconds) / kPressFadeSeconds, 0.f, 1.f);
+	return 1.f - t * t * (3.f - 2.f * t);
 }
 
 }  // namespace
@@ -235,7 +246,9 @@ void gdxsv_camera_render_view_control() {
 	ImGui::PopStyleVar(3);
 	// The wheel zooms over the picture and the panel, as a map does: what the system calls scrolling up brings the view
 	// nearer, so its natural scrolling setting holds. The zoom glides there, as with the buttons, and stops at its ends.
-	if (wheel != 0.f && (!io.WantCaptureMouse || ImGui::IsWindowHovered())) panel.wheel_glide -= wheel * kZoomPerWheelStep;
+	if (wheel != 0.f && (!io.WantCaptureMouse || ImGui::IsWindowHovered())) {
+		panel.wheel_glide -= wheel * kZoomPerWheelStep;
+	}
 	if (panel.wheel_glide != 0.f) {
 		gdxsv_camera_hold_distance();
 		const float part = std::fabs(panel.wheel_glide) < 1e-3f ? panel.wheel_glide
@@ -271,9 +284,9 @@ void gdxsv_camera_render_view_control() {
 		gdxsv_camera_save_settings();
 	}
 	if (dpad)
-		ItemTip(i18n::T("The d-pad turns and zooms the view. Click to give it back to the replay controls"));
+		ItemTip(i18n::T("Camera mode: the d-pad turns and zooms the view. Click or press [START] for timeline mode"));
 	else
-		ItemTip(i18n::T("The d-pad controls the replay. Click to turn and zoom the view with it"));
+		ItemTip(i18n::T("Timeline mode: the d-pad controls the replay. Click or press [START] for camera mode"));
 	const bool pad_hot = ImGui::IsItemHovered();
 	const float pad_size = title_h * 0.9f;
 	const ImVec2 pad_glyph = font->CalcTextSizeA(pad_size, FLT_MAX, 0.f, ICON_FA_GAMEPAD);
@@ -335,14 +348,12 @@ void gdxsv_camera_render_view_control() {
 	list->AddTriangleFilled(ImVec2(edge.x + out.x * mark * 1.6f, edge.y + out.y * mark * 1.6f),
 							ImVec2(edge.x - out.y * mark, edge.y + out.x * mark), ImVec2(edge.x + out.y * mark, edge.y - out.x * mark),
 							color(255, 220, 90, 1.f));
-	// Quarter turns: a knob on the rim either side of its foot, round as the dial it turns, below where the tile's near
-	// corners reach at any tilt.
+	// Round knobs, as the dial: quarter turns on the rim either side of its foot, below where the tile's near corners reach
+	// at any tilt, and at the body's top left, clear of the circle, a ? that shows the controls guide while hovered.
 	const float knob = kPanelKnob * px;
-	const auto quarter = [&](const char *id, const char *glyph, float side, const char *tip) {
-		const ImVec2 at(center.x + side * radius * 0.5f, center.y + radius * 0.866f);
+	const auto round_knob = [&](const char *id, const char *glyph, ImVec2 at) {
 		ImGui::SetCursorScreenPos(ImVec2(at.x - knob, at.y - knob));
 		const bool pressed = ImGui::InvisibleButton(id, ImVec2(knob * 2.f, knob * 2.f));
-		ItemTip(tip);
 		const bool hot = ImGui::IsItemHovered();
 		list->AddCircleFilled(at, knob, IM_COL32(12, 16, 24, hot ? 230 : 180), 24);
 		list->AddCircle(at, knob - 0.5f, IM_COL32(255, 255, 255, hot ? 230 : 115), 24, std::max(1.f, 0.8f * px));
@@ -351,11 +362,16 @@ void gdxsv_camera_render_view_control() {
 		list->AddText(font, glyph_size, ImVec2(at.x - g.x * 0.5f, at.y - g.y * 0.5f), IM_COL32(255, 255, 255, hot ? 255 : 210), glyph);
 		return pressed;
 	};
-	if (quarter("##turn-left", ICON_FA_ROTATE_LEFT, -1.f, i18n::T("Turn 90° left"))) Turn(90.f - std::fmod(settings.yaw, 90.f));
-	if (quarter("##turn-right", ICON_FA_ROTATE_RIGHT, 1.f, i18n::T("Turn 90° right"))) {
+	const float knob_y = center.y + radius * 0.866f;
+	if (round_knob("##turn-left", ICON_FA_ROTATE_LEFT, ImVec2(center.x - radius * 0.5f, knob_y))) Turn(90.f - std::fmod(settings.yaw, 90.f));
+	ItemTip(i18n::T("Turn 90° left"));
+	if (round_knob("##turn-right", ICON_FA_ROTATE_RIGHT, ImVec2(center.x + radius * 0.5f, knob_y))) {
 		const float into = std::fmod(settings.yaw, 90.f);
 		Turn(-(into > 0.5f ? into : 90.f));
 	}
+	ItemTip(i18n::T("Turn 90° right"));
+	round_knob("##guide", "?", ImVec2(pos.x + inset + knob, body_top + knob));
+	const bool guide = ImGui::IsItemHovered();
 
 	// The zoom on a slider right of the circle, on a log scale: up is nearer, the middle the automatic zoom, which a
 	// double-click goes back to. Dragged until the button is let go, as the view is.
@@ -415,13 +431,13 @@ void gdxsv_camera_render_view_control() {
 	readout("TILT", settings.angle, false);
 	readout("TURN", settings.yaw, true);
 
-	// [All], then [1] to [4] in each player's force color, faint over the picture: the picked players light up at once.
+	// [1] to [4] in each player's force color, then [All], faint over the picture: the picked players light up at once.
 	// Their keys only with the gamepad toggle on, whatever the keyboard mapping says.
 	for (int step = 0; step < steps; step++) FocusStep(battle);
 	const float focus_y = pos.y + size.y + gap;
 	const float focus_w = (size.x - inset * 2.f - gap * 4.f) / 5.f;
 	for (int slot = 0; slot < 5; slot++) {
-		const int i = slot - 1;	 // the player, or -1 for [All]
+		const int i = slot < 4 ? slot : -1;	 // the player, or -1 for [All]
 		const bool present = i < 0 || !battle.name[i].empty();
 		const bool key = settings.dpad && SlotKeyHeld(slot);
 		const bool key_pressed = key && !panel.focus_key[slot] && present && !io.WantTextInput;
@@ -434,6 +450,7 @@ void gdxsv_camera_render_view_control() {
 		const bool clicked = ImGui::InvisibleButton(id, ImVec2(focus_w, focus_h));
 		ImGui::EndDisabled();
 		if (clicked || key_pressed) {
+			panel.pressed_at[slot] = ImGui::GetTime();
 			if (i < 0)
 				FocusEveryone();
 			else
@@ -444,23 +461,24 @@ void gdxsv_camera_render_view_control() {
 		if (present && hover) {
 			char tip[96];
 			if (i < 0)
-				std::snprintf(tip, sizeof(tip), "%s", i18n::T("Every MS, at the automatic zoom (` key)"));
+				std::snprintf(tip, sizeof(tip), "%s", i18n::T("Every MS, at the automatic zoom (5 key)"));
 			else
 				std::snprintf(tip, sizeof(tip), "%dP %s", i + 1, battle.name[i].c_str());
 			ItemTip(tip);
 		}
 		const ImU32 tint = (i < 0 ? IM_COL32_WHITE : gdxsv_camera_team_color(battle.team[i])) & ~IM_COL32_A_MASK;
-		const float shade = (!present ? 0.04f : picked ? (hover ? 0.42f : 0.32f) : (hover ? 0.18f : 0.1f)) * (i < 0 ? 0.6f : 1.f);
+		const float flash = PressFlash(slot);
+		const float faint = (!present ? 0.04f : picked ? (hover ? 0.42f : 0.32f) : (hover ? 0.18f : 0.1f)) * (i < 0 ? 0.6f : 1.f);
+		const float shade = faint + (1.f - faint) * flash;
 		list->AddRectFilled(min, ImVec2(min.x + focus_w, min.y + focus_h), tint | static_cast<ImU32>(shade * 255.f) << IM_COL32_A_SHIFT);
 		char digit[2] = {static_cast<char>('1' + i), 0};
 		const char *text = i < 0 ? "All" : digit;
 		const ImVec2 text_size = font->CalcTextSizeA(label_size, FLT_MAX, 0.f, text);
+		// White on the forces' colors; [All]'s goes dark while it is solid white.
+		const float opacity = (picked ? 235.f : present ? 120.f : 50.f) * (1.f - flash) + 255.f * flash;
+		const int level = static_cast<int>(255.f - (i < 0 ? 225.f * flash : 0.f));
 		list->AddText(font, label_size, ImVec2(min.x + (focus_w - text_size.x) * 0.5f, min.y + (focus_h - text_size.y) * 0.5f),
-					  IM_COL32(255, 255, 255,
-							   picked	 ? 235
-							   : present ? 120
-										 : 50),
-					  text);
+					  IM_COL32(level, level, level, static_cast<int>(opacity)), text);
 	}
 	// Other players frame at the automatic zoom: a zoom kept from the last ones may show none of them.
 	if (panel.focus_shown != settings.focus && ImGui::GetTime() >= panel.focus_at) {
@@ -468,6 +486,7 @@ void gdxsv_camera_render_view_control() {
 		settings.zoom = 1.f;
 	}
 	ImGui::End();
+	gdxsv_camera_render_guide(guide);
 }
 
 bool gdxsv_camera_dpad_steers() { return gdxsv_camera_pov_mode() == GdxsvPovMode::GodsEye && gdxsv_camera_settings.dpad; }
@@ -479,8 +498,7 @@ u32 gdxsv_camera_key_buttons() {
 	const Uint8 *keys = SDL_GetKeyboardState(nullptr);
 	if (keys == nullptr) return 0;
 	for (int slot = 0; slot < 5; slot++) {
-		for (const int code :
-			 {slot == 0 ? SDL_SCANCODE_GRAVE : SDL_SCANCODE_1 + slot - 1, slot == 0 ? SDL_SCANCODE_KP_0 : SDL_SCANCODE_KP_1 + slot - 1}) {
+		for (const int code : {SDL_SCANCODE_1 + slot, SDL_SCANCODE_KP_1 + slot}) {
 			if (!keys[code]) continue;
 			// What the first player's keyboards map the key to, as Flycast's own check of a mapped key reads it.
 			for (int i = 0; i < GamepadDevice::GetGamepadCount(); i++) {
@@ -514,14 +532,23 @@ void gdxsv_camera_steer(u32 kcode) {
 		seconds = 0.f;
 		panel.steer_turn = panel.steer_tilt = panel.steer_zoom = 0.f;
 	}
-	const bool step = (~kcode & DC_BTN_B) != 0;
+	gdxsv_camera_guide_buttons(kcode);
+	// START flips the gamepad toggle, as a click on it does: the replay does not use START outside a takeover.
+	const bool start = (~kcode & DC_BTN_START) != 0;
+	if (start && !panel.start_held) {
+		settings.dpad = !settings.dpad;
+		gdxsv_camera_save_settings();
+	}
+	panel.start_held = start;
+	// Camera mode, the toggle on, gives the view the d-pad, X, Y and B; timeline mode gives the d-pad back to the replay,
+	// which has no use for the others.
+	const bool dpad = settings.dpad;
+	const bool step = dpad && (~kcode & DC_BTN_B) != 0;
 	if (step && !panel.step_held) panel.focus_steps++;
 	panel.step_held = step;
-	// The d-pad only when the gamepad toggle gives it to the view; X and Y, which the replay does not use, always tilt.
-	const bool dpad = settings.dpad;
 	const float turn = dpad ? (~kcode & DC_DPAD_RIGHT ? 1.f : 0.f) - (~kcode & DC_DPAD_LEFT ? 1.f : 0.f) : 0.f;
 	const float zoom = dpad ? (~kcode & DC_DPAD_DOWN ? 1.f : 0.f) - (~kcode & DC_DPAD_UP ? 1.f : 0.f) : 0.f;
-	const float tilt = (~kcode & DC_BTN_Y ? 1.f : 0.f) - (~kcode & DC_BTN_X ? 1.f : 0.f);
+	const float tilt = dpad ? (~kcode & DC_BTN_Y ? 1.f : 0.f) - (~kcode & DC_BTN_X ? 1.f : 0.f) : 0.f;
 	const float follow = 1.f - std::exp(-seconds / kSteerEaseSeconds);
 	panel.steer_turn += (turn * kSteerYawPerSecond - panel.steer_turn) * follow;
 	panel.steer_tilt += (tilt * kSteerTiltPerSecond - panel.steer_tilt) * follow;

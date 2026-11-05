@@ -51,6 +51,8 @@ options and changed upstream files: `docs/gdxsv/`.
 | `gdxsv_camera_panel.cpp` | the god's eye view's CAMERA panel, and its mouse, d-pad, X/Y and key controls |
 | `gdxsv_camera_overlay.cpp` | the god's eye view's overlay: nameplates, trails, lock pointers, cannot-damage marks |
 | `gdxsv_camera_art.cpp/.h` | MS images and force logos of the nameplates, from one image of the ex texture pack |
+| `gdxsv_camera_guide.cpp` | the god's eye view's controls guide: what the stick, keys and mouse do |
+| `gdxsv_fightstick.cpp/.h` | an arcade stick drawn in perspective, its buttons named and colored as the Dreamcast pad's |
 | `gdxsv_replay_util.cpp/.h`, `gdxsv_replay_ui.h` | replay files, bootstrap save state, replay UI data |
 | `gdxsv_save_state.cpp/.h` | in-memory save states for rollback |
 | `gdxsv_spectator_uplink.cpp/.h` | sends a player's confirmed inputs to LBS for live spectating |

@@ -788,14 +788,53 @@ msgstr "左に90°回転"
 msgid "Turn 90° right"
 msgstr "右に90°回転"
 
-msgid "The d-pad turns and zooms the view. Click to give it back to the replay controls"
-msgstr "十字キーで視点を回転・ズームします。クリックでリプレイ操作に戻す"
+msgid "Camera mode: the d-pad turns and zooms the view. Click or press [START] for timeline mode"
+msgstr "カメラモード：十字キーで視点を回転・ズーム。クリックか[START]でタイムラインモード"
 
-msgid "The d-pad controls the replay. Click to turn and zoom the view with it"
-msgstr "十字キーはリプレイ操作です。クリックで視点の操作に切り替え"
+msgid "Timeline mode: the d-pad controls the replay. Click or press [START] for camera mode"
+msgstr "タイムラインモード：十字キーでリプレイを操作。クリックか[START]でカメラモード"
 
-msgid "Every MS, at the automatic zoom (` key)"
-msgstr "全機体を自動ズームで映す（`キー）"
+msgid "Every MS, at the automatic zoom (5 key)"
+msgstr "全機体を自動ズームで映す（5キー）"
+
+msgid "Stick or pad"
+msgstr "スティック・パッド"
+
+msgid "Keyboard and mouse"
+msgstr "キーボード・マウス"
+
+msgid "Turn"
+msgstr "回転"
+
+msgid "Zoom"
+msgstr "ズーム"
+
+msgid "Seek"
+msgstr "シーク"
+
+msgid "Tilt down"
+msgstr "真下へ"
+
+msgid "Tilt up"
+msgstr "水平へ"
+
+msgid "Next player"
+msgstr "次のプレイヤー"
+
+msgid "Camera"
+msgstr "カメラ"
+
+msgid "Timeline"
+msgstr "タイムライン"
+
+msgid "Follow players"
+msgstr "プレイヤーを追う"
+
+msgid "Drag: turn and tilt"
+msgstr "ドラッグ：回転・傾斜"
+
+msgid "Scroll: zoom"
+msgstr "スクロール：ズーム"
 
 msgid "Skip ahead to live"
 msgstr "ライブに追いつく"

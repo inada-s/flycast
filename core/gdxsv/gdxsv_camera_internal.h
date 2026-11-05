@@ -89,6 +89,10 @@ bool gdxsv_camera_overlay_battle(GdxsvCameraBattle &battle);
 // A force's color as the overlay draws it: 0 Federation, 1 Zeon.
 u32 gdxsv_camera_team_color(int team);
 void gdxsv_camera_panel_reset();
+// The first player's buttons as the god's eye view reads them (pressed = bit clear), for the controls guide.
+void gdxsv_camera_guide_buttons(u32 kcode);
+// Render thread, each frame the CAMERA panel is drawn: the controls guide over the picture, shown while its ? is hovered.
+void gdxsv_camera_render_guide(bool hovered);
 // The aspect of the game's picture in a window of this aspect.
 float gdxsv_camera_picture_aspect(float window_aspect);
 // Called every frame a hand turns or tilts the view: its distance stays put until a little after the last call.
