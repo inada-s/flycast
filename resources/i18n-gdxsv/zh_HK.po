@@ -413,17 +413,17 @@ msgstr "選擇戰鬥 HUD 的水平範圍：\n    4:3 (Original)：保持原本�
 msgid "Off"
 msgstr "關閉"
 
-msgid "Menu & HUD Textures:"
-msgstr "選單及 HUD 材質:"
+msgid "High-Resolution Textures:"
+msgstr "高解像度材質:"
 
-msgid "Menus, briefing, the gauges and radar in battle (HUD), and the translated images. 1x keeps the original size.\nTakes effect at the next game start."
-msgstr "選單、簡報、戰鬥中的計量表及雷達（HUD），以及翻譯圖像。1x 保持原本大小。\n下次開始遊戲時生效。"
+msgid "Draw the game's textures at a higher resolution.\nTakes effect at the next game start."
+msgstr "遊戲內材質使用高解像度顯示。\n下次開始遊戲時生效。"
 
-msgid "Mobile Suit & Stage Textures:"
-msgstr "機動戰士及場景材質:"
+msgid "Menus, briefing, the HUD in battle and so on."
+msgstr "選單、簡報、戰鬥中的 HUD 等。"
 
-msgid "Mobile suits, ships and stages.\nTakes effect at the next game start."
-msgstr "機動戰士、艦艇及場景。\n下次開始遊戲時生效。"
+msgid "Mobile suits, ships and stages."
+msgstr "機動戰士、艦艇及場景。"
 
 msgid "Preparing textures"
 msgstr "正在準備材質"
