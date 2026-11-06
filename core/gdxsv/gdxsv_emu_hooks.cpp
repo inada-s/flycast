@@ -28,7 +28,6 @@
 #include "gdxsv_replay_util.h"
 #include "gdxsv_save_state.h"
 #include "gdxsv_sleep.h"
-#include "gdxsv_translation.h"
 #include "gdxsv_update.h"
 #include "gdxsv_video_hooks.h"
 #include "hw/pvr/Renderer_if.h"
@@ -503,11 +502,6 @@ void gdxsv_emu_settings_loaded() {
 	// Threaded rendering only: the frames render from snapshots on the render thread (docs/gdxsv/features.md).
 	// Overridden, so never saved: the config file keeps the user's value for an older version.
 	config::ThreadedRendering.override(true);
-
-	// Language off is gone: without a language, the game shows its dial-up wording and no player count.
-	if (config::GdxLanguage == (int)GdxsvLanguage::Lang::Disabled) {
-		config::GdxLanguage.set((int)GdxsvLanguage::Lang::Japanese);
-	}
 
 	// Released builds had UseTexturePack, whose single pack up-scaled both the 2D and the 3D textures.
 	const int old_pack_resolution = config::loadBool("gdxsv", "UseTexturePack", false) ? 2 : 1;

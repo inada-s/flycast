@@ -19,7 +19,7 @@ Upstream options it changes are in [upstream.md](upstream.md).
 |---|---|---|
 | `server` | `zdxsv.net` | lobby server host |
 | `loginkey` | empty | lobby account key; generated when empty |
-| `language` | -1 | translation patch: 0 Japanese, 1 Cantonese, 2 English; 3 (off, from older builds) is read as 0 |
+| `language` | -1 | translation patch: 0 Japanese, 1 Cantonese, 2 English, 3 off |
 | `TextureResolution2D` | -1 | texture pack 2D layer (menus, briefing, HUD, translated images): 1 `<channel>-2d-1x.json` (only the language images, at the original size), 2 `<channel>-2d-2x.json`, 4 `<channel>-2d-4x.json`; -1 takes 2 from a released build's `UseTexturePack=yes`, else 1 |
 | `TextureResolution3D` | -1 | texture pack 3D layer (mobile suits, ships, stages): 1 off (no download), 2 `<channel>-3d-2x.json`, 4 `<channel>-3d-4x.json`; -1 takes 2 from a released build's `UseTexturePack=yes`, else 1 |
 | `FontRaster` | no | DC1/DC2: draw the game font glyphs from the embedded GDXGothic Medium instead of the 24 px bitmaps: text with the game's edge, the in-battle pilot names smaller with a see-through dark outline, and the battle-message sheet (the INFORMATION panel's messages) at the names' size; wins over the embedded translation textures and the texture pack, a `data/textures` folder wins over it; Use High-Resolution Font in the gdxsv settings; takes effect at the next game start |

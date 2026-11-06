@@ -97,7 +97,7 @@ does not run extra emulated frames to catch up that sound playback.
 
 | Feature | How to turn on | Test | Control |
 |---|---|---|---|
-| Translation patch (Japanese, Cantonese, English) | setting `language` | L1; L2: an old `language=3` (off) is read as Japanese, and the game gets the Japanese patch | – |
+| Translation patch (Japanese, Cantonese, English) | setting `language` | L1; L2: `language=3` (Disabled) leaves the game's own text | – |
 | Game patches (`gdxsv_patch.inc`), rewritten every vblank | always for the game | P1 (Disc 1, Disc 2) | – |
 | NAOMI version (`gundmxgd`) boots | the NAOMI game files | N1 | – |
 | Texture pack in layers, each downloaded, updated and installed on its own (`T13306M-<layer>.texp`): ex (always, no setting: images gdxsv features read by name), 2D (everything but mobile suits and stages, with the language images; 1x holds only the language images at the original size) and 3D (mobile suits and stages) | settings `TextureResolution2D`, `TextureResolution3D`, `TexturePackChannel`, `language` | X1: 2D 4x and 3D 2x read a local channel's `<channel>-ex.json`, `<channel>-2d-4x.json` and `<channel>-3d-2x.json`, every chunk checked by hash, each pack installed; the next start finds them current (`gdxsv:TexturePackUrl`); the packs are not loaded in a game (fake packs); X2: one chunk of the 2D pack with a wrong hash, the 2D pack is not installed; X3: with the 2D and 3D settings not set, `<channel>-ex.json` and `<channel>-2d-1x.json` are asked; X4: 2D 2x and 3D 4x ask `<channel>-ex.json`, `<channel>-2d-2x.json` and `<channel>-3d-4x.json`; X5: a released build's `UseTexturePack=yes` asks `<channel>-ex.json`, `<channel>-2d-2x.json` and `<channel>-3d-2x.json`, and its old `T13306M.texp` is deleted | – |
