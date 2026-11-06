@@ -96,23 +96,25 @@ void gdxsv_gui_settings_tab()
 		}
 	}
 
-	ImGui::Columns(4, "gdxlang", false);
-	ImGui::Text("Language mod:");
-	ImGui::SameLine();
-	ShowHelpMarker(T("Patch game language and texture, for DX only"));
-	ImGui::NextColumn();
-	bool language_changed = OptionRadioButton(u8"日本語", config::GdxLanguage, 0);
-	ImGui::NextColumn();
-	language_changed |= OptionRadioButton(u8"廣東話", config::GdxLanguage, 1);
-	ImGui::NextColumn();
-	language_changed |= OptionRadioButton("English", config::GdxLanguage, 2);
-	if (language_changed) {
-		gdxsv_custom_texture_update.Reset();
-	}
-	ImGui::Columns(1, nullptr, false);
-
 	auto setting = [](const char* name, const char* value) -> std::string {
 		return std::string(T(name)) + " = " + value + "\n";
+	};
+
+	auto apply_texture_resolution = [](int resolution_2d, int resolution_3d) {
+		if (config::GdxTextureResolution2D == resolution_2d && config::GdxTextureResolution3D == resolution_3d) return;
+		config::GdxTextureResolution2D = resolution_2d;
+		config::GdxTextureResolution3D = resolution_3d;
+		gdxsv_custom_texture_update.Reset();
+	};
+
+	auto texture_resolution_tip = [&setting](int resolution_2d, int resolution_3d) -> std::string {
+		auto value = [](int resolution) { return resolution == 1 ? std::string(T("Off")) : std::to_string(resolution) + "x"; };
+		std::string str;
+		if (config::GdxTextureResolution2D != resolution_2d)
+			str += setting("High-Resolution Textures 2D", value(resolution_2d).c_str());
+		if (config::GdxTextureResolution3D != resolution_3d)
+			str += setting("High-Resolution Textures 3D", value(resolution_3d).c_str());
+		return str;
 	};
 
 	auto settings_to_be_changed = [&setting]() -> std::string {
@@ -165,6 +167,9 @@ void gdxsv_gui_settings_tab()
 		if (config::GdxLocalPort == 0)
 			str += std::string(T("Set a random Gdx UDP Port")) + "\n";
 
+		if (config::GdxFontRaster != true)
+			str += setting("Use High-Resolution Font", "true");
+
 		return str;
 	};
 
@@ -172,6 +177,8 @@ void gdxsv_gui_settings_tab()
 		gdxsv_apply_base_settings();
 		config::GdxMinDelay = 3;
 		config::AutoSkipFrame = 1;
+		config::GdxFontRaster = true;
+		apply_texture_resolution(2, 1);
 	}
 	if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled))
 	{
@@ -184,6 +191,7 @@ void gdxsv_gui_settings_tab()
 			tip += setting("Texture Upscaling", "1");
 		if (config::GdxMinDelay != 3)
 			tip += setting("Gdx Minimum Delay", "3");
+		tip += texture_resolution_tip(2, 1);
 
 		ImGui::SetTooltip("%s", tip.c_str());
 	}
@@ -192,6 +200,8 @@ void gdxsv_gui_settings_tab()
 	if (ImGui::Button(T("Apply Recommended Settings\nfor Mid-Spec PC"), ScaledVec2(200, 50))) {
 		gdxsv_apply_base_settings();
 		config::RenderResolution = 960;
+		config::GdxFontRaster = true;
+		apply_texture_resolution(2, 2);
 	}
 	if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled))
 	{
@@ -204,6 +214,7 @@ void gdxsv_gui_settings_tab()
 			tip += setting("Texture Upscaling", "1");
 		if (config::GdxMinDelay != 2)
 			tip += setting("Gdx Minimum Delay", "2");
+		tip += texture_resolution_tip(2, 2);
 
 		ImGui::SetTooltip("%s", tip.c_str());
 	}
@@ -212,6 +223,8 @@ void gdxsv_gui_settings_tab()
 	if (ImGui::Button(T("Apply Recommended Settings\nfor High-Spec PC"), ScaledVec2(200, 50))) {
 		gdxsv_apply_base_settings();
 		config::RenderResolution = 1440;
+		config::GdxFontRaster = true;
+		apply_texture_resolution(4, 4);
 	}
 	if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled))
 	{
@@ -222,6 +235,7 @@ void gdxsv_gui_settings_tab()
 			tip += setting("Automatic Frame Skipping", "Disabled");
 		if (config::GdxMinDelay != 2)
 			tip += setting("Gdx Minimum Delay", "2");
+		tip += texture_resolution_tip(4, 4);
 
 		ImGui::SetTooltip("%s", tip.c_str());
 	}
@@ -231,21 +245,40 @@ void gdxsv_gui_settings_tab()
 		"Low-Spec:\nPrioritizes stability of gameplay by minimal load.\n\n"
 		"Mid-Spec:\nWell-balanced setting that allows for comfortable gameplay with medium load.\n\n"
 		"High-Spec:\nAllows for comfortable gameplay by utilizing high load options."));
+	ImGui::Dummy(ScaledVec2(0, 12));
 
-	const char* label_2d = T("Menu & HUD Textures:");
-	const char* label_3d = T("Mobile Suit & Stage Textures:");
-	const float radio_x =
+	ImGui::Text("%s", T("Language mod:"));
+	ImGui::SameLine();
+	ShowHelpMarker(T("Patch game language and texture, for DX only"));
+	ImGui::SameLine();
+	bool language_changed = OptionRadioButton(u8"日本語", config::GdxLanguage, 0);
+	ImGui::SameLine();
+	language_changed |= OptionRadioButton(u8"廣東話", config::GdxLanguage, 1);
+	ImGui::SameLine();
+	language_changed |= OptionRadioButton("English", config::GdxLanguage, 2);
+	ImGui::SameLine();
+	language_changed |= OptionRadioButton(T("Disabled"), config::GdxLanguage, 3);
+	if (language_changed) {
+		gdxsv_custom_texture_update.Reset();
+	}
+
+	ImGui::Text("%s", T("High-Resolution Textures:"));
+	ImGui::SameLine();
+	ShowHelpMarker(T("Draw the game's textures at a higher resolution.\nTakes effect at the next game start."));
+	ImGui::Indent();
+	const char* label_2d = "2D:";
+	const char* label_3d = "3D:";
+	const float radio_x = ImGui::GetCursorPosX() +
 		std::max(ImGui::CalcTextSize(label_2d).x, ImGui::CalcTextSize(label_3d).x) + ImGui::GetStyle().ItemSpacing.x;
 	ImGui::Text("%s", label_2d);
 	ImGui::SameLine(radio_x);
-	bool pressed = OptionRadioButton("1x##2d", config::GdxTextureResolution2D, 1);
+	bool pressed = OptionRadioButton((std::string(T("Off")) + "##2d").c_str(), config::GdxTextureResolution2D, 1);
 	ImGui::SameLine();
 	pressed |= OptionRadioButton("2x##2d", config::GdxTextureResolution2D, 2);
 	ImGui::SameLine();
 	pressed |= OptionRadioButton("4x##2d", config::GdxTextureResolution2D, 4);
 	ImGui::SameLine();
-	ShowHelpMarker(T("Menus, briefing, the gauges and radar in battle (HUD), and the translated images. "
-					 "1x keeps the original size.\nTakes effect at the next game start."));
+	ShowHelpMarker(T("Menus, briefing, the HUD in battle and so on."));
 
 	ImGui::Text("%s", label_3d);
 	ImGui::SameLine(radio_x);
@@ -255,10 +288,11 @@ void gdxsv_gui_settings_tab()
 	ImGui::SameLine();
 	pressed |= OptionRadioButton("4x##3d", config::GdxTextureResolution3D, 4);
 	ImGui::SameLine();
-	ShowHelpMarker(T("Mobile suits, ships and stages.\nTakes effect at the next game start."));
+	ShowHelpMarker(T("Mobile suits, ships and stages."));
 	if (pressed) {
 		gdxsv_custom_texture_update.Reset();
 	}
+	ImGui::Unindent();
 
 	OptionCheckbox(T("Use High-Resolution Font"), config::GdxFontRaster,
 		T("Draw the game's text with a high-resolution font. Takes effect at the next game start."));
@@ -278,7 +312,7 @@ void gdxsv_gui_settings_tab()
 	ImGui::Indent();
 	{
 		DisabledScope scope(!widescreen);
-		ImGui::Text("Battle HUD Placement:");
+		ImGui::Text("%s", T("Battle HUD Placement:"));
 		ImGui::SameLine();
 		OptionRadioButton("4:3 (Original)", config::GdxWidescreenHudLayout, 0);
 		ImGui::SameLine();

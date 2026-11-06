@@ -119,7 +119,7 @@ send the public IP, P2P and latency checks to a local fake server and turn UPnP 
 |---|---|---|---|
 | P1 | smoke | game patches rewritten within 2 vblanks after the original values are written back (Disc 1, 2) | 3 s |
 | L1 | smoke | translation patch: Disc 2 text per language | 6 s |
-| L2 | full | `language=3` (off, from older builds): Disc 2's `0x8c1ca128` reads "Flycast > Settin", the Japanese patch's text, not the game's own | 2 s |
+| L2 | full | `language=3` (Disabled): Disc 2's `0x8c1ca128` is read and is not "Flycast > Settin", the text every language patches in (L1 is its control) | 2 s |
 | N1 | smoke | NAOMI version boots: game id, code at `0x0c020000` | 21 s |
 | C1 | smoke | no `emu.cfg`: the gdxsv defaults (`rend.Resolution` 720, `aica.Volume` 50, ...) still hold after the game start, read through Lua | 2 s |
 | C2 | smoke | an `emu.cfg` with gdxsv-1.9.6's sections and keys (`[config]`, `[gdxsv]`): `rend.Resolution`, `aica.Volume` read through Lua, `loginkey`, `LocalPort`, `language` from the log | 2 s |

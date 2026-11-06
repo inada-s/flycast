@@ -12,6 +12,9 @@ msgstr ""
 "Plural-Forms: nplurals=1; plural=0;\n"
 "Language-Team: Japanese\n"
 
+msgid "Language mod:"
+msgstr "言語MOD:"
+
 msgid "Patch game language and texture, for DX only"
 msgstr "ゲーム内の文字列やテクスチャに変更を加えます"
 
@@ -785,17 +788,26 @@ msgstr "最新版を手動でダウンロードしてください"
 msgid "Off"
 msgstr "オフ"
 
-msgid "Menu & HUD Textures:"
-msgstr "メニュー・HUDテクスチャ:"
+msgid "High-Resolution Textures:"
+msgstr "高解像度テクスチャ:"
 
-msgid "Menus, briefing, the gauges and radar in battle (HUD), and the translated images. 1x keeps the original size.\nTakes effect at the next game start."
-msgstr "メニュー、ブリーフィング、対戦中のゲージやレーダー（HUD）と翻訳画像。1x は元のサイズのままです。\n次回のゲーム開始時に反映されます。"
+msgid "High-Resolution Textures 2D"
+msgstr "高解像度テクスチャ 2D"
 
-msgid "Mobile Suit & Stage Textures:"
-msgstr "MS・ステージテクスチャ:"
+msgid "High-Resolution Textures 3D"
+msgstr "高解像度テクスチャ 3D"
 
-msgid "Mobile suits, ships and stages.\nTakes effect at the next game start."
-msgstr "MS・艦船・ステージ。\n次回のゲーム開始時に反映されます。"
+msgid "Draw the game's textures at a higher resolution.\nTakes effect at the next game start."
+msgstr "ゲームのテクスチャを高解像度で描画します。\n次回のゲーム開始時に反映されます。"
+
+msgid "Menus, briefing, the HUD in battle and so on."
+msgstr "メニュー、作戦説明、対戦中のHUDなど。"
+
+msgid "Mobile suits, ships and stages."
+msgstr "機体・ステージなどのオブジェクト。"
+
+msgid "Battle HUD Placement:"
+msgstr "対戦中のHUD配置:"
 
 msgid "Preparing textures"
 msgstr "テクスチャを準備中"

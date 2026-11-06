@@ -36,13 +36,13 @@ PATCHED_TEXT = 0x8c1ca128
 FLYCAST_SETTINGS = "466c7963617374203e2053657474696e"  # "Flycast > Settin"
 
 
-@case("L2", "language: an old language=3 (off) is read as Japanese, so the game gets the Japanese patch")
-def language_off_migrated(ctx):
+@case("L2", "language: language=3 (Disabled) leaves the game's own text")
+def language_off(ctx):
     p = ctx.probe("L2", ctx.rom("dc2"), "memread.lua", {"frame": 30, "reads": [[PATCHED_TEXT, 16]]}, frames=50,
                   config=["gdxsv:language=3"])
     got = p.e2e.get(f"0x{PATCHED_TEXT:08x}:16")
     return result([{"what": "probe ran", "ok": p.clean, **p.facts()},
-                   {"what": "Japanese patch applied", "want": FLYCAST_SETTINGS, "got": got, "ok": got == FLYCAST_SETTINGS}])
+                   {"what": "no patch applied", "not": FLYCAST_SETTINGS, "got": got, "ok": bool(got) and got != FLYCAST_SETTINGS}])
 
 
 SYMBOLS = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))),
