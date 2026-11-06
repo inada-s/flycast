@@ -272,7 +272,8 @@ ImVec2 ImGui::CalcTextSizeCJK(ImFont* font, float size, float max_width, float w
 
 		ImVec2 line_size = font->CalcTextSizeA(size, FLT_MAX, 0.0f, s, line_end);
 		text_size.x = ImMax(text_size.x, line_size.x);
-		text_size.y += size;
+		// Without wrapping, line_end is text_end, so the segment holds every '\n' of the text.
+		text_size.y += line_size.y;
 
 		s = ImTextCalcWordWrapNextLineStart(line_end, text_end);
 	}
