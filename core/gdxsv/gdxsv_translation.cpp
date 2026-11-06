@@ -89,17 +89,25 @@ std::string GdxsvLanguage::TextureDirectoryName() {
 
 const char* GdxsvLanguage::gdxT(const char* msg) {
 	initGdxDictMgr();
+	const char* name;
 	switch (Language()) {
 		case Lang::Japanese:
-			return gdxDictMgr->get_dictionary(Language::from_name("ja")).translate(msg).c_str();
+			name = "ja";
+			break;
 		case Lang::Cantonese:
-			return gdxDictMgr->get_dictionary(Language::from_name("zh_HK")).translate(msg).c_str();
+			name = "zh_HK";
+			break;
 		case Lang::English:
-			return gdxDictMgr->get_dictionary(Language::from_name("en")).translate(msg).c_str();
+			name = "en";
+			break;
 		case Lang::Disabled:
 		default:
 			return i18n::T(msg);
 	}
+	// Without a translation, translate() returns the string it was given, which dies on return: msg itself then.
+	const std::string smsg(msg);
+	const std::string& tr = gdxDictMgr->get_dictionary(Language::from_name(name)).translate(smsg);
+	return &tr == &smsg ? msg : tr.c_str();
 }
 
 static const char* ms_names_array[] = {
