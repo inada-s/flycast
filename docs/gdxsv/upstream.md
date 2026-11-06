@@ -71,7 +71,7 @@ Hooks into `core/gdxsv` (`gdxsv_emu_*` in `gdxsv_emu_hooks.h`) unless stated.
 | Process exit | `core/windows/winmain.cpp`, `core/linux-dist/main.cpp` | exit code set by gdxsv (`gdxsv_exit_code`); Windows: breakpad include path under MSVC |
 | macOS application launch | `shell/apple/emulator-osx/emulator-osx/SDLApplicationDelegate.mm` | `CustomApplicationMain` calls `gdxsv_emu_app_init` before AppKit initialization and skips foreground activation so hidden guests do not take keyboard focus |
 | Network | `core/network/miniupnp.cpp/.h` | UPnP mapping details |
-| HTTP | `core/oslib/http_client.cpp/.h`, `shell/apple/common/http_client.mm` | thread-local URL buffers on Windows (concurrent requests mixed hosts) |
+| HTTP | `core/oslib/http_client.cpp/.h`, `shell/apple/common/http_client.mm` | thread-local URL buffers on Windows (concurrent requests mixed hosts); Apple: GET uses the asynchronous NSURLSession API (download progress), callbacks off the main thread |
 | Texture upload | `core/rend/gles/gltex.cpp`, `core/rend/gles/gles.h`, `core/rend/dx9/d3d_texture.cpp` | upstream bug fix, in its own commit for upstream: OpenGL 4.2+ and DirectX 9 kept a texture's GPU storage for an upload of another size or format, so after a larger custom texture the rest of it stayed on screen; they allocate it again, as DirectX 11 and Vulkan do |
 | Textures | `core/rend/CustomTexture.cpp` | text drawn from the embedded font, embedded and downloaded texture packs for the game (`T13306M`); its glyph-cell textures drawn from the embedded font |
 | Logs | `core/log/LogManager.cpp`, `core/log/InMemoryListener.h`, `core/profiler/fc_profiler.h` | one log file per instance; 100 lines kept in memory (was 20); a missing include |
@@ -427,8 +427,8 @@ every spot is marked and the list is current (`--write` updates it).
 | `core/wsi/switcher.cpp` | `initRenderApi` | `gdxsv_headless`, `GdxsvNullImGuiDriver` |
 | `core/wsi/switcher.cpp` | `termRenderApi` | `gdxsv_headless`, `gdxsv_video_term` |
 | `shell/apple/common/http_client.mm` |  | delegate of the asynchronous NSURLSession request in http::get |
-| `shell/apple/common/http_client.mm` | `get` | use the asynchronous NSURLSession API and pump the run loop when called from the main thread |
-| `shell/apple/common/http_client.mm` | `get` | content was filled by the handler |
+| `shell/apple/common/http_client.mm` | `get` | callbacks run independently of the main thread so shutdown can wait for HTTP workers. |
+| `shell/apple/common/http_client.mm` | `get` | content is complete; release the session and its retained callback results. |
 | `shell/apple/emulator-osx/emulator-osx/SDLApplicationDelegate.mm` |  | include `gdxsv/gdxsv_emu_hooks.h` |
 | `shell/apple/emulator-osx/emulator-osx/SDLApplicationDelegate.mm` | `CustomApplicationMain` | `gdxsv_emu_app_init` |
 | `shell/apple/emulator-osx/emulator-osx/SDLApplicationDelegate.mm` | `CustomApplicationMain` | hidden workers must not take keyboard focus. |

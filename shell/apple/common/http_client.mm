@@ -24,8 +24,8 @@
 @interface NSURLSessionHandler:NSObject <NSURLSessionDataDelegate, NSURLSessionDelegate, NSURLSessionTaskDelegate>
 - (void)setSemaphore:(dispatch_semaphore_t)sema;
 - (void)setContent:(std::vector<u8>&)content;
-- (NSHTTPURLResponse*)httpResponse;
-- (NSError*)httpError;
+@property(nonatomic, retain) NSHTTPURLResponse* httpResponse;
+@property(nonatomic, retain) NSError* httpError;
 @end
 @implementation NSURLSessionHandler
 {
@@ -39,13 +39,20 @@
 
 - (void)setContent:(std::vector<u8>&)content { _content = &content; }
 
-- (NSHTTPURLResponse*)httpResponse { return _httpResponse; }
+@synthesize httpResponse = _httpResponse;
+@synthesize httpError = _httpError;
 
-- (NSError*)httpError { return _httpError; }
+#if !__has_feature(objc_arc)
+- (void)dealloc {
+	[_httpResponse release];
+	[_httpError release];
+	[super dealloc];
+}
+#endif
 	
 - (void)URLSession:(NSURLSession *)session dataTask:(NSURLSessionDataTask *)dataTask didReceiveResponse:(NSURLResponse *)response completionHandler:(void (^)(NSURLSessionResponseDisposition disposition))completionHandler {
 	completionHandler(NSURLSessionResponseAllow);
-	_httpResponse = (NSHTTPURLResponse *)response;
+	self.httpResponse = (NSHTTPURLResponse *)response;
 }
 - (void)URLSession:(NSURLSession *)session dataTask:(NSURLSessionDataTask *)dataTask didReceiveData:(NSData *)data {
 	_content->insert(_content->end(), (const u8 *)[data bytes], (const u8 *)[data bytes] + [data length]);
@@ -53,7 +60,7 @@
 
 - (void)URLSession:(NSURLSession *)session task:(NSURLSessionTask *)task
 didCompleteWithError:(nullable NSError *)error {
-	_httpError = error;
+	self.httpError = error;
 	dispatch_semaphore_signal(_sema);
 }
 
@@ -81,12 +88,12 @@ int get(const std::string& url, std::vector<u8>& content, const Headers *reqHead
         }
     }
 
-	// gdxsv: use the asynchronous NSURLSession API and pump the run loop when called from the main thread
+	// gdxsv: callbacks run independently of the main thread so shutdown can wait for HTTP workers.
 	NSURLSessionHandler* handler = [[NSURLSessionHandler alloc] init];
 	content.clear();
 	[handler setContent:content];
 	NSURLSessionConfiguration *defaultConfigObject = [NSURLSessionConfiguration defaultSessionConfiguration];
-	NSURLSession *defaultSession = [NSURLSession sessionWithConfiguration: defaultConfigObject delegate: handler delegateQueue: [NSOperationQueue mainQueue]];
+	NSURLSession *defaultSession = [NSURLSession sessionWithConfiguration: defaultConfigObject delegate: handler delegateQueue: nil];
 	NSURLSessionDataTask *dataTask = [defaultSession dataTaskWithRequest: urlRequest];
 	
 	dispatch_semaphore_t sema = dispatch_semaphore_create(0);
@@ -102,10 +109,10 @@ int get(const std::string& url, std::vector<u8>& content, const Headers *reqHead
 		}
 	}
 	
-	if ([handler httpError] != nil || [handler httpResponse] == nil)
-		return 500;
+	const int status = [handler httpError] != nil || [handler httpResponse] == nil
+			? 500 : (int)[[handler httpResponse] statusCode];
 
-	if (respHeaders != nullptr)
+	if (respHeaders != nullptr && [handler httpError] == nil)
 	{
 		NSDictionary *headers = [handler httpResponse].allHeaderFields;
 		NSEnumerator *enumerator = [headers keyEnumerator];
@@ -119,7 +126,13 @@ int get(const std::string& url, std::vector<u8>& content, const Headers *reqHead
 		}
 	}
 	
-	return [[handler httpResponse] statusCode]; // gdxsv: content was filled by the handler
+	// gdxsv: content is complete; release the session and its retained callback results.
+	[defaultSession finishTasksAndInvalidate];
+#if !__has_feature(objc_arc)
+	[handler release];
+	dispatch_release(sema);
+#endif
+	return status;
 }
 
 int post(const std::string& url, const char *payload, const char *contentType, std::vector<u8>& reply)
