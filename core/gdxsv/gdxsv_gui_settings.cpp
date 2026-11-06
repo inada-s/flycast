@@ -232,15 +232,30 @@ void gdxsv_gui_settings_tab()
 		"Mid-Spec:\nWell-balanced setting that allows for comfortable gameplay with medium load.\n\n"
 		"High-Spec:\nAllows for comfortable gameplay by utilizing high load options."));
 
-	ImGui::Text("%s", T("Texture Resolution:"));
+	const char* label_2d = T("Menu & HUD Textures:");
+	const char* label_3d = T("Mobile Suit & Stage Textures:");
+	const float radio_x =
+		std::max(ImGui::CalcTextSize(label_2d).x, ImGui::CalcTextSize(label_3d).x) + ImGui::GetStyle().ItemSpacing.x;
+	ImGui::Text("%s", label_2d);
+	ImGui::SameLine(radio_x);
+	bool pressed = OptionRadioButton("1x##2d", config::GdxTextureResolution2D, 1);
 	ImGui::SameLine();
-	bool pressed = OptionRadioButton("1x", config::GdxTextureResolution, 1);
+	pressed |= OptionRadioButton("2x##2d", config::GdxTextureResolution2D, 2);
 	ImGui::SameLine();
-	pressed |= OptionRadioButton("2x", config::GdxTextureResolution, 2);
+	pressed |= OptionRadioButton("4x##2d", config::GdxTextureResolution2D, 4);
 	ImGui::SameLine();
-	pressed |= OptionRadioButton("4x", config::GdxTextureResolution, 4);
+	ShowHelpMarker(T("Menus, briefing, the gauges and radar in battle (HUD), and the translated images. "
+					 "1x keeps the original size.\nTakes effect at the next game start."));
+
+	ImGui::Text("%s", label_3d);
+	ImGui::SameLine(radio_x);
+	pressed |= OptionRadioButton((std::string(T("Off")) + "##3d").c_str(), config::GdxTextureResolution3D, 1);
 	ImGui::SameLine();
-	ShowHelpMarker(T("Higher resolutions look sharper and use more memory.\nTakes effect at the next game start."));
+	pressed |= OptionRadioButton("2x##3d", config::GdxTextureResolution3D, 2);
+	ImGui::SameLine();
+	pressed |= OptionRadioButton("4x##3d", config::GdxTextureResolution3D, 4);
+	ImGui::SameLine();
+	ShowHelpMarker(T("Mobile suits, ships and stages.\nTakes effect at the next game start."));
 	if (pressed) {
 		gdxsv_custom_texture_update.Reset();
 	}

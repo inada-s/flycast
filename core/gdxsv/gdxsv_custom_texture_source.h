@@ -7,6 +7,7 @@
 #include "zip.h"
 #include "gdxsv_config.h"
 #include "gdxsv_custom_texture_cells.h"
+#include "gdxsv_custom_texture_update.h"
 #include "gdxsv_font_provider.h"
 
 // clang-format off
@@ -65,13 +66,15 @@ class GdxsvEmbedTextureSource : public BaseCustomTextureSource, public GdxsvCell
 	std::map<u32, std::string> texture_map;
 };
 
-bool gdxsv_texture_pack_wanted();
+// An image of the ex pack by its file name, as RGBA with the top row first, or nullptr. Free it with
+// stbi_image_free.
+u8* gdxsv_texture_pack_ex_image(const char* name, int& width, int& height);
 
 class GdxsvTexturePackSource : public BaseCustomTextureSource, public GdxsvCellTextureSource {
    public:
 	GdxsvTexturePackSource();
 	~GdxsvTexturePackSource() override;
-	bool shouldReplace() const override { return gdxsv_texture_pack_wanted(); }
+	bool shouldReplace() const override { return true; }
 	bool shouldPreload() const override { return false; }
 	bool loadMap() override;
 	size_t getTextureCount() const override { return texture_map.size(); }
@@ -84,6 +87,11 @@ class GdxsvTexturePackSource : public BaseCustomTextureSource, public GdxsvCellT
 	}
 
    private:
-	std::map<u32, int> texture_map;
-	zip_t* texp_zip = nullptr;
+	struct Entry {
+		size_t pack;
+		zip_uint64_t index;
+	};
+	void ClosePacks();
+	std::map<u32, Entry> texture_map;
+	std::vector<zip_t*> packs;	// the 2D and 3D layers in use
 };
