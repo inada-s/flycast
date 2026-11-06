@@ -96,22 +96,20 @@ void gdxsv_gui_settings_tab()
 		}
 	}
 
-	ImGui::Columns(5, "gdxlang", false);
-	ImGui::Text("Language mod:");
+	ImGui::Text("%s", T("Language mod:"));
 	ImGui::SameLine();
 	ShowHelpMarker(T("Patch game language and texture, for DX only"));
-	ImGui::NextColumn();
+	ImGui::SameLine();
 	bool language_changed = OptionRadioButton(u8"日本語", config::GdxLanguage, 0);
-	ImGui::NextColumn();
+	ImGui::SameLine();
 	language_changed |= OptionRadioButton(u8"廣東話", config::GdxLanguage, 1);
-	ImGui::NextColumn();
+	ImGui::SameLine();
 	language_changed |= OptionRadioButton("English", config::GdxLanguage, 2);
-	ImGui::NextColumn();
-	language_changed |= OptionRadioButton("Disabled", config::GdxLanguage, 3);
+	ImGui::SameLine();
+	language_changed |= OptionRadioButton(T("Disabled"), config::GdxLanguage, 3);
 	if (language_changed) {
 		gdxsv_custom_texture_update.Reset();
 	}
-	ImGui::Columns(1, nullptr, false);
 
 	auto setting = [](const char* name, const char* value) -> std::string {
 		return std::string(T(name)) + " = " + value + "\n";

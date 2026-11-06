@@ -12,6 +12,9 @@ msgstr ""
 "Plural-Forms: nplurals=1; plural=0;\n"
 "Language-Team: Japanese\n"
 
+msgid "Language mod:"
+msgstr "言語MOD:"
+
 msgid "Patch game language and texture, for DX only"
 msgstr "ゲーム内の文字列やテクスチャに変更を加えます"
 
