@@ -38,6 +38,16 @@ Upstream options it changes are in [upstream.md](upstream.md).
 | `ReplayShowAllyHP` | yes | replay: the total HP field shows the ally's HP |
 | `ReplayKeyDisplay` | yes | replay: show the inputs |
 | `ReplaySkipMsSelection` | yes | replay: fast-forward the mobile suit selection |
+| `ReplayGodsEyeClosest` | 150 | replay god's eye view: the closest the camera comes to the players, 150 to 1500 world units |
+| `ReplayGodsEyeAngle` | 45 | replay god's eye view: degrees it leans back from straight down, 0 to 70 |
+| `ReplayGodsEyeNameplates` | yes | replay god's eye view: a nameplate over each MS (force logo, pilot name, HP gauge) |
+| `ReplayGodsEyeBoost` | yes | replay god's eye view: a boost gauge under each nameplate while its MS is off the ground |
+| `ReplayGodsEyeTeamColors` | yes | replay god's eye view: nameplate lines and HP gauges in the team colors; off: white lines and the game's gauge colors |
+| `ReplayGodsEyeMsImage` | no | replay god's eye view: the MS's image left of each nameplate |
+| `ReplayGodsEyeFade` | yes | replay god's eye view: a nameplate fades out while it overlaps another nameplate or MS |
+| `ReplayGodsEyeTrail` | yes | replay god's eye view: a trail behind each MS in its team color |
+| `ReplayGodsEyeTrailSeconds` | 6 | replay god's eye view: how long a trail lasts, 1 to 20 seconds |
+| `ReplayGodsEyeDpad` | yes | replay god's eye view: the d-pad turns and zooms the view instead of controlling the replay, and the ` and 1 to 4 keys pick the players it follows; the CAMERA panel's gamepad toggle |
 | `LiveAutoNext` | no | spectating: move on to the next live battle |
 
 ## Settings in other sections
@@ -57,6 +67,7 @@ Upstream options it changes are in [upstream.md](upstream.md).
 | `spectate` | empty | watch this live battle code on start |
 | `ReplayPOV` | 1 | point of view of `replay` / `spectate`, player 1 to 4 |
 | `ReplayFourScreen` | no | `replay` as a four-screen replay (four processes) |
+| `ReplayPOVMode` | empty | single-screen `replay` / `spectate` on Disc 2: `godseye` opens the god's eye view, `player` (or empty) the player's camera; one shot |
 | `replay_target_round` | 0 | start `replay` at this round |
 | `replay_target_frame` | 0 | start `replay` at this input index |
 | `replay_takeover_frame` | 0 | take over `replay` (pause menu's Take Over) once it plays this input index |

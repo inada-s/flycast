@@ -1,5 +1,6 @@
 #include "gdxsv_save_state.h"
 
+#include "gdxsv_camera.h"
 #include "serialize.h"
 
 void GdxsvSaveState::StartUsing() { enabled = true; }
@@ -99,6 +100,7 @@ bool GdxsvSaveState::LoadStateInternal(int frame) {
 	rend_allow_rollback();	// ggpo might load another state right after this one
 	memwatch::reset();
 	memwatch::protect();
+	gdxsv_camera_state_loaded();
 	return true;
 }
 

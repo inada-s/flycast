@@ -36,6 +36,13 @@ class Gdxsv {
 	bool IsSaveStateAllowed() const;
 	bool IsReplaying() const;
 	bool IsReplaySeeking() const;
+	int ReplayKeyMsgCount() const { return replay_net_.KeyMsgCount(); }
+	std::string ReplayPilotName(int player) const { return replay_net_.PilotName(player); }
+	// Where the network payload put one of its symbols; 0 if it has none.
+	u32 SymbolAddress(const std::string& name) const {
+		const auto it = symbols_.find(name);
+		return it == symbols_.end() ? 0 : it->second;
+	}
 	void DisplayOSD();
 	const char* NetModeString() const;
 	// Loading a savestate keeps a suspended lobby connection; any other reset closes it.
