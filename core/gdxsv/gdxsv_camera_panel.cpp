@@ -69,7 +69,6 @@ constexpr float kPi = 3.14159265f;
 struct Panel {
 	bool orbiting = false;					   // the view is being dragged
 	bool zooming = false;					   // the zoom slider is being dragged
-	bool steering = false;					   // a button turned, tilted or zoomed the view last time
 	float steer_turn = 0.f, steer_tilt = 0.f;  // degrees per second the buttons turn and tilt it
 	float steer_zoom = 0.f;					   // its zoom's log per second
 	std::chrono::steady_clock::time_point steer_time;
@@ -284,13 +283,12 @@ void gdxsv_camera_render_view_control() {
 	const ImVec2 zoom_text = font->CalcTextSizeA(zoom_size, FLT_MAX, 0.f, magnification);
 	list->AddText(font, zoom_size, ImVec2(pos.x + size.x - inset - zoom_text.x, pos.y + (title_h - zoom_text.y) * 0.5f),
 				  IM_COL32(255, 255, 255, 200), magnification);
-	// At its left end, as a mode of the whole panel: whether the d-pad steers the view or the replay. Kept.
+	// At its left end, as a mode of the whole panel: whether the d-pad steers the view or the replay, for this session.
 	const bool dpad = settings.dpad;
 	const float pad_w = title_h * 2.f;
 	ImGui::SetCursorScreenPos(pos);
 	if (ImGui::InvisibleButton("##dpad", ImVec2(inset + pad_w, title_h))) {
 		settings.dpad = !dpad;
-		gdxsv_camera_keep_settings();
 	}
 	if (dpad)
 		ItemTip(i18n::T("Camera mode: the d-pad turns and zooms the view. Click or press [START] for timeline mode"));
@@ -319,10 +317,7 @@ void gdxsv_camera_render_view_control() {
 		panel.wheel_glide = 0.f;
 	}
 	ItemTip(i18n::T("Drag anywhere on the picture to turn and tilt the view. Double-click here for the default view"));
-	if (panel.orbiting && !ImGui::IsMouseDown(ImGuiMouseButton_Left)) {
-		panel.orbiting = false;
-		gdxsv_camera_keep_settings();
-	}
+	if (panel.orbiting && !ImGui::IsMouseDown(ImGuiMouseButton_Left)) panel.orbiting = false;
 	if (panel.orbiting) {
 		gdxsv_camera_hold_distance();
 		const float point = uiScaled(1.f);
@@ -549,7 +544,6 @@ void gdxsv_camera_steer(u32 kcode) {
 	const bool start = (~kcode & DC_BTN_START) != 0;
 	if (start && !panel.start_held) {
 		settings.dpad = !settings.dpad;
-		gdxsv_camera_keep_settings();
 	}
 	panel.start_held = start;
 	// Camera mode, the toggle on, gives the view the d-pad, X, Y and B; timeline mode gives the d-pad back to the replay,
@@ -572,9 +566,6 @@ void gdxsv_camera_steer(u32 kcode) {
 	Tilt(panel.steer_tilt * seconds);
 	if (panel.steer_zoom != 0.f)
 		settings.zoom = std::clamp(settings.zoom * std::exp(panel.steer_zoom * seconds), kGdxsvCameraZoomMin, kGdxsvCameraZoomMax);
-	// The angle is kept, as the slider keeps it, once the view comes to rest.
 	const bool moving = panel.steer_turn != 0.f || panel.steer_tilt != 0.f || panel.steer_zoom != 0.f;
 	if (moving) gdxsv_camera_hold_distance();
-	if (panel.steering && !moving) gdxsv_camera_keep_settings();
-	panel.steering = moving;
 }

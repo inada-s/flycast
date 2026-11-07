@@ -5,9 +5,12 @@
 #include <atomic>
 #include <cstdio>
 #include <string>
+#include <vector>
 
+#include "cfg/option.h"
 #include "gdxsv_camera.h"
 #include "gdxsv_camera_internal.h"
+#include "gdxsv_config.h"
 #include "imgui.h"
 #include "imgui_internal.h"
 #include "oslib/i18n.h"
@@ -16,9 +19,11 @@
 
 namespace {
 struct Menu {
-	bool shown = false;	  // the Tab menu drew the POV row this frame: its popup closes with the menu
-	bool edited = false;  // saved once no control is held, so that a slider drag writes the file once
-	ImGuiID popup = 0;	  // the settings popup
+	bool shown = false;	 // the Tab menu drew the POV row this frame: its popup closes with the menu
+	ImGuiID popup = 0;	 // the settings popup
+	// The options edited in the popup, saved once no control is held, so that a slider drag writes the file once. Each is
+	// saved by itself: what the panel changed, and the emulator's other settings, stay as they are in emu.cfg.
+	std::vector<config::BaseOption *> edited;
 };
 
 Menu menu;
@@ -27,19 +32,26 @@ void ItemTip(const char *text) {
 	if (ImGui::IsItemHovered(ImGuiHoveredFlags_ForTooltip | ImGuiHoveredFlags_AllowWhenDisabled)) ImGui::SetTooltip("%s", text);
 }
 
-bool Checkbox(const char *label, std::atomic<bool> &value, const char *tip) {
+void Edited(config::BaseOption &option) {
+	if (std::find(menu.edited.begin(), menu.edited.end(), &option) == menu.edited.end()) menu.edited.push_back(&option);
+}
+
+void Checkbox(const char *label, std::atomic<bool> &value, config::Option<bool> &option, const char *tip) {
 	bool on = value;
 	const bool changed = ImGui::Checkbox(label, &on);
 	if (tip != nullptr) ItemTip(tip);
-	if (changed) value = on;
-	return changed;
+	if (!changed) return;
+	value = on;
+	option.set(on);
+	Edited(option);
 }
 
-bool Slider(const char *label, std::atomic<float> &value, float min, float max, const char *format) {
+void Slider(const char *label, std::atomic<float> &value, config::Option<float> &option, float min, float max, const char *format) {
 	float v = value;
-	const bool changed = ImGui::SliderFloat(label, &v, min, max, format, ImGuiSliderFlags_AlwaysClamp);
-	if (changed) value = v;
-	return changed;
+	if (!ImGui::SliderFloat(label, &v, min, max, format, ImGuiSliderFlags_AlwaysClamp)) return;
+	value = v;
+	option.set(v);
+	Edited(option);
 }
 
 void RenderSettings() {
@@ -50,41 +62,40 @@ void RenderSettings() {
 	std::snprintf(title, sizeof(title), i18n::T("%s settings"), i18n::T(gdxsv_camera_pov_mode_label(GdxsvPovMode::GodsEye)));
 	ImGui::SeparatorText(title);
 
-	bool edited = false;
 	const char *angle = i18n::T("Angle");
 	const char *closest = i18n::T("Closest");
 	const float slider = width - std::max(ImGui::CalcTextSize(angle).x, ImGui::CalcTextSize(closest).x) - style.ItemInnerSpacing.x;
 	ImGui::SetNextItemWidth(slider);
-	edited |= Slider(angle, settings.angle, 0.f, kGdxsvCameraAngleMax, "%.0f°");
+	Slider(angle, settings.angle, config::GdxReplayGodsEyeAngle, 0.f, kGdxsvCameraAngleMax, "%.0f°");
 	if (ImGui::IsItemActive()) gdxsv_camera_hold_distance();
 	ItemTip(i18n::T("How far the view leans back from straight down"));
 	ImGui::SetNextItemWidth(slider);
-	edited |= Slider(closest, settings.closest, kGdxsvCameraClosestMin, kGdxsvCameraClosestMax, "%.0f");
+	Slider(closest, settings.closest, config::GdxReplayGodsEyeClosest, kGdxsvCameraClosestMin, kGdxsvCameraClosestMax, "%.0f");
 	ItemTip(i18n::T("How close the camera may zoom in"));
 	ImGui::Separator();
 
 	// Two columns, each half the row. The options after Nameplates are parts of a nameplate.
 	const float column = style.WindowPadding.x + (width + style.ItemSpacing.x) * 0.5f;
-	edited |= Checkbox(i18n::T("Nameplates"), settings.nameplates, i18n::T("Pilot name and HP above each MS"));
+	Checkbox(i18n::T("Nameplates"), settings.nameplates, config::GdxReplayGodsEyeNameplates, i18n::T("Pilot name and HP above each MS"));
 	ImGui::BeginDisabled(!settings.nameplates);
 	ImGui::SameLine(column);
-	edited |= Checkbox(i18n::T("Boost"), settings.boost, i18n::T("Boost gauge under each nameplate"));
-	edited |= Checkbox(i18n::T("Team colors"), settings.team_colors, i18n::T("Color the HP gauges by team"));
+	Checkbox(i18n::T("Boost"), settings.boost, config::GdxReplayGodsEyeBoost, i18n::T("Boost gauge under each nameplate"));
+	Checkbox(i18n::T("Team colors"), settings.team_colors, config::GdxReplayGodsEyeTeamColors, i18n::T("Color the HP gauges by team"));
 	ImGui::SameLine(column);
-	edited |= Checkbox(i18n::T("MS image"), settings.ms_image, nullptr);
-	edited |= Checkbox(i18n::T("Fade on overlap"), settings.fade, i18n::T("Fade a nameplate while it overlaps another nameplate or MS"));
+	Checkbox(i18n::T("MS image"), settings.ms_image, config::GdxReplayGodsEyeMsImage, nullptr);
+	Checkbox(i18n::T("Fade on overlap"), settings.fade, config::GdxReplayGodsEyeFade,
+			 i18n::T("Fade a nameplate while it overlaps another nameplate or MS"));
 	ImGui::EndDisabled();
 	ImGui::Separator();
 
-	edited |= Checkbox(i18n::T("Trail"), settings.trail, nullptr);
+	Checkbox(i18n::T("Trail"), settings.trail, config::GdxReplayGodsEyeTrail, nullptr);
 	ImGui::SameLine();
 	const char *seconds = i18n::T("seconds");
 	ImGui::BeginDisabled(!settings.trail);
 	ImGui::SetNextItemWidth(style.WindowPadding.x + width - ImGui::GetCursorPosX() - ImGui::CalcTextSize(seconds).x -
 							style.ItemInnerSpacing.x);
-	edited |= Slider(seconds, settings.trail_seconds, 1.f, kGdxsvCameraTrailSecondsMax, "%.0f");
+	Slider(seconds, settings.trail_seconds, config::GdxReplayGodsEyeTrailSeconds, 1.f, kGdxsvCameraTrailSecondsMax, "%.0f");
 	ImGui::EndDisabled();
-	menu.edited |= edited;
 }
 }  // namespace
 
@@ -139,9 +150,11 @@ bool gdxsv_camera_render_pov_row(int pov_player, float cell, float height) {
 			ImGui::CloseCurrentPopup();
 		ImGui::EndPopup();
 	}
-	if (menu.edited && !ImGui::IsAnyItemActive()) {
-		gdxsv_camera_save_settings();
-		menu.edited = false;
+	if (!menu.edited.empty() && !ImGui::IsAnyItemActive()) {
+		config::setAutoSave(false);
+		for (config::BaseOption *option : menu.edited) option->save();
+		config::setAutoSave(true);	// writes emu.cfg once
+		menu.edited.clear();
 	}
 	return changed;
 }

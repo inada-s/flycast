@@ -39,7 +39,7 @@ Upstream options it changes are in [upstream.md](upstream.md).
 | `ReplayKeyDisplay` | yes | replay: show the inputs |
 | `ReplaySkipMsSelection` | yes | replay: fast-forward the mobile suit selection |
 | `ReplayGodsEyeClosest` | 150 | replay god's eye view: the closest the camera comes to the players, 150 to 1500 world units |
-| `ReplayGodsEyeAngle` | 45 | replay god's eye view: degrees it leans back from straight down, 0 to 70 |
+| `ReplayGodsEyeAngle` | 45 | replay god's eye view: degrees it leans back from straight down, 0 to 70; the CAMERA panel's tilt is not saved |
 | `ReplayGodsEyeNameplates` | yes | replay god's eye view: a nameplate over each MS (force logo, pilot name, HP gauge) |
 | `ReplayGodsEyeBoost` | yes | replay god's eye view: a boost gauge under each nameplate while its MS is off the ground |
 | `ReplayGodsEyeTeamColors` | yes | replay god's eye view: nameplate lines and HP gauges in the team colors; off: white lines and the game's gauge colors |
@@ -47,7 +47,7 @@ Upstream options it changes are in [upstream.md](upstream.md).
 | `ReplayGodsEyeFade` | yes | replay god's eye view: a nameplate fades out while it overlaps another nameplate or MS |
 | `ReplayGodsEyeTrail` | yes | replay god's eye view: a trail behind each MS in its team color |
 | `ReplayGodsEyeTrailSeconds` | 6 | replay god's eye view: how long a trail lasts, 1 to 20 seconds |
-| `ReplayGodsEyeDpad` | yes | replay god's eye view: camera mode, where the d-pad turns and zooms the view instead of controlling the replay, X and Y tilt it, B steps whom it follows, and the 1 to 5 keys (main row or numpad) pick the players it follows, 5 everyone; off, timeline mode. The CAMERA panel's gamepad toggle, or START |
+| `ReplayGodsEyeDpad` | yes | replay god's eye view: camera mode, where the d-pad turns and zooms the view instead of controlling the replay, X and Y tilt it, B steps whom it follows, and the 1 to 5 keys (main row or numpad) pick the players it follows, 5 everyone; off, timeline mode. The mode each game starts in: the CAMERA panel's gamepad toggle and START switch it without saving |
 | `LiveAutoNext` | no | spectating: move on to the next live battle |
 
 ## Settings in other sections

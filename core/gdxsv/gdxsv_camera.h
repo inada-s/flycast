@@ -26,8 +26,6 @@ bool gdxsv_camera_available();
 bool gdxsv_camera_gods_eye();
 // A replay or live battle starts: the view follows every player again, at the automatic zoom.
 void gdxsv_camera_replay_started();
-// UI thread, when a replay or live battle ends: saves the settings the CAMERA panel changed.
-void gdxsv_camera_replay_ended();
 
 // Emulator thread, between SH4 runs: installs the guest code on first use and keeps its hooks in step with the mode.
 void gdxsv_camera_next_frame(int disk, bool replaying);

@@ -165,15 +165,14 @@ struct CameraState {
 	bool installed = false;	 // the guest code is in RAM
 	bool used = false;		 // it was in this replay: its states can bring it back, the code cache can hold blocks of it
 	bool fog_off = false;
-	bool fog_saved = true;
+	bool fog = true;			// the fog option as the settings showed it when the view turned it off
+	bool fog_read_only = false;	// and whether the settings could change it there (not when the command line sets it)
 	u32 status = ~0u;
 };
 
 CameraState cam;
 // Set by the emulator thread, read by the others.
 std::atomic<bool> available{false};
-// The kept settings differ from emu.cfg.
-std::atomic<bool> unsaved{false};
 
 s64 SteadyNanoseconds() {
 	return std::chrono::duration_cast<std::chrono::nanoseconds>(std::chrono::steady_clock::now().time_since_epoch()).count();
@@ -244,18 +243,21 @@ void ViewOff() {
 	gdxsv_camera_overlay_clear();
 }
 
-// Stage fog is tuned for battle distances and washes out a view from high above. Overridden while off, so never saved, and
-// loaded again after, as at startup: the file's value with any override from the command line.
+// Stage fog is tuned for battle distances and washes out a view from high above. Overridden while off, so never saved, then
+// back to what the settings showed.
 void ViewFog(bool off) {
 	if (off == cam.fog_off) return;
 	cam.fog_off = off;
 	if (off) {
-		cam.fog_saved = config::Fog;
+		cam.fog = config::Fog;
+		cam.fog_read_only = config::Fog.isReadOnly();
 		config::Fog.override(false);
 	} else {
 		config::Fog.reset();
-		config::Fog.load();
-		if (config::Fog != cam.fog_saved) config::Fog.set(cam.fog_saved);
+		if (cam.fog_read_only)
+			config::Fog.override(cam.fog);
+		else
+			config::Fog.set(cam.fog);
 	}
 }
 
@@ -490,30 +492,6 @@ float gdxsv_camera_read_float(u32 addr) {
 
 void gdxsv_camera_hold_distance() { gdxsv_camera_settings.hand_until = SteadyNanoseconds() + kHandNanoseconds; }
 
-void gdxsv_camera_keep_settings() {
-	const GdxsvCameraSettings &settings = gdxsv_camera_settings;
-	const auto keep = [](auto &option, auto value) {
-		if (option.get() == value) return;
-		option.set(value);
-		unsaved = true;
-	};
-	keep(config::GdxReplayGodsEyeClosest, settings.closest.load());
-	keep(config::GdxReplayGodsEyeAngle, settings.angle.load());
-	keep(config::GdxReplayGodsEyeNameplates, settings.nameplates.load());
-	keep(config::GdxReplayGodsEyeBoost, settings.boost.load());
-	keep(config::GdxReplayGodsEyeTeamColors, settings.team_colors.load());
-	keep(config::GdxReplayGodsEyeMsImage, settings.ms_image.load());
-	keep(config::GdxReplayGodsEyeFade, settings.fade.load());
-	keep(config::GdxReplayGodsEyeTrail, settings.trail.load());
-	keep(config::GdxReplayGodsEyeTrailSeconds, settings.trail_seconds.load());
-	keep(config::GdxReplayGodsEyeDpad, settings.dpad.load());
-}
-
-void gdxsv_camera_save_settings() {
-	gdxsv_camera_keep_settings();
-	if (unsaved.exchange(false)) config::Settings::instance().save();
-}
-
 void gdxsv_camera_set_pov_mode(GdxsvPovMode mode) { gdxsv_camera_settings.pov_mode = mode; }
 
 bool gdxsv_camera_set_pov_mode_name(const std::string &name) {
@@ -548,8 +526,6 @@ void gdxsv_camera_replay_started() {
 	gdxsv_camera_settings.zoom = 1.f;
 	gdxsv_camera_settings.replay++;
 }
-
-void gdxsv_camera_replay_ended() { gdxsv_camera_save_settings(); }
 
 float gdxsv_camera_player_camera(int player, u32 offset) {
 	const u32 record = cam.game->camera_work + player * cam.game->camera_stride;

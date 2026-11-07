@@ -128,7 +128,3 @@ void gdxsv_camera_render_guide(bool hovered);
 float gdxsv_camera_picture_aspect(float window_aspect);
 // Called every frame a hand turns or tilts the view: its distance stays put until a little after the last call.
 void gdxsv_camera_hold_distance();
-// Puts the settings the viewer keeps in their options, for emu.cfg's next save.
-void gdxsv_camera_keep_settings();
-// Keeps them and saves emu.cfg if they changed: after an edit in the settings popup and when the replay ends.
-void gdxsv_camera_save_settings();
