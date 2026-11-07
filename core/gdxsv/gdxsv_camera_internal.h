@@ -48,6 +48,7 @@ struct GdxsvCameraSettings {
 	std::atomic<bool> trail{true};
 	std::atomic<float> trail_seconds{6.f};
 	std::atomic<bool> dpad{true};  // the d-pad turns and zooms the view, not the replay
+	std::atomic<u32> replay{0};	   // replays and live battles started: what is read once per replay is read again
 };
 
 extern GdxsvCameraSettings gdxsv_camera_settings;
@@ -97,5 +98,7 @@ void gdxsv_camera_render_guide(bool hovered);
 float gdxsv_camera_picture_aspect(float window_aspect);
 // Called every frame a hand turns or tilts the view: its distance stays put until a little after the last call.
 void gdxsv_camera_hold_distance();
-// Writes the settings the viewer keeps to emu.cfg.
+// Puts the settings the viewer keeps in their options, for emu.cfg's next save.
+void gdxsv_camera_keep_settings();
+// Keeps them and saves emu.cfg if they changed: after an edit in the settings popup and when the replay ends.
 void gdxsv_camera_save_settings();

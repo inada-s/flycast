@@ -330,10 +330,14 @@ static void take_replay_pov_mode() {
 	const std::string mode = config::loadStr("gdxsv", "ReplayPOVMode", "");
 	if (config::isTransient("gdxsv", "ReplayPOVMode")) config::setTransient("gdxsv", "ReplayPOVMode", "");
 	if (mode.empty()) return;
-	if (gdxsv_camera_set_pov_mode_name(mode))
-		NOTICE_LOG(COMMON, "ReplayPOVMode: %s", mode.c_str());
-	else
+	if (!gdxsv_camera_set_pov_mode_name(mode)) {
 		WARN_LOG(COMMON, "ReplayPOVMode %s is not available; opening the player's POV", mode.c_str());
+	} else if (gdxsv_camera_pov_mode() != GdxsvPovMode::Player && !gdxsv_camera_supports(gdxsv.Disk())) {
+		gdxsv_camera_set_pov_mode(GdxsvPovMode::Player);
+		WARN_LOG(COMMON, "ReplayPOVMode %s: this game has no god's eye view; opening the player's POV", mode.c_str());
+	} else {
+		NOTICE_LOG(COMMON, "ReplayPOVMode: %s", mode.c_str());
+	}
 }
 
 void gdxsv_emu_loadstate(int slot) {

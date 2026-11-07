@@ -294,7 +294,7 @@ void GdxsvBackendReplay::OnMainUiLoop() {
 		key_holds_ = key_buttons | (key_holds_ & ~input.kcode);
 		input.kcode |= key_holds_;
 		// The god's eye view may take the d-pad to turn and zoom the camera, X and Y to tilt it, and B to step whom it follows.
-		if (!ui.takeover && ui.inGame && gdxsv_camera_pov_mode() == GdxsvPovMode::GodsEye) {
+		if (!ui.takeover && ui.inGame && gdxsv_camera_gods_eye()) {
 			gdxsv_camera_steer(input.kcode);
 			if (gdxsv_camera_dpad_steers()) input.kcode |= DC_DPAD_UP | DC_DPAD_DOWN | DC_DPAD_LEFT | DC_DPAD_RIGHT;
 		}
@@ -1111,8 +1111,7 @@ void GdxsvBackendReplay::OnNextFrameInternal() {
 	// Never in Live Spectate: it is an analysis overlay, and it shows the
 	// players' inputs while they are still playing. Nor in the god's eye view, which
 	// shows no POV player.
-	gdxsv.key_display_.enabled(config::GdxReplayKeyDisplay && IsInGame() && !live_mode_ &&
-							   gdxsv_camera_pov_mode() == GdxsvPovMode::Player);
+	gdxsv.key_display_.enabled(config::GdxReplayKeyDisplay && IsInGame() && !live_mode_ && !gdxsv_camera_gods_eye());
 	regular_save_state();
 
 	// Hysteresis stabilizes the indicator without changing live-following intent
@@ -2174,6 +2173,7 @@ bool GdxsvBackendReplay::Start() {
 		return false;
 	}
 	NOTICE_LOG(COMMON, "game_disk = %s", log_file_.game_disk().c_str());
+	gdxsv_camera_replay_started();
 	CloseReplayHashLog();
 	if (config::loadBool("gdxsv", "hashlog", false)) {
 		std::string path = get_writable_data_path("replay_hashlog.txt");
@@ -2939,7 +2939,7 @@ void GdxsvBackendReplay::RenderPauseMenu(const UiState& ui) {
 		// play the recording.
 		if (!ui.liveMode && !multi_pov_host_) {
 			// The POV player is taken over from their own view, which the god's eye view does not show.
-			const bool gods_eye = gdxsv_camera_pov_mode() == GdxsvPovMode::GodsEye;
+			const bool gods_eye = gdxsv_camera_gods_eye();
 			ImGui::BeginDisabled(!ui.inGame || gods_eye);
 			if (ImGui::Button((std::string(ICON_FA_GAMEPAD "  ") + T("Take Over")).c_str(), ScaledVec2(300, 40))) {
 				ui_commands_.emplace_back(ReplayCtrlCommand::TakeOver);
@@ -2950,9 +2950,9 @@ void GdxsvBackendReplay::RenderPauseMenu(const UiState& ui) {
 		}
 
 		// Round and POV rows, with one label column: five columns of round buttons (wrapping past 5), and the POV buttons
-		// over four columns with their gear in the fifth. The god's eye view is Disc 2's, and a four-screen replay shows
-		// the players' own views.
-		const bool pov_row = !multi_pov_host_ && gdxsv.Disk() == 2;
+		// over four columns with their gear in the fifth, where this game has the god's eye view. A four-screen replay
+		// shows the players' own views.
+		const bool pov_row = !multi_pov_host_ && gdxsv_camera_available();
 		const ImGuiStyle& style = ImGui::GetStyle();
 		const float labelWidth = std::max(ImGui::CalcTextSize(T("Round")).x, pov_row ? ImGui::CalcTextSize(T("POV")).x : 0.0f);
 		const float buttonHeight = uiScaled(40.0f);
@@ -3056,7 +3056,7 @@ void GdxsvBackendReplay::RenderPauseMenu(const UiState& ui) {
 
 		// The POV player's cockpit HP and inputs: the god's eye view shows neither. Disabled, not hidden, so the menu
 		// keeps its place and the choices come back with the player's POV.
-		const bool playerPov = gdxsv_camera_pov_mode() == GdxsvPovMode::Player;
+		const bool playerPov = !gdxsv_camera_gods_eye();
 		ImGui::BeginGroup();
 		ImGui::BeginDisabled(!playerPov);
 		OptionCheckbox(T("Show Ally HP"), config::GdxReplayShowAllyHP, T("Hack the total HP field to display Ally HP"));
@@ -3190,7 +3190,7 @@ void GdxsvBackendReplay::UpdateControlBarVisibility(const UiState& ui) {
 	if ((axes[1] >> 8) + 128 >= 128 + 0x20) cur_kcode &= ~DC_DPAD_DOWN;
 	// The god's eye view's camera buttons do not bring up the bar: the d-pad when it steers the view, B, X and Y always.
 	if (ui.inGame && gdxsv_camera_dpad_steers()) cur_kcode |= DC_DPAD_UP | DC_DPAD_DOWN | DC_DPAD_LEFT | DC_DPAD_RIGHT;
-	if (ui.inGame && gdxsv_camera_pov_mode() == GdxsvPovMode::GodsEye) cur_kcode |= DC_BTN_B | DC_BTN_X | DC_BTN_Y;
+	if (ui.inGame && gdxsv_camera_gods_eye()) cur_kcode |= DC_BTN_B | DC_BTN_X | DC_BTN_Y;
 	bool holding_lr = (~cur_kcode & DC_DPAD_LEFT) || (~cur_kcode & DC_DPAD_RIGHT);
 	if (cur_kcode != ctrl_bar_prev_kcode_ || holding_lr) {
 		ctrl_bar_idle_timer_ = 3.0f;

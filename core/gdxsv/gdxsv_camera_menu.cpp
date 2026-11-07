@@ -9,6 +9,7 @@
 #include "gdxsv_camera.h"
 #include "gdxsv_camera_internal.h"
 #include "imgui.h"
+#include "imgui_internal.h"
 #include "oslib/i18n.h"
 #include "ui/IconsFontAwesome6.h"
 #include "ui/gui_util.h"
@@ -17,6 +18,7 @@ namespace {
 struct Menu {
 	bool shown = false;	  // the Tab menu drew the POV row this frame: its popup closes with the menu
 	bool edited = false;  // saved once no control is held, so that a slider drag writes the file once
+	ImGuiID popup = 0;	  // the settings popup
 };
 
 Menu menu;
@@ -128,6 +130,7 @@ bool gdxsv_camera_render_pov_row(int pov_player, float cell, float height) {
 	ItemTip(tip);
 
 	// Beside the menu, its top on the gear.
+	menu.popup = ImGui::GetID("##pov-settings");
 	ImGui::SetNextWindowPos(ImVec2(ImGui::GetWindowPos().x + ImGui::GetWindowSize().x + style.ItemSpacing.x, gear_top));
 	if (ImGui::BeginPopup("##pov-settings")) {
 		if (gods_eye)
@@ -146,5 +149,11 @@ bool gdxsv_camera_render_pov_row(int pov_player, float cell, float height) {
 void gdxsv_camera_pov_row_hidden() {
 	if (!menu.shown) return;
 	menu.shown = false;
-	ImGui::ClosePopupsExceptModals();
+	// The settings popup and any popup opened from it; the others are not the POV row's.
+	const ImGuiContext &g = *ImGui::GetCurrentContext();
+	for (int n = 0; n < g.OpenPopupStack.Size; n++) {
+		if (g.OpenPopupStack[n].PopupId != menu.popup) continue;
+		ImGui::ClosePopupToLevel(n, true);
+		break;
+	}
 }

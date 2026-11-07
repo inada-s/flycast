@@ -2172,6 +2172,7 @@ void gdxsv_test_start_replay_tick() {
 void gdxsv_end_replay(std::string error, bool user_exit) {
 	// Own the message: restoring the previous state resets the replay backend.
 	emu.stop();
+	gdxsv_camera_replay_ended();
 	dc_loadstate(90);
 	settings.input.fastForwardMode = false;
 

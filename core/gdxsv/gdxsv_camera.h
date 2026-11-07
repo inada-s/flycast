@@ -17,6 +17,17 @@ bool gdxsv_camera_set_pov_mode_name(const std::string &name);
 GdxsvPovMode gdxsv_camera_pov_mode();
 // A mode's name as the POV menu shows it, untranslated ("God's Eye View"); empty for Player.
 const char *gdxsv_camera_pov_mode_label(GdxsvPovMode mode);
+// Emulator thread: whether the game in memory can show the god's eye view (Disc 2 of a known build).
+bool gdxsv_camera_supports(int disk);
+// Whether the replay playing can show the god's eye view, as the emulator thread last found it.
+bool gdxsv_camera_available();
+// The god's eye view is the POV and available. Every other file tests the view by this, so that nothing changes on a
+// game without it.
+bool gdxsv_camera_gods_eye();
+// A replay or live battle starts: the view follows every player again, at the automatic zoom.
+void gdxsv_camera_replay_started();
+// UI thread, when a replay or live battle ends: saves the settings the CAMERA panel changed.
+void gdxsv_camera_replay_ended();
 
 // Emulator thread, between SH4 runs: installs the guest code on first use and keeps its hooks in step with the mode.
 void gdxsv_camera_next_frame(int disk, bool replaying);

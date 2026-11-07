@@ -190,7 +190,16 @@ struct Nameplates {
 	bool font_missing = false;
 };
 
+// Emulator thread: what stays the same through a replay, read once at its first update.
+struct ReplayFacts {
+	u32 replay = ~0u;  // gdxsv_camera_settings.replay they were read for
+	u32 hud_left = 0;  // the payload's widescreen HUD offsets
+	u32 hud_right = 0;
+	std::string name[4];
+};
+
 Overlay overlay;
+ReplayFacts facts;
 Nameplates nameplates;
 
 GdxsvCameraVec3 ReadVec3(u32 addr) {
@@ -650,7 +659,16 @@ void DrawNameplates(const Scene &s) {
 }  // namespace
 
 void gdxsv_camera_overlay_update(const GdxsvCameraFrame &frame) {
+	// A seek's frames are not shown. The overlay is updated again once the replay plays, its trails anew.
+	if (gdxsv.IsReplaySeeking()) return;
 	const GdxsvCameraSettings &settings = gdxsv_camera_settings;
+	const bool new_replay = facts.replay != settings.replay;
+	if (new_replay) {
+		facts.replay = settings.replay;
+		facts.hud_left = gdxsv.SymbolAddress("gdx_widescreen_hud_left_offset");
+		facts.hud_right = gdxsv.SymbolAddress("gdx_widescreen_hud_right_offset");
+		for (int i = 0; i < 4; i++) facts.name[i] = gdxsv.ReplayPilotName(i);
+	}
 	// A nameplate waits for its MS to land as the framing does: up there it would be held at the screen's edge.
 	float label_x[4] = {};
 	float label_y[4] = {};
@@ -680,8 +698,6 @@ void gdxsv_camera_overlay_update(const GdxsvCameraFrame &frame) {
 	PlayerView views[4];
 	for (int i = 0; i < 4; i++) views[i] = ReadPlayerView(i, frame.players[i], cockpit.lock_mark[i]);
 	const int key = gdxsv.ReplayKeyMsgCount();
-	const u32 hud_left = gdxsv.SymbolAddress("gdx_widescreen_hud_left_offset");
-	const u32 hud_right = gdxsv.SymbolAddress("gdx_widescreen_hud_right_offset");
 	const float hud_half_w = kHudHalfHeight * frame.aspect;
 
 	std::lock_guard<std::mutex> lock(overlay.mutex);
@@ -710,16 +726,15 @@ void gdxsv_camera_overlay_update(const GdxsvCameraFrame &frame) {
 		const int hp_max = static_cast<s16>(gdxsv_ReadMem16(actor + kActorHpMax));
 		const int hp = static_cast<s16>(gdxsv_ReadMem16(actor + kActorHp));
 		overlay.hp[i] = hp_max > 0 ? std::clamp(static_cast<float>(hp) / hp_max, 0.f, 1.f) : 0.f;
-		std::string name = gdxsv.ReplayPilotName(i);
-		if (name != overlay.name[i]) overlay.name[i] = std::move(name);
+		if (new_replay) overlay.name[i] = facts.name[i];
 		overlay.view[i] = views[i];
 		const u32 pointer_target = views[i].locking ? gdxsv_ReadMem32(actor + kActorTarget) : 0;
 		if (pointer_target != overlay.pointer_target[i]) overlay.pointer_key[i] = key;
 		overlay.pointer_target[i] = pointer_target;
 	}
 	overlay.valid = cockpit.alive;
-	overlay.gauge_slide = cockpit.gauge_slide + (hud_left != 0 ? gdxsv_camera_read_float(hud_left) : 0.f);
-	overlay.timer_slide = cockpit.timer_slide + (hud_right != 0 ? gdxsv_camera_read_float(hud_right) : 0.f);
+	overlay.gauge_slide = cockpit.gauge_slide + (facts.hud_left != 0 ? gdxsv_camera_read_float(facts.hud_left) : 0.f);
+	overlay.timer_slide = cockpit.timer_slide + (facts.hud_right != 0 ? gdxsv_camera_read_float(facts.hud_right) : 0.f);
 }
 
 void gdxsv_camera_overlay_clear() {
@@ -748,8 +763,7 @@ bool gdxsv_camera_overlay_battle(GdxsvCameraBattle &battle) {
 u32 gdxsv_camera_team_color(int team) { return kTeamColors[team != 0 ? 1 : 0]; }
 
 void gdxsv_camera_render_overlay() {
-	const GdxsvPovMode mode = gdxsv_camera_pov_mode();
-	if (mode == GdxsvPovMode::Player) return;
+	if (!gdxsv_camera_gods_eye()) return;
 	std::lock_guard<std::mutex> lock(overlay.mutex);
 	if (!overlay.valid) return;
 

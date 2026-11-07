@@ -83,6 +83,7 @@ struct Panel {
 	float wheel_glide = 0.f;  // log of the zoom the wheel has yet to glide by
 	// The ImGui time each of [1] to [4] and [All] was last pressed.
 	double pressed_at[5] = {-1e9, -1e9, -1e9, -1e9, -1e9};
+	u32 replay = 0;	 // gdxsv_camera_settings.replay the picks were made in
 };
 
 Panel panel;
@@ -199,7 +200,15 @@ float PressFlash(int slot) {
 void gdxsv_camera_panel_reset() { panel = Panel{}; }
 
 void gdxsv_camera_render_view_control() {
-	if (gdxsv_camera_pov_mode() != GdxsvPovMode::GodsEye) return;
+	// A new replay follows everyone, as gdxsv_camera_replay_started has set: the last one's picks go.
+	if (panel.replay != gdxsv_camera_settings.replay) {
+		panel.focus_shown = kGdxsvCameraEveryone;
+		panel.focus_at = 0.0;
+		panel.focus_steps = 0;
+		panel.wheel_glide = 0.f;
+		panel.replay = gdxsv_camera_settings.replay;
+	}
+	if (!gdxsv_camera_gods_eye()) return;
 	// Outside a battle B presses and the wheel are dropped. ImGui gets the wheel only over its windows, so it comes from SDL.
 	const int steps = panel.focus_steps;
 	panel.focus_steps = 0;
@@ -281,7 +290,7 @@ void gdxsv_camera_render_view_control() {
 	ImGui::SetCursorScreenPos(pos);
 	if (ImGui::InvisibleButton("##dpad", ImVec2(inset + pad_w, title_h))) {
 		settings.dpad = !dpad;
-		gdxsv_camera_save_settings();
+		gdxsv_camera_keep_settings();
 	}
 	if (dpad)
 		ItemTip(i18n::T("Camera mode: the d-pad turns and zooms the view. Click or press [START] for timeline mode"));
@@ -312,7 +321,7 @@ void gdxsv_camera_render_view_control() {
 	ItemTip(i18n::T("Drag anywhere on the picture to turn and tilt the view. Double-click here for the default view"));
 	if (panel.orbiting && !ImGui::IsMouseDown(ImGuiMouseButton_Left)) {
 		panel.orbiting = false;
-		gdxsv_camera_save_settings();
+		gdxsv_camera_keep_settings();
 	}
 	if (panel.orbiting) {
 		gdxsv_camera_hold_distance();
@@ -363,11 +372,14 @@ void gdxsv_camera_render_view_control() {
 		return pressed;
 	};
 	const float knob_y = center.y + radius * 0.866f;
-	if (round_knob("##turn-left", ICON_FA_ROTATE_LEFT, ImVec2(center.x - radius * 0.5f, knob_y))) Turn(90.f - std::fmod(settings.yaw, 90.f));
+	if (round_knob("##turn-left", ICON_FA_ROTATE_LEFT, ImVec2(center.x - radius * 0.5f, knob_y))) {
+		const float to = 90.f - std::fmod(settings.yaw, 90.f);
+		Turn(to > 0.5f ? to : to + 90.f);
+	}
 	ItemTip(i18n::T("Turn 90° left"));
 	if (round_knob("##turn-right", ICON_FA_ROTATE_RIGHT, ImVec2(center.x + radius * 0.5f, knob_y))) {
 		const float into = std::fmod(settings.yaw, 90.f);
-		Turn(-(into > 0.5f ? into : 90.f));
+		Turn(-(into > 0.5f ? into : into + 90.f));
 	}
 	ItemTip(i18n::T("Turn 90° right"));
 	round_knob("##guide", "?", ImVec2(pos.x + inset + knob, body_top + knob));
@@ -489,7 +501,7 @@ void gdxsv_camera_render_view_control() {
 	gdxsv_camera_render_guide(guide);
 }
 
-bool gdxsv_camera_dpad_steers() { return gdxsv_camera_pov_mode() == GdxsvPovMode::GodsEye && gdxsv_camera_settings.dpad; }
+bool gdxsv_camera_dpad_steers() { return gdxsv_camera_gods_eye() && gdxsv_camera_settings.dpad; }
 
 u32 gdxsv_camera_key_buttons() {
 	u32 buttons = 0;
@@ -518,7 +530,7 @@ u32 gdxsv_camera_key_buttons() {
 bool gdxsv_camera_takes_mouse() {
 	// The first player's mouse buttons (pressed = bit clear), set by the same input event that presses the game button
 	// the mouse stands for. ImGui would see the press only in its next frame.
-	return gdxsv_camera_pov_mode() == GdxsvPovMode::GodsEye && (mo_buttons[0] & (1 << Mouse::LEFT_BUTTON)) == 0;
+	return gdxsv_camera_gods_eye() && (mo_buttons[0] & (1 << Mouse::LEFT_BUTTON)) == 0;
 }
 
 void gdxsv_camera_steer(u32 kcode) {
@@ -537,7 +549,7 @@ void gdxsv_camera_steer(u32 kcode) {
 	const bool start = (~kcode & DC_BTN_START) != 0;
 	if (start && !panel.start_held) {
 		settings.dpad = !settings.dpad;
-		gdxsv_camera_save_settings();
+		gdxsv_camera_keep_settings();
 	}
 	panel.start_held = start;
 	// Camera mode, the toggle on, gives the view the d-pad, X, Y and B; timeline mode gives the d-pad back to the replay,
@@ -563,6 +575,6 @@ void gdxsv_camera_steer(u32 kcode) {
 	// The angle is kept, as the slider keeps it, once the view comes to rest.
 	const bool moving = panel.steer_turn != 0.f || panel.steer_tilt != 0.f || panel.steer_zoom != 0.f;
 	if (moving) gdxsv_camera_hold_distance();
-	if (panel.steering && !moving) gdxsv_camera_save_settings();
+	if (panel.steering && !moving) gdxsv_camera_keep_settings();
 	panel.steering = moving;
 }

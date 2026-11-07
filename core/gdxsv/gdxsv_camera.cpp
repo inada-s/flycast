@@ -99,6 +99,10 @@ struct CameraState {
 };
 
 CameraState cam;
+// Set by the emulator thread each frame, read by the others.
+std::atomic<bool> available{false};
+// The kept settings differ from emu.cfg.
+std::atomic<bool> unsaved{false};
 
 s64 SteadyNanoseconds() {
 	return std::chrono::duration_cast<std::chrono::nanoseconds>(std::chrono::steady_clock::now().time_since_epoch()).count();
@@ -143,16 +147,18 @@ void ViewOff() {
 	gdxsv_camera_overlay_clear();
 }
 
-// Stage fog is tuned for battle distances and washes out a view from high above.
-void ViewFog(bool on) {
-	if (on == cam.fog_off) return;
-	cam.fog_off = on;
-	if (on) {
+// Stage fog is tuned for battle distances and washes out a view from high above. Overridden while off, so never saved, and
+// loaded again after, as at startup: the file's value with any override from the command line.
+void ViewFog(bool off) {
+	if (off == cam.fog_off) return;
+	cam.fog_off = off;
+	if (off) {
 		cam.fog_saved = config::Fog;
 		config::Fog.override(false);
 	} else {
 		config::Fog.reset();
-		config::Fog.set(cam.fog_saved);
+		config::Fog.load();
+		if (config::Fog != cam.fog_saved) config::Fog.set(cam.fog_saved);
 	}
 }
 
@@ -242,8 +248,12 @@ void UpdateView() {
 		for (GdxsvCameraFrame::Player &p : frame.players) p.landed = p.on;
 	}
 	// The followed players once they have landed. With none of them down the view holds still, unless there is no view
-	// yet: then it takes them as they come.
-	const u32 focus = settings.focus;
+	// yet: then it takes them as they come. Followed players this battle does not have count as everyone.
+	u32 present = 0;
+	for (int i = 0; i < 4; i++) {
+		if (gdxsv_ReadMem8(kGdxsvCameraPlayerWork + i * kGdxsvCameraPlayerStride) != 0) present |= 1u << i;
+	}
+	const u32 focus = (settings.focus & present) != 0 ? settings.focus & present : present;
 	u32 framed = 0, arriving = 0;
 	for (int i = 0; i < 4; i++) {
 		if (!frame.players[i].on || !(focus >> i & 1)) continue;
@@ -299,7 +309,6 @@ void UpdateView() {
 							 (std::fabs(gdxsv_camera_dot(d, frame.up)) + kPad) / (kTanV * (1.f - kReserveUp)) - depth});
 		}
 		if (!framing.live) {
-			framing = Framing{};
 			framing.live = true;
 			framing.center = center;
 			framing.dist = dist;
@@ -375,19 +384,28 @@ float gdxsv_camera_read_float(u32 addr) {
 
 void gdxsv_camera_hold_distance() { gdxsv_camera_settings.hand_until = SteadyNanoseconds() + kHandNanoseconds; }
 
-void gdxsv_camera_save_settings() {
+void gdxsv_camera_keep_settings() {
 	const GdxsvCameraSettings &settings = gdxsv_camera_settings;
-	config::GdxReplayGodsEyeClosest.set(settings.closest);
-	config::GdxReplayGodsEyeAngle.set(settings.angle);
-	config::GdxReplayGodsEyeNameplates.set(settings.nameplates);
-	config::GdxReplayGodsEyeBoost.set(settings.boost);
-	config::GdxReplayGodsEyeTeamColors.set(settings.team_colors);
-	config::GdxReplayGodsEyeMsImage.set(settings.ms_image);
-	config::GdxReplayGodsEyeFade.set(settings.fade);
-	config::GdxReplayGodsEyeTrail.set(settings.trail);
-	config::GdxReplayGodsEyeTrailSeconds.set(settings.trail_seconds);
-	config::GdxReplayGodsEyeDpad.set(settings.dpad);
-	config::Settings::instance().save();
+	const auto keep = [](auto &option, auto value) {
+		if (option.get() == value) return;
+		option.set(value);
+		unsaved = true;
+	};
+	keep(config::GdxReplayGodsEyeClosest, settings.closest.load());
+	keep(config::GdxReplayGodsEyeAngle, settings.angle.load());
+	keep(config::GdxReplayGodsEyeNameplates, settings.nameplates.load());
+	keep(config::GdxReplayGodsEyeBoost, settings.boost.load());
+	keep(config::GdxReplayGodsEyeTeamColors, settings.team_colors.load());
+	keep(config::GdxReplayGodsEyeMsImage, settings.ms_image.load());
+	keep(config::GdxReplayGodsEyeFade, settings.fade.load());
+	keep(config::GdxReplayGodsEyeTrail, settings.trail.load());
+	keep(config::GdxReplayGodsEyeTrailSeconds, settings.trail_seconds.load());
+	keep(config::GdxReplayGodsEyeDpad, settings.dpad.load());
+}
+
+void gdxsv_camera_save_settings() {
+	gdxsv_camera_keep_settings();
+	if (unsaved.exchange(false)) config::Settings::instance().save();
 }
 
 void gdxsv_camera_set_pov_mode(GdxsvPovMode mode) { gdxsv_camera_settings.pov_mode = mode; }
@@ -408,6 +426,20 @@ GdxsvPovMode gdxsv_camera_pov_mode() { return gdxsv_camera_settings.pov_mode; }
 
 const char *gdxsv_camera_pov_mode_label(GdxsvPovMode mode) { return mode == GdxsvPovMode::GodsEye ? "God's Eye View" : ""; }
 
+bool gdxsv_camera_supports(int disk) { return disk == 2 && KnownGame(); }
+
+bool gdxsv_camera_available() { return available; }
+
+bool gdxsv_camera_gods_eye() { return available && gdxsv_camera_settings.pov_mode == GdxsvPovMode::GodsEye; }
+
+void gdxsv_camera_replay_started() {
+	gdxsv_camera_settings.focus = kGdxsvCameraEveryone;
+	gdxsv_camera_settings.zoom = 1.f;
+	gdxsv_camera_settings.replay++;
+}
+
+void gdxsv_camera_replay_ended() { gdxsv_camera_save_settings(); }
+
 float gdxsv_camera_player_camera(int player, u32 offset) {
 	const u32 record = kCameraWork + player * kCameraStride;
 	if (gdxsv_ReadMem32(kCamData + kOffSwapCamera) == record + 4) return gdxsv_camera_read_float(kCamData + kOffSavedCamera + offset - 4);
@@ -415,15 +447,17 @@ float gdxsv_camera_player_camera(int player, u32 offset) {
 }
 
 void gdxsv_camera_next_frame(int disk, bool replaying) {
-	const bool want = gdxsv_camera_settings.pov_mode != GdxsvPovMode::Player && replaying && disk == 2 && !GameEndingShot();
-	if (!want && !cam.installed) return;
-	if (!replaying || disk != 2) {
-		ViewFog(false);
-		return;
-	}
-	if (!KnownGame()) {
-		if (!cam.unsupported) WARN_LOG(COMMON, "God's eye view: unknown game build, control call %08x", gdxsv_ReadMem32(kControlCell));
+	const bool supported = replaying && gdxsv_camera_supports(disk);
+	available = supported;
+	const bool gods_eye = gdxsv_camera_settings.pov_mode == GdxsvPovMode::GodsEye;
+	if (replaying && disk == 2 && !supported && gods_eye && !cam.unsupported) {
+		WARN_LOG(COMMON, "God's eye view: unknown game build, control call %08x", gdxsv_ReadMem32(kControlCell));
 		cam.unsupported = true;
+	}
+	const bool want = supported && gods_eye && !GameEndingShot();
+	if (!want && !cam.installed) return;
+	if (!supported) {
+		ViewFog(false);
 		return;
 	}
 	if (want && gdxsv_ReadMem32(kCamData + kOffPatchId) != kCamPatchId) {
@@ -475,4 +509,5 @@ void gdxsv_camera_reset() {
 	cam.installed = false;
 	cam.unsupported = false;
 	cam.status = ~0u;
+	available = false;
 }
