@@ -1,6 +1,6 @@
 // SPDX-FileCopyrightText: 2026 gdxsv contributors
 // SPDX-License-Identifier: GPL-2.0-or-later
-// The replay god's eye view (Disc 2): a camera above every player, computed here and shown by the guest code of
+// The replay god's eye view: a camera above every player, computed here and shown by the guest code of
 // gdxsv_patch/src/camera.c.
 #pragma once
 #include <string>
@@ -17,7 +17,7 @@ bool gdxsv_camera_set_pov_mode_name(const std::string &name);
 GdxsvPovMode gdxsv_camera_pov_mode();
 // A mode's name as the POV menu shows it, untranslated ("God's Eye View"); empty for Player.
 const char *gdxsv_camera_pov_mode_label(GdxsvPovMode mode);
-// Emulator thread: whether the game in memory can show the god's eye view (Disc 2 of a known build).
+// Emulator thread: whether the game in memory can show the god's eye view (Disc 1 or 2 of a known build).
 bool gdxsv_camera_supports(int disk);
 // Whether the replay playing can show the god's eye view, as the emulator thread last found it.
 bool gdxsv_camera_available();

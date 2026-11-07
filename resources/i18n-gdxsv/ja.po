@@ -539,12 +539,6 @@ msgstr "4人対戦のみ"
 msgid "4 screens unavailable"
 msgstr "4画面は利用できません"
 
-msgid "DX replays only"
-msgstr "DXのリプレイのみ"
-
-msgid "DX battles only"
-msgstr "DXの対戦のみ"
-
 msgid "Failed to start replay. The replay file is corrupted or outdated."
 msgstr "リプレイを開始できませんでした。リプレイファイルが壊れているか、古い形式です。"
 

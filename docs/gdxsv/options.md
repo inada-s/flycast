@@ -67,7 +67,7 @@ Upstream options it changes are in [upstream.md](upstream.md).
 | `spectate` | empty | watch this live battle code on start |
 | `ReplayPOV` | 1 | point of view of `replay` / `spectate`, player 1 to 4 |
 | `ReplayFourScreen` | no | `replay` as a four-screen replay (four processes) |
-| `ReplayPOVMode` | empty | single-screen `replay` / `spectate` on Disc 2: `godseye` opens the god's eye view, `player` (or empty) the player's camera; one shot |
+| `ReplayPOVMode` | empty | single-screen `replay` / `spectate`: `godseye` opens the god's eye view, `player` (or empty) the player's camera; one shot |
 | `replay_target_round` | 0 | start `replay` at this round |
 | `replay_target_frame` | 0 | start `replay` at this input index |
 | `replay_takeover_frame` | 0 | take over `replay` (pause menu's Take Over) once it plays this input index |

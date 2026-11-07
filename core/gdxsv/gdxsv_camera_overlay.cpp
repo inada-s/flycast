@@ -23,21 +23,18 @@
 #include "oslib/resources.h"
 
 namespace {
-// Game addresses (T13306M disc 2).
-constexpr u32 kHudListHead = 0x0c425098;  // objects of the HUD pass, linked through +0x7c
+// The same on both discs; the rest is in gdxsv_camera_game(). An actor's boost (s16) is what is left of kBoostFull, its
+// target what its lock mark is on, and its beyond-range flag set in space while that target is further than its lock range.
 constexpr u8 kStateInPlay = 1;
 constexpr u8 kPhaseControl = 3;
 constexpr u8 kPhaseRoundOver = 4;
-constexpr u32 kActorHpMax = 0x180;		  // actor: s16
-constexpr u32 kActorHp = 0x182;			  // actor: s16, HP left
-constexpr u32 kActorUnhittable = 0x194;	  // actor: nothing can damage it now, as when it lies down or gets up
-constexpr u32 kActorBoost = 0x23e;		  // actor: s16, boost left; the copy at +0x240 only follows for the local player
-constexpr u32 kActorTarget = 0x32c;		  // actor: what its lock mark is on
-constexpr u32 kActorBeyondRange = 0x4ec;  // actor: in space, its target is further than its lock range
-constexpr u32 kActorMs = 0x1f02;		  // actor byte: the MS id
-constexpr u32 kActorTeam = 0x1f05;		  // actor byte: 0 Federation, else Zeon
-constexpr u32 kMarkState = 0x161;		  // lock mark object: 0 no target, 1 on it, 2 on its way
-constexpr float kBoostFull = 4000.f;	  // for every MS and MA
+constexpr u32 kActorHpMax = 0x180;		 // actor: s16
+constexpr u32 kActorHp = 0x182;			 // actor: s16, HP left
+constexpr u32 kActorUnhittable = 0x194;	 // actor: nothing can damage it now, as when it lies down or gets up
+constexpr u32 kActorMs = 0x1f02;		 // actor byte: the MS id
+constexpr u32 kActorTeam = 0x1f05;		 // actor byte: 0 Federation, else Zeon
+constexpr u32 kMarkState = 0x161;		 // lock mark object: 0 no target, 1 on it, 2 on its way
+constexpr float kBoostFull = 4000.f;	 // for every MS and MA
 
 // A HUD point sits at depth 0.2 in front of the eye, so the 4:3 screen spans +-0.1 and +-0.075.
 constexpr float kHudDepth = 0.2f;
@@ -216,8 +213,9 @@ struct Cockpit {
 };
 
 Cockpit ReadCockpit() {
+	const GdxsvCameraGame &game = gdxsv_camera_game();
 	Cockpit cockpit;
-	u32 obj = gdxsv_ReadMem32(kHudListHead);
+	u32 obj = gdxsv_ReadMem32(game.hud_list_head);
 	for (int i = 0; i < 256 && (obj >> 24) == 0x0c; i++) {
 		if (gdxsv_ReadMem8(obj) != 0) {
 			const u8 family = gdxsv_ReadMem8(obj + 1);
@@ -231,7 +229,7 @@ Cockpit ReadCockpit() {
 				if (type == 6) cockpit.gauge_slide = gdxsv_camera_read_float(obj + 0x5c);
 			}
 			if (family == 0x12 && kind == 1 && type == 0) {
-				const u32 owner = gdxsv_ReadMem32(obj + 0x18) - kGdxsvCameraPlayerWork;
+				const u32 owner = gdxsv_ReadMem32(obj + 0x18) - game.player_work;
 				if (owner / kGdxsvCameraPlayerStride < 4) cockpit.lock_mark[owner / kGdxsvCameraPlayerStride] = obj;
 			}
 		}
@@ -244,11 +242,13 @@ Cockpit ReadCockpit() {
 bool ReadLocking(u32 actor, u32 mark, u32 target) {
 	if (mark == 0 || (target >> 24) != 0x0c) return false;
 	const u8 state = gdxsv_ReadMem8(mark + kMarkState);
-	return state == 2 || (state == 1 && gdxsv_ReadMem8(actor + kActorBeyondRange) == 0);
+	const u16 beyond = gdxsv_camera_game().actor_beyond_range;
+	return state == 2 || (state == 1 && (beyond == 0 || gdxsv_ReadMem8(actor + beyond) == 0));
 }
 
 PlayerView ReadPlayerView(int player, const GdxsvCameraFrame::Player &p, u32 mark) {
-	const u32 actor = kGdxsvCameraPlayerWork + player * kGdxsvCameraPlayerStride;
+	const GdxsvCameraGame &game = gdxsv_camera_game();
+	const u32 actor = game.actor(player);
 	PlayerView view;
 	view.present = p.on;
 	view.at = p.at;
@@ -257,15 +257,15 @@ PlayerView ReadPlayerView(int player, const GdxsvCameraFrame::Player &p, u32 mar
 	// Every player has the flag once a round has ended.
 	view.unhittable = alive && phase != kPhaseRoundOver && gdxsv_ReadMem8(actor + kActorUnhittable) != 0;
 	// Unlike the game's own gauge not on the ground, where a step uses boost too: this is to spot who is flying.
-	if (alive && (gdxsv_ReadMem16(actor + kGdxsvCameraActorMoveFlags) & kGdxsvCameraMoveAirborne) != 0) {
-		view.boost = std::clamp(static_cast<s16>(gdxsv_ReadMem16(actor + kActorBoost)) / kBoostFull, 0.f, 1.f);
+	if (alive && (gdxsv_ReadMem16(actor + game.actor_move_flags) & kGdxsvCameraMoveAirborne) != 0) {
+		view.boost = std::clamp(static_cast<s16>(gdxsv_ReadMem16(actor + game.actor_boost)) / kBoostFull, 0.f, 1.f);
 	}
 	// Only while in control of the MS: before and after, its camera is the game's, for a landing or a wreck.
 	if (!alive || phase != kPhaseControl) return view;
 	// The view matrix is column major: its rows are the camera's axes, and it looks along the negative third.
-	view.look_x = -gdxsv_camera_player_camera(player, 0x48);
-	view.look_z = -gdxsv_camera_player_camera(player, 0x68);
-	const u32 target = gdxsv_ReadMem32(actor + kActorTarget);
+	view.look_x = -gdxsv_camera_player_camera(player, game.cam_matrix + 0x08);
+	view.look_z = -gdxsv_camera_player_camera(player, game.cam_matrix + 0x28);
+	const u32 target = gdxsv_ReadMem32(actor + game.actor_target);
 	view.locking = ReadLocking(actor, mark, target);
 	if (view.locking) view.target = ReadVec3(target + kGdxsvCameraActorPosition);
 	view.on = std::isfinite(view.look_x + view.look_z + view.target.x + view.target.y + view.target.z);
@@ -715,8 +715,9 @@ void gdxsv_camera_overlay_update(const GdxsvCameraFrame &frame) {
 	overlay.right = frame.right;
 	overlay.up = frame.up;
 	overlay.forward = frame.forward;
+	const GdxsvCameraGame &game = gdxsv_camera_game();
 	for (int i = 0; i < 4; i++) {
-		const u32 actor = kGdxsvCameraPlayerWork + i * kGdxsvCameraPlayerStride;
+		const u32 actor = game.actor(i);
 		overlay.push[i] += (push[i] - overlay.push[i]) * kNameplateSettle;
 		overlay.anchor_on[i] = settings.nameplates && frame.players[i].landed;
 		overlay.anchor_x[i] = std::clamp(label_x[i], -hud_half_w + 0.002f, hud_half_w - 0.002f - kNameplateW);
@@ -728,7 +729,7 @@ void gdxsv_camera_overlay_update(const GdxsvCameraFrame &frame) {
 		overlay.hp[i] = hp_max > 0 ? std::clamp(static_cast<float>(hp) / hp_max, 0.f, 1.f) : 0.f;
 		if (new_replay) overlay.name[i] = facts.name[i];
 		overlay.view[i] = views[i];
-		const u32 pointer_target = views[i].locking ? gdxsv_ReadMem32(actor + kActorTarget) : 0;
+		const u32 pointer_target = views[i].locking ? gdxsv_ReadMem32(actor + game.actor_target) : 0;
 		if (pointer_target != overlay.pointer_target[i]) overlay.pointer_key[i] = key;
 		overlay.pointer_target[i] = pointer_target;
 	}

@@ -414,7 +414,7 @@ void gdxsv_replay_draw_info(const std::string& battle_code, const std::string& g
 			pov_selected ? "" : std::string(ICON_FA_ARROW_POINTER "  ") + T("Select a Player"));
 		// The god's eye view does not require a selected player either: without one it runs on 1P's console.
 		replay_button(std::string(ICON_FA_EYE "  ") + T("God's Eye View"), pov_selected ? pov_index : 0, false,
-			GdxsvPovMode::GodsEye, game_disk == "dc2" ? "" : std::string(ICON_FA_EYE "  ") + T("DX replays only"));
+			GdxsvPovMode::GodsEye, "");
 		// Four-screen playback does not require a selected player.
 		std::string four_screen_hint;
 		if (users_size != kGdxsvMultiPovScreens)
@@ -1383,10 +1383,8 @@ void gdxsv_replay_live_tab() {
 				ImGui::EndDisabled();
 
 				// The god's eye view does not require a selected player either: without one it runs on 1P's console.
-				const bool dx = selected->disk == "dc2";
-				const std::string gods_eye_label =
-					std::string(ICON_FA_EYE "  ") + T(dx ? "God's Eye View" : "DX battles only") + "###live-gods-eye";
-				ImGui::BeginDisabled(!playable || !dx);
+				const std::string gods_eye_label = std::string(ICON_FA_EYE "  ") + T("God's Eye View") + "###live-gods-eye";
+				ImGui::BeginDisabled(!playable);
 				if (ImGui::ButtonEx(gods_eye_label.c_str(), button_size)) {
 					gdxsv_start_live_spectate(selected->battle_code, pov_selected ? pov_index : 0, false, GdxsvPovMode::GodsEye);
 				}
