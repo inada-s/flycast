@@ -158,16 +158,19 @@ struct Framing {
 
 struct CameraState {
 	const GdxsvCameraGame *game = &kDisc2;
+	bool supported = false;		   // the replay's game can show the view; read once per replay
+	bool checked_replaying = false;  // what supported was read for
+	u32 checked_replay = ~0u;
 	Framing framing;
-	bool installed = false;
-	bool unsupported = false;
+	bool installed = false;	 // the guest code is in RAM
+	bool used = false;		 // it was in this replay: its states can bring it back, the code cache can hold blocks of it
 	bool fog_off = false;
 	bool fog_saved = true;
 	u32 status = ~0u;
 };
 
 CameraState cam;
-// Set by the emulator thread each frame, read by the others.
+// Set by the emulator thread, read by the others.
 std::atomic<bool> available{false};
 // The kept settings differ from emu.cfg.
 std::atomic<bool> unsaved{false};
@@ -213,7 +216,20 @@ void Install() {
 	cam.framing.live = false;
 	WriteGuestGame(*cam.game);
 	gdxsv_WriteMem32(kCamData + kOffPatchId, kCamPatchId);
+	cam.installed = true;
+	cam.used = true;
 	NOTICE_LOG(COMMON, "God's eye view: guest code installed, patch %08x", kCamPatchId);
+}
+
+// With the hooks already back to the game's: the guest code's RAM, which the game leaves unused, is cleared again, so that
+// a takeover and anything after the replay go on without it.
+void Uninstall() {
+	emu.getSh4Executor()->ResetCache();
+	for (size_t i = 0; i < std::size(kCamCodeWords); i++) gdxsv_WriteMem16(0x80000000u + kCamCode + static_cast<u32>(i) * 2, 0);
+	for (u32 i = 0; i < kCamDataSize; i += 4) gdxsv_WriteMem32(std::min(kCamData, kCamTop) + i, 0);
+	cam.installed = false;
+	cam.framing.live = false;
+	NOTICE_LOG(COMMON, "God's eye view: guest code removed");
 }
 
 // The aspect the game's culling and projection have opened up to: only the widescreen hacks draw beyond 4:3.
@@ -542,26 +558,32 @@ float gdxsv_camera_player_camera(int player, u32 offset) {
 }
 
 void gdxsv_camera_next_frame(int disk, bool replaying) {
-	const GdxsvCameraGame *game = replaying ? GameOf(disk) : nullptr;
-	const bool supported = game != nullptr && KnownGame(*game);
-	if (supported) cam.game = game;
-	available = supported;
-	const bool gods_eye = gdxsv_camera_settings.pov_mode == GdxsvPovMode::GodsEye;
-	if (game != nullptr && !supported && gods_eye && !cam.unsupported) {
-		WARN_LOG(COMMON, "God's eye view: unknown build of disc %d, control call %08x", disk, gdxsv_ReadMem32(game->control_cell));
-		cam.unsupported = true;
+	// Once per replay: its game's code stays as it is through it.
+	const u32 replay = gdxsv_camera_settings.replay;
+	if (replaying != cam.checked_replaying || replay != cam.checked_replay) {
+		cam.checked_replaying = replaying;
+		cam.checked_replay = replay;
+		const GdxsvCameraGame *game = replaying ? GameOf(disk) : nullptr;
+		cam.supported = game != nullptr && KnownGame(*game);
+		if (cam.supported) cam.game = game;
+		if (game != nullptr && !cam.supported) NOTICE_LOG(COMMON, "God's eye view: unknown build of disc %d", disk);
+		available = cam.supported;
+		// What the view left in the last replay went with the state loaded after it.
+		if (!cam.installed) cam.used = false;
 	}
-	const bool want = supported && gods_eye && !GameEndingShot();
-	if (!want && !cam.installed) return;
-	if (!supported) {
+	const bool gods_eye = gdxsv_camera_settings.pov_mode == GdxsvPovMode::GodsEye;
+	const bool want = cam.supported && gods_eye && !GameEndingShot();
+	if (!want && !cam.installed) {
+		// The first frame after a replay with the view: the state loaded after it took the guest code, not the fog.
 		ViewFog(false);
 		return;
 	}
-	if (want && gdxsv_ReadMem32(kCamData + kOffPatchId) != kCamPatchId) {
-		Install();
-		cam.installed = true;
+	if (!cam.supported) {
+		ViewFog(false);
+		return;
 	}
-	if (gdxsv_ReadMem32(kCamData + kOffPatchId) != kCamPatchId) return;
+	const GdxsvCameraGame *game = cam.game;
+	if (want && !cam.installed) Install();
 
 	gdxsv_WriteMem32(kCamData + kOffEnabled, want ? 1 : 0);
 	if (want)
@@ -585,10 +607,16 @@ void gdxsv_camera_next_frame(int disk, bool replaying) {
 		gdxsv_WriteMem32(game->post_render_cell, post);
 	}
 	if (want) LogStatus();
+	// Back in the player's view, once the render call has put the camera record back.
+	if (!gods_eye && !armed) Uninstall();
 }
 
 void gdxsv_camera_state_loaded() {
-	if (cam.installed) emu.getSh4Executor()->ResetCache();
+	// A state from while the view was up brings the guest code and its hooks back, and the code cache can hold blocks
+	// compiled from them. Nothing to do in a replay without the view, or once a state from before it is loaded.
+	if (!cam.used) return;
+	emu.getSh4Executor()->ResetCache();
+	cam.installed = gdxsv_ReadMem32(kCamData + kOffPatchId) == kCamPatchId;
 }
 
 void gdxsv_camera_reset() {
@@ -604,7 +632,10 @@ void gdxsv_camera_reset() {
 	ViewFog(false);
 	cam.framing = Framing{};
 	cam.installed = false;
-	cam.unsupported = false;
+	cam.used = false;
+	cam.supported = false;
+	cam.checked_replaying = false;
+	cam.checked_replay = ~0u;
 	cam.status = ~0u;
 	available = false;
 }

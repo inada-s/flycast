@@ -128,7 +128,10 @@ const char *Gdxsv::NetModeString() const {
 
 void Gdxsv::Reset(bool loading_state) {
 	InvalidateWidescreenPatch();
-	if (!loading_state) gdxsv_camera_reset();
+	if (loading_state)
+		gdxsv_camera_state_loaded();
+	else
+		gdxsv_camera_reset();
 	// Playback from the lobby loads the replay state and then the lobby state
 	// back; the lobby connection has to outlive both.
 	const bool keep_lobby = loading_state && lobby_suspended_;
