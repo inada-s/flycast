@@ -255,7 +255,7 @@ every spot is marked and the list is current (`--write` updates it).
 | `core/nullDC.cpp` | `flycast_init` | `gdxsv_emu_flycast_init` |
 | `core/nullDC.cpp` | `flycast_term` | `gdxsv_emu_flycast_term` |
 | `core/nullDC.cpp` | `dc_savestateAllowed` | `gdxsv_is_savestate_allowed` |
-| `core/nullDC.cpp` | `dc_savestate` | `gdxsv_emu_savestate` |
+| `core/nullDC.cpp` | `dc_savestate` | `gdxsv_emu_savestate`, which can refuse the save |
 | `core/nullDC.cpp` | `dc_loadstate` | `gdxsv_emu_loadstate` |
 | `core/oslib/http_client.cpp` | `crackUrl` | thread_local, concurrent requests (update check, texture pack, boxart...) swapped hosts/paths |
 | `core/oslib/http_client.cpp` | `get` | return the HTTP status, not always 200 |

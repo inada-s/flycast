@@ -318,10 +318,14 @@ void gdxsv_emu_rpc() {
 	}
 }
 
-void gdxsv_emu_savestate(int slot) {
-	if (gdxsv.Enabled()) {
-		gdxsv.RestoreOnlinePatch();
+bool gdxsv_emu_savestate(int slot) {
+	if (!gdxsv.Enabled()) return true;
+	gdxsv.RestoreOnlinePatch();
+	if (gdxsv_camera_code_in_ram()) {
+		NOTICE_LOG(COMMON, "God's eye view: state %d not saved, the guest code is in RAM", slot);
+		return false;
 	}
+	return true;
 }
 
 // gdxsv:ReplayPOVMode for a single-screen `replay` or `spectate`. One shot, like the four-screen request: the browser

@@ -188,7 +188,8 @@ bool dc_savestateAllowed() {
 
 void dc_savestate(int index, const u8 *pngData, u32 pngSize)
 {
-	gdxsv_emu_savestate(index);
+	if (!gdxsv_emu_savestate(index))
+		return;
 	if (!dc_savestateAllowed())
 		return;
 

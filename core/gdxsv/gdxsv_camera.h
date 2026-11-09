@@ -24,6 +24,9 @@ bool gdxsv_camera_available();
 // The god's eye view is the POV and available. Every other file tests the view by this, so that nothing changes on a
 // game without it.
 bool gdxsv_camera_gods_eye();
+// The game's RAM holds the guest code. No state is saved then (gdxsv_emu_savestate), so that it never leaves the replay:
+// the emulator can unload in a replay and save one on its way out. States still load. Only for this game's RAM.
+bool gdxsv_camera_code_in_ram();
 // A replay or live battle starts: the view follows every player again, at the automatic zoom.
 void gdxsv_camera_replay_started();
 

@@ -519,6 +519,8 @@ const GdxsvCameraGame &gdxsv_camera_game() { return *cam.game; }
 
 bool gdxsv_camera_available() { return available; }
 
+bool gdxsv_camera_code_in_ram() { return gdxsv_ReadMem32(kCamData + kOffPatchId) == kCamPatchId; }
+
 bool gdxsv_camera_gods_eye() { return available && gdxsv_camera_settings.pov_mode == GdxsvPovMode::GodsEye; }
 
 void gdxsv_camera_replay_started() {
@@ -554,10 +556,6 @@ void gdxsv_camera_next_frame(int disk, bool replaying) {
 		ViewFog(false);
 		return;
 	}
-	if (!cam.supported) {
-		ViewFog(false);
-		return;
-	}
 	const GdxsvCameraGame *game = cam.game;
 	if (want && !cam.installed) Install();
 
@@ -583,8 +581,10 @@ void gdxsv_camera_next_frame(int disk, bool replaying) {
 		gdxsv_WriteMem32(game->post_render_cell, post);
 	}
 	if (want) LogStatus();
-	// Back in the player's view, once the render call has put the camera record back.
-	if (!gods_eye && !armed) Uninstall();
+	// Back in the player's view, once the render call has put the camera record back, at the end of a replay frame: a stop
+	// can leave the SH4 in a call made through the guest code. Out of a replay with no state loaded after it, the hooks
+	// go back and the code stays, unreachable.
+	if (!gods_eye && !armed && cam.supported && emu.running()) Uninstall();
 }
 
 void gdxsv_camera_state_loaded() {
