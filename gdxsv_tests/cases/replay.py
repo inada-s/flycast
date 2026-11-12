@@ -290,6 +290,77 @@ def replay_fast_forward(ctx):
     return result([{**c, "target": name} for name, r in runs.items() for c in fast_forward_checks(r)], runs=runs)
 
 
+SLOW_MENU_OPENS = 10
+MENU_OPENED_RE = re.compile(r"Save Menu Opened frame (\d+)")
+
+
+def slow_menu_run(ctx, name: str, downs: int) -> dict:
+    """After a frame seek, press Down `downs` times (50%, 33%), then open and close the pause
+    menu SLOW_MENU_OPENS times."""
+    saved = os.path.join(ctx.out, name + ".json")
+    if recheck.ACTIVE:
+        return recheck.load(saved, {})
+    if not emu.IS_WINDOWS:
+        raise Skip("Down arrow injection is Windows only")
+    rom = ctx.rom("dc2")
+    cfg = [f"gdxsv:replay={assets.replay(newest_dc2())}", "gdxsv:replay_target_frame=4000",
+           "gdxsv:ReplayFourScreen=no", "gdxsv:ReplaySeekStates=no", "gdxsv:ReplaySkipMsSelection=yes",
+           "config:rend.Resolution=480", "config:rend.vsync=no", "log:LogToFile=yes", "log:Verbosity=3"]
+    with image.SCREEN_LOCK:
+        inst = emu.launch(ctx.exe, rom, os.path.join(ctx.out, name), config=cfg,
+                          state_dir=assets.state_dir(rom), headless=False)
+        r = {}
+        try:
+            r["ready"] = wait_for(lambda: inst.poll() is not None or "target=4000" in inst.log, 120) and inst.poll() is None
+            if r["ready"]:
+                time.sleep(3)
+                pid = inst.proc.pid
+                for _ in range(downs):
+                    emu.press_key(0x28, pid)  # Down arrow: one speed step slower
+                    time.sleep(0.5)
+                r["speeds"] = SPEED_RE.findall(inst.log)
+                for i in range(SLOW_MENU_OPENS):
+                    if inst.poll() is not None:
+                        break
+                    emu.press_key(0x09, pid)
+                    wait_for(lambda: inst.poll() is not None or len(MENU_OPENED_RE.findall(inst.log)) > i, 3)
+                    time.sleep(0.3)
+                    emu.press_key(0x09, pid)
+                    time.sleep(0.4 + 0.07 * i)  # vary the frame phase of the next open
+                time.sleep(1)
+                r["opened"] = [int(f) for f in MENU_OPENED_RE.findall(inst.log)]
+                r["verify_failed"] = [l for l in inst.log.splitlines() if "Verify Failed" in l]
+            r.update(errors=inst.errors, running=inst.poll() is None, rc=inst.poll())
+        except NotImplementedError as e:
+            raise Skip(str(e))
+        finally:
+            inst.kill()
+            inst.proc.wait(10)
+            inst.remove_exe()
+        recheck.save(saved, r)
+    return r
+
+
+def slow_menu_checks(r: dict, speeds: list) -> list:
+    opened = r.get("opened") or []
+    return [{"what": "replay reached its target", "ok": bool(r.get("ready"))},
+            {"what": f"Down selected {speeds[-1]}", "ok": r.get("speeds") == speeds, "speeds": r.get("speeds")},
+            {"what": f"the pause menu opened {SLOW_MENU_OPENS} times, each saving a state",
+             "ok": len(opened) == SLOW_MENU_OPENS, "opened": opened},
+            {"what": "playback advanced between opens", "ok": len(set(opened)) == len(opened)},
+            {"what": "still running, no failed verify or errors",
+             "ok": r.get("running") and not r.get("verify_failed") and not r.get("errors"),
+             "verify_failed": r.get("verify_failed"), "rc": r.get("rc")}]
+
+
+@case("V11", "pause menu at 50% and 33% replay speed: opens and closes repeatedly without a crash")
+def replay_slow_pause_menu(ctx):
+    runs = {name: (slow_menu_run(ctx, name, downs), speeds)
+            for name, downs, speeds in [("V11-50", 1, ["50%"]), ("V11-33", 2, ["50%", "33%"])]}
+    return result([{**c, "run": name} for name, (r, speeds) in runs.items() for c in slow_menu_checks(r, speeds)],
+                  runs={name: r for name, (r, _) in runs.items()})
+
+
 SEEK_RE = re.compile(r"JumpToKeyMsg \d+->(\d+) target=\d+ load=-?\d+ ran=(\d+) frames in \d+\[ms\] \(([\d.]+)\[ms/fr\]\)")
 SEEK_FRAME = 6000  # in round 1 (target 8000 landed on round 2's start, 6376)
 # Measured on windows-mini (newest Disc 2 replay, 6400 frames run): hack on 2.0-2.1 ms/fr, off 3.1-3.3.

@@ -1199,6 +1199,9 @@ void GdxsvBackendReplay::OnNextFrameInternal() {
 				pause_menu_opend_ = !pause_menu_opend_;
 				if (pause_menu_opend_) {
 					if (!recv_buf_.empty()) {
+						// Below 100% speed the pending batch is held for a few
+						// frames; the one frame run here must deliver it.
+						recv_delay_ = 0;
 						BeginSilentSeek();
 						RunSilentSeekFrame(false);
 						EndSilentSeek();
