@@ -19,6 +19,7 @@
 
 #include "dirent.h"
 #include "gdxsv.h"
+#include "gdxsv_camera.h"
 #include "gdxsv_multi_pov.h"
 #include "gdxsv_multi_pov_viewer.h"
 #include "json.hpp"
@@ -381,8 +382,11 @@ void gdxsv_replay_draw_info(const std::string& battle_code, const std::string& g
 	ImGui::NewLine();
 
 	{
+		// The verb once over the views, each button one of them.
+		ImGui::TextUnformatted(T("Watch replay"));
 		const ImVec2 button_size = ScaledVec2(300, 50);
-		auto replay_button = [&](const std::string& label, int pov, bool four_screen, const std::string& disabled_hint) {
+		auto replay_button = [&](const std::string& label, int pov, bool four_screen, GdxsvPovMode pov_mode,
+								 const std::string& disabled_hint) {
 			const std::string disabled_label = four_screen && users_size == kGdxsvMultiPovScreens
 												   ? std::string(ICON_FA_TABLE_CELLS_LARGE "  ") + T("4 screens unavailable")
 												   : disabled_hint;
@@ -390,10 +394,12 @@ void gdxsv_replay_draw_info(const std::string& battle_code, const std::string& g
 									   : !disabled_hint.empty() ? disabled_label
 																: label;
 			// Keep each action's ID stable as the selected player or hint changes.
-			button_label += four_screen ? "###replay-four-screen" : "###replay-single-screen";
+			button_label += four_screen							? "###replay-four-screen"
+							: pov_mode == GdxsvPovMode::GodsEye ? "###replay-gods-eye"
+																: "###replay-single-screen";
 			ImGui::BeginDisabled(!playable || !disabled_hint.empty());
 			if (ImGui::ButtonEx(button_label.c_str(), button_size))
-				gdxsv_start_replay(replay_dst, pov, four_screen);
+				gdxsv_start_replay(replay_dst, pov, four_screen, pov_mode);
 			ImGui::EndDisabled();
 			if (ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled)) {
 				if (!playable)
@@ -404,15 +410,19 @@ void gdxsv_replay_draw_info(const std::string& battle_code, const std::string& g
 		};
 
 		const bool pov_selected = 0 <= pov_index && pov_index < users_size;
-		replay_button(std::string(ICON_FA_PLAY "  ") + strprintf(T("Replay %dP"), pov_index + 1), pov_index, false,
+		replay_button(std::string(ICON_FA_PLAY "  ") + strprintf(T("%dP"), pov_index + 1), pov_index, false, GdxsvPovMode::Player,
 			pov_selected ? "" : std::string(ICON_FA_ARROW_POINTER "  ") + T("Select a Player"));
+		// The god's eye view does not require a selected player either: without one it runs on 1P's console.
+		replay_button(std::string(ICON_FA_EYE "  ") + T("God's Eye View"), pov_selected ? pov_index : 0, false,
+			GdxsvPovMode::GodsEye, "");
 		// Four-screen playback does not require a selected player.
 		std::string four_screen_hint;
 		if (users_size != kGdxsvMultiPovScreens)
 			four_screen_hint = std::string(ICON_FA_TABLE_CELLS_LARGE "  ") + T("4-player battles only");
 		else if (const char* reason = gdxsv_multi_pov_viewer_unavailable())
 			four_screen_hint = T(reason);
-		replay_button(std::string(ICON_FA_TABLE_CELLS_LARGE "  ") + T("Replay (4 screens)"), 0, true, four_screen_hint);
+		replay_button(std::string(ICON_FA_TABLE_CELLS_LARGE "  ") + T("4 Screens"), 0, true, GdxsvPovMode::Player,
+			four_screen_hint);
 
 		if (!broken_replay_path.empty() && broken_replay_path == replay_dst) {
 			ImGui::TextUnformatted(T("Failed to start replay. The replay file is corrupted or outdated."));
@@ -1359,15 +1369,24 @@ void gdxsv_replay_live_tab() {
 
 			ImGui::NewLine();
 			{
+				ImGui::TextUnformatted(T("Watch live"));
 				const ImVec2 button_size = ScaledVec2(300, 50);
 				const bool playable = ("dc" + std::to_string(gdxsv.Disk())) == selected->disk;
 				const bool pov_selected = 0 <= pov_index && pov_index < static_cast<int>(selected->users.size());
-				const std::string live_label = (pov_selected ? std::string(ICON_FA_TOWER_BROADCAST "  ") + strprintf(T("Watch %dP"), pov_index + 1)
+				const std::string live_label = (pov_selected ? std::string(ICON_FA_TOWER_BROADCAST "  ") + strprintf(T("%dP"), pov_index + 1)
 															 : std::string(ICON_FA_ARROW_POINTER "  ") + T("Select a Player")) +
 											   "###live-single-screen";
 				ImGui::BeginDisabled(!pov_selected || !playable);
 				if (ImGui::ButtonEx(live_label.c_str(), button_size)) {
-					gdxsv_start_live_spectate(selected->battle_code, pov_index);
+					gdxsv_start_live_spectate(selected->battle_code, pov_index, false, GdxsvPovMode::Player);
+				}
+				ImGui::EndDisabled();
+
+				// The god's eye view does not require a selected player either: without one it runs on 1P's console.
+				const std::string gods_eye_label = std::string(ICON_FA_EYE "  ") + T("God's Eye View") + "###live-gods-eye";
+				ImGui::BeginDisabled(!playable);
+				if (ImGui::ButtonEx(gods_eye_label.c_str(), button_size)) {
+					gdxsv_start_live_spectate(selected->battle_code, pov_selected ? pov_index : 0, false, GdxsvPovMode::GodsEye);
 				}
 				ImGui::EndDisabled();
 
@@ -1379,12 +1398,12 @@ void gdxsv_replay_live_tab() {
 					four_screen_hint = T(reason);
 				ImGui::BeginDisabled(!playable || !four_screen_hint.empty());
 				const std::string four_screen_label =
-					(four_screen_hint.empty() ? std::string(ICON_FA_TABLE_CELLS_LARGE "  ") + T("Watch (4 screens)")
+					(four_screen_hint.empty() ? std::string(ICON_FA_TABLE_CELLS_LARGE "  ") + T("4 Screens")
 					 : selected->users.size() == kGdxsvMultiPovScreens ? std::string(ICON_FA_TABLE_CELLS_LARGE "  ") + T("4 screens unavailable")
 																	   : four_screen_hint) +
 					"###live-four-screen";
 				if (ImGui::ButtonEx(four_screen_label.c_str(), button_size)) {
-					gdxsv_start_live_spectate(selected->battle_code, 0, true);
+					gdxsv_start_live_spectate(selected->battle_code, 0, true, GdxsvPovMode::Player);
 				}
 				ImGui::EndDisabled();
 				if (!four_screen_hint.empty() && ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled))
@@ -1985,9 +2004,12 @@ static bool start_live_battle(const std::string& battle_code, int pov, bool four
 	return false;
 }
 
-void gdxsv_start_live_spectate(const std::string& battle_code, int pov, bool four_screen) {
+void gdxsv_start_live_spectate(const std::string& battle_code, int pov, bool four_screen, GdxsvPovMode pov_mode) {
 	live_autoplay_stop();
 	if (start_live_battle(battle_code, pov, four_screen)) {
+		// A battle the viewer picks opens in the POV mode picked, after the slot-99 load that can apply the command line's;
+		// autoplay's next battles keep it.
+		gdxsv_camera_set_pov_mode(pov_mode);
 		gdxsv_live_autoplay_begin(battle_code, pov, four_screen);
 	} else if (four_screen) {
 		gdxsv_multi_pov_close();
@@ -2077,7 +2099,7 @@ static void gdxsv_notify_replay_played(const std::string& replay_file) {
 	}).detach();
 }
 
-void gdxsv_start_replay(const std::string& replay_file, int pov, bool four_screen) {
+void gdxsv_start_replay(const std::string& replay_file, int pov, bool four_screen, GdxsvPovMode pov_mode) {
 	live_autoplay_stop();
 	save_return_state();
 
@@ -2090,6 +2112,7 @@ void gdxsv_start_replay(const std::string& replay_file, int pov, bool four_scree
 		if (four_screen && gdxsv_multi_pov_begin_host_session(replay_file, hosted_replay, &video_error)) {
 			dc_loadstate(99);
 			if (gdxsv.StartReplayBuffer(hosted_replay, 0)) {
+				gdxsv_camera_set_pov_mode(GdxsvPovMode::Player);
 				gui_state = GuiState::Closed;
 				gdxsv_notify_replay_played(replay_file);
 			} else {
@@ -2107,6 +2130,8 @@ void gdxsv_start_replay(const std::string& replay_file, int pov, bool four_scree
 
 		dc_loadstate(99);
 		if (gdxsv.StartReplayFile(replay_file.c_str(), pov)) {
+			// A replay the viewer picks opens in the POV mode picked, after the slot-99 load that can apply the command line's.
+			gdxsv_camera_set_pov_mode(pov_mode);
 			gui_state = GuiState::Closed;
 			gdxsv_notify_replay_played(replay_file);
 		} else {
@@ -2138,7 +2163,7 @@ void gdxsv_test_start_replay_tick() {
 	}
 	NOTICE_LOG(COMMON, "test: starting replay %s from the lobby%s", path.c_str(), four_screen ? " (4 screens)" : "");
 	emu.stop();
-	gdxsv_start_replay(path, 0, four_screen);
+	gdxsv_start_replay(path, 0, four_screen, GdxsvPovMode::Player);
 	if (gui_state == GuiState::Closed) emu.start();
 }
 

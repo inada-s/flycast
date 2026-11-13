@@ -34,6 +34,9 @@ class GdxsvBackendReplay {
 	void OnFastForward();
 	void DisplayOSD();
 	bool Seeking() const { return seeking_; }
+	int KeyMsgCount() const { return key_msg_count_; }
+	// As the game shows it in battle; empty past the replay's players.
+	std::string PilotName(int player) const;
 
 	bool StartFile(const char* path, int pov);
 	bool StartBuffer(const std::vector<u8>& buf, int pov);
@@ -141,6 +144,8 @@ class GdxsvBackendReplay {
 			ExitReplay,
 			TakeoverInput,
 			ToggleFastForward,
+			// One frame with the pause menu open, so a POV change shows on the paused picture.
+			StepFrameInMenu,
 		};
 
 		ReplayCtrlCommand() = default;
@@ -227,6 +232,7 @@ class GdxsvBackendReplay {
 	bool pause_menu_opend_ = false;
 	int ctrl_play_speed_ = 0;
 	bool ctrl_step_frame_ = false;
+	bool menu_step_frame_ = false;
 	bool ctrl_pause_ = false;
 	bool ctrl_loading_ = false;
 	int ctrl_loading_wait_frames_ = 0;
@@ -253,6 +259,8 @@ class GdxsvBackendReplay {
 	bool ctrl_bar_dragging_ = false;
 	int ctrl_bar_drag_target_frame_ = -1;
 	bool ctrl_input_release_pending_ = false;
+	bool mouse_holds_a_ = false;  // the god's eye view held back an A the mouse stands for, until the input lets A go
+	u32 key_holds_ = 0;			  // and buttons the 1 to 5 keys stand for, while they pick players (5: everyone)
 
 	// ---- Live Spectate ----
 	// Replays a match that is still being played: live_downlink_ feeds log_file_

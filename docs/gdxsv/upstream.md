@@ -23,7 +23,7 @@ upstream ([flyinghead/flycast](https://github.com/flyinghead/flycast)
 | Path | What |
 |---|---|
 | `core/gdxsv/` | all gdxsv features: lobby, rollback, replay, spectating, patches, UI; textures of the translation |
-| `gdxsv_patch/` | SH4 network payload of the game (`build.sh`, `abi.py` -> `gdxsv_patch_abi.h`, `gdxsv_patch.inc`) |
+| `gdxsv_patch/` | SH4 network payload of the game (`build.sh`, `abi.py` -> `gdxsv_patch_abi.h`, `gdxsv_patch.inc`); the guest code of the replay god's eye view (`build_camera.sh` -> `gdxsv_camera_blob.inc`) |
 | `gdxsv_langmod/` | translation sources (`translation.csv`, the PSD of the English person mark) and their generators; the other translated images come from the texture pack |
 | `core/deps/protobuf-3.13.0/` | protobuf runtime (`gdxsv.pb.cc`) |
 | `core/hw/mem/vram_protect.cpp/.h` | VRAM protection with owners (texture cache, memwatch, write tracker) and the VRAM write tracker |
@@ -255,7 +255,7 @@ every spot is marked and the list is current (`--write` updates it).
 | `core/nullDC.cpp` | `flycast_init` | `gdxsv_emu_flycast_init` |
 | `core/nullDC.cpp` | `flycast_term` | `gdxsv_emu_flycast_term` |
 | `core/nullDC.cpp` | `dc_savestateAllowed` | `gdxsv_is_savestate_allowed` |
-| `core/nullDC.cpp` | `dc_savestate` | `gdxsv_emu_savestate` |
+| `core/nullDC.cpp` | `dc_savestate` | `gdxsv_emu_savestate`, which can refuse the save |
 | `core/nullDC.cpp` | `dc_loadstate` | `gdxsv_emu_loadstate` |
 | `core/oslib/http_client.cpp` | `crackUrl` | thread_local, concurrent requests (update check, texture pack, boxart...) swapped hosts/paths |
 | `core/oslib/http_client.cpp` | `get` | return the HTTP status, not always 200 |

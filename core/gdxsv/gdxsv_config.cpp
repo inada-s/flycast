@@ -26,6 +26,16 @@ Option<bool> GdxReplayHideName("ReplayHideName", false, "gdxsv");
 Option<bool> GdxReplayShowAllyHP("ReplayShowAllyHP", true, "gdxsv");
 Option<bool> GdxReplayKeyDisplay("ReplayKeyDisplay", true, "gdxsv");
 Option<bool> GdxReplaySkipMsSelection("ReplaySkipMsSelection", true, "gdxsv");
+Option<float> GdxReplayGodsEyeClosest("ReplayGodsEyeClosest", 150.f, "gdxsv");
+Option<float> GdxReplayGodsEyeAngle("ReplayGodsEyeAngle", 45.f, "gdxsv");
+Option<bool> GdxReplayGodsEyeNameplates("ReplayGodsEyeNameplates", true, "gdxsv");
+Option<bool> GdxReplayGodsEyeBoost("ReplayGodsEyeBoost", true, "gdxsv");
+Option<bool> GdxReplayGodsEyeTeamColors("ReplayGodsEyeTeamColors", true, "gdxsv");
+Option<bool> GdxReplayGodsEyeMsImage("ReplayGodsEyeMsImage", false, "gdxsv");
+Option<bool> GdxReplayGodsEyeFade("ReplayGodsEyeFade", true, "gdxsv");
+Option<bool> GdxReplayGodsEyeTrail("ReplayGodsEyeTrail", true, "gdxsv");
+Option<float> GdxReplayGodsEyeTrailSeconds("ReplayGodsEyeTrailSeconds", 6.f, "gdxsv");
+Option<bool> GdxReplayGodsEyeDpad("ReplayGodsEyeDpad", true, "gdxsv");
 Option<bool> GdxLiveAutoNext("LiveAutoNext", false, "gdxsv");
 
 }  // namespace config

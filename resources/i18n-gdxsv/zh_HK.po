@@ -433,3 +433,6 @@ msgstr "準備中..."
 
 msgid "Could not prepare the textures"
 msgstr "無法準備材質"
+
+msgid "God"
+msgstr "上帝"

@@ -25,6 +25,7 @@
 #include "ui/mainui.h"
 #include "gdx_rpc.h"
 #include "gdxsv.h"
+#include "gdxsv_camera.h"
 #include "gdxsv_emu_hooks.h"
 #include "gdxsv_translation.h"
 #include "gdxsv_replay_util.h"
@@ -189,6 +190,7 @@ void GdxsvBackendReplay::Reset() {
 	ctrl_play_speed_ = 0;
 	fast_forward_pending_ = false;
 	ctrl_step_frame_ = false;
+	menu_step_frame_ = false;
 	ctrl_pause_ = false;
 	ctrl_loading_ = false;
 	ctrl_loading_wait_frames_ = 0;
@@ -220,6 +222,8 @@ void GdxsvBackendReplay::Reset() {
 	ctrl_bar_dragging_ = false;
 	ctrl_bar_drag_target_frame_ = -1;
 	ctrl_input_release_pending_ = false;
+	mouse_holds_a_ = false;
+	key_holds_ = 0;
 	settings.gdxsv.replayModeActive = false;
 	settings.aica.audioFade = 1.0f;
 	takeover_ = false;
@@ -284,6 +288,24 @@ void GdxsvBackendReplay::OnMainUiLoop() {
 		if ((input.fullAxes[0] >> 8) + 128 >= 128 + 0x20) input.kcode &= ~DC_DPAD_RIGHT;
 		if ((input.fullAxes[1] >> 8) + 128 <= 128 - 0x20) input.kcode &= ~DC_DPAD_UP;
 		if ((input.fullAxes[1] >> 8) + 128 >= 128 + 0x20) input.kcode &= ~DC_DPAD_DOWN;
+		// In the god's eye view with the gamepad toggle on, the 1 to 5 keys pick players: game buttons the keyboard
+		// maps to them are held back, as long as the keys are held or the poll, which can trail them, still has them.
+		const u32 key_buttons = !ui.takeover && ui.inGame ? gdxsv_camera_key_buttons() : 0;
+		key_holds_ = key_buttons | (key_holds_ & ~input.kcode);
+		input.kcode |= key_holds_;
+		// The god's eye view may take the d-pad to turn and zoom the camera, X and Y to tilt it, and B to step whom it follows.
+		if (!ui.takeover && ui.inGame && gdxsv_camera_gods_eye()) {
+			gdxsv_camera_steer(input.kcode);
+			if (gdxsv_camera_dpad_steers()) input.kcode |= DC_DPAD_UP | DC_DPAD_DOWN | DC_DPAD_LEFT | DC_DPAD_RIGHT;
+		}
+		// In the god's eye view the left mouse button turns the view: a click on A it may stand for does not pause. This
+		// input is the emulator's last controller poll, which can trail the mouse by a frame, so A stays held back until
+		// the poll has let it go too.
+		if (!ui.takeover && ui.inGame && gdxsv_camera_takes_mouse())
+			mouse_holds_a_ = true;
+		else if (input.kcode & DC_BTN_A)
+			mouse_holds_a_ = false;
+		if (mouse_holds_a_) input.kcode |= DC_BTN_A;
 
 		static u32 prev_kcode = 0;
 		if (prev_kcode == 0) prev_kcode = input.kcode;
@@ -1087,8 +1109,9 @@ void GdxsvBackendReplay::OnNextFrameInternal() {
 	}
 
 	// Never in Live Spectate: it is an analysis overlay, and it shows the
-	// players' inputs while they are still playing.
-	gdxsv.key_display_.enabled(config::GdxReplayKeyDisplay && IsInGame() && !live_mode_);
+	// players' inputs while they are still playing. Nor in the god's eye view, which
+	// shows no POV player.
+	gdxsv.key_display_.enabled(config::GdxReplayKeyDisplay && IsInGame() && !live_mode_ && !gdxsv_camera_gods_eye());
 	regular_save_state();
 
 	// Hysteresis stabilizes the indicator without changing live-following intent
@@ -1197,6 +1220,7 @@ void GdxsvBackendReplay::OnNextFrameInternal() {
 		if (ctrl.cmd == ReplayCtrlCommand::TogglePauseMenu) {
 			if (takeover_countdown_ == 0) {
 				pause_menu_opend_ = !pause_menu_opend_;
+				menu_step_frame_ = false;
 				if (pause_menu_opend_) {
 					if (!recv_buf_.empty()) {
 						// Below 100% speed the pending batch is held for a few
@@ -1710,9 +1734,15 @@ void GdxsvBackendReplay::DisplayOSD() {
 	if (!gdxsv_is_multi_pov_guest()) {
 		if (!ui.seeking && ui.pauseMenuOpen) {
 			RenderPauseMenu(ui);
+		} else {
+			gdxsv_camera_pov_row_hidden();
 		}
 		UpdateControlBarVisibility(ui);
 		RenderControlBar(ui);
+		if (ui.state >= State::McsInBattle && !ui.takeover) {
+			gdxsv_camera_render_overlay();
+			gdxsv_camera_render_view_control();
+		}
 	}
 	RenderLoadingHud(ui);
 }
@@ -1911,8 +1941,16 @@ void GdxsvBackendReplay::ProcessUiCommands() {
 		case ReplayCtrlCommand::ResumePlayback:
 			ctrl_pause_ = false;
 			ctrl_step_frame_ = false;
+			menu_step_frame_ = false;
 			pause_menu_opend_ = false;
 			break;
+		case ReplayCtrlCommand::StepFrameInMenu: {
+			if (!pause_menu_opend_ || takeover_ || state_ != State::McsInBattle || !IsInGame()) break;
+			int roundStart, roundEnd, totalRounds;
+			GetRoundReplayBounds(roundStart, roundEnd, totalRounds);
+			menu_step_frame_ = key_msg_count_ < roundEnd;
+			break;
+		}
 		case ReplayCtrlCommand::ExitReplay:
 			exit_requested_ = true;
 			Stop();
@@ -2040,6 +2078,13 @@ void GdxsvBackendReplay::Open() {
 	ApplyPatch(true);
 }
 
+std::string GdxsvBackendReplay::PilotName(int player) const {
+	if (player < 0 || log_file_.users_size() <= player) return "";
+	if (config::GdxReplayHideName) return "PILOT0" + std::to_string(player + 1);
+	const auto& user = log_file_.users(player);
+	return user.pilot_name().empty() ? user.user_name() : user.pilot_name();
+}
+
 void GdxsvBackendReplay::Close() {
 	if (state_ <= State::McsWaitJoin) {
 		return;
@@ -2092,12 +2137,12 @@ u32 GdxsvBackendReplay::OnSockRead(u32 addr, u32 size) {
 		return 0;
 	}
 
-	if (ctrl_pause_ && !seeking_) {
+	if (ctrl_pause_ && !seeking_ && !menu_step_frame_) {
 		if (!ctrl_step_frame_ && (!multi_pov_guest_ || key_msg_count_ >= multi_pov_step_target_)) return 0;
 		ctrl_step_frame_ = false;
 	}
 
-	if (pause_menu_opend_ && !seeking_) {
+	if (pause_menu_opend_ && !seeking_ && !menu_step_frame_) {
 		return 0;
 	}
 
@@ -2108,6 +2153,7 @@ u32 GdxsvBackendReplay::OnSockRead(u32 addr, u32 size) {
 		gdxsv_WriteMem8(addr + i, recv_buf_.front());
 		recv_buf_.pop_front();
 	}
+	if (0 < n) menu_step_frame_ = false;
 
 	return n;
 }
@@ -2130,6 +2176,7 @@ bool GdxsvBackendReplay::Start() {
 		return false;
 	}
 	NOTICE_LOG(COMMON, "game_disk = %s", log_file_.game_disk().c_str());
+	gdxsv_camera_replay_started();
 	CloseReplayHashLog();
 	if (config::loadBool("gdxsv", "hashlog", false)) {
 		std::string path = get_writable_data_path("replay_hashlog.txt");
@@ -2894,30 +2941,37 @@ void GdxsvBackendReplay::RenderPauseMenu(const UiState& ui) {
 		// intake cap and the starve guard. Not in a 4-player replay: the guests
 		// play the recording.
 		if (!ui.liveMode && !multi_pov_host_) {
-			ImGui::BeginDisabled(!ui.inGame);
+			// The POV player is taken over from their own view, which the god's eye view does not show.
+			const bool gods_eye = gdxsv_camera_gods_eye();
+			ImGui::BeginDisabled(!ui.inGame || gods_eye);
 			if (ImGui::Button((std::string(ICON_FA_GAMEPAD "  ") + T("Take Over")).c_str(), ScaledVec2(300, 40))) {
 				ui_commands_.emplace_back(ReplayCtrlCommand::TakeOver);
 			}
 			ImGui::EndDisabled();
+			if (gods_eye && ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled))
+				ImGui::SetTooltip("%s", T("Switch the POV to the player to take over"));
 		}
 
-		// Round control: buttons
+		// Round and POV rows, with one label column: five columns of round buttons (wrapping past 5), and the POV buttons
+		// over four columns with their gear in the fifth, where this game has the god's eye view. A four-screen replay
+		// shows the players' own views.
+		const bool pov_row = !multi_pov_host_ && gdxsv_camera_available();
+		const ImGuiStyle& style = ImGui::GetStyle();
+		const float labelWidth = std::max(ImGui::CalcTextSize(T("Round")).x, pov_row ? ImGui::CalcTextSize(T("POV")).x : 0.0f);
+		const float buttonHeight = uiScaled(40.0f);
+		const float cellsX = ImGui::GetCursorPosX() + labelWidth + style.ItemSpacing.x;
+		const float cell = (uiScaled(300.0f) - labelWidth - style.ItemSpacing.x * 5) / 5;
+		if (ui.canChangeRound || pov_row) ImGui::Separator();
 		if (ui.canChangeRound) {
-			ImGui::Separator();
-
 			const int totalRounds = ui.roundCount;
+			const float initialY = ImGui::GetCursorPosY();
 
-			ImGui::BeginGroup();
-			float buttonHeight = uiScaled(40.0f);
-			float textHeight = ImGui::GetFontSize();
-			float initialY = ImGui::GetCursorPosY();
-
-			ImGui::SetCursorPosY(initialY + (buttonHeight - textHeight) * 0.5f);
+			ImGui::SetCursorPosY(initialY + (buttonHeight - ImGui::GetFontSize()) * 0.5f);
 			ImGui::TextUnformatted(T("Round"));
-			ImGui::SameLine();
 
 			for (int i = 1; i <= totalRounds; i++) {
-				ImGui::SetCursorPosY(initialY);
+				const int k = i - 1;
+				ImGui::SetCursorPos(ImVec2(cellsX + (k % 5) * (cell + style.ItemSpacing.x), initialY + (k / 5) * (buttonHeight + style.ItemSpacing.y)));
 				char label[16];
 				snprintf(label, sizeof(label), "%d", i);
 
@@ -2926,7 +2980,7 @@ void GdxsvBackendReplay::RenderPauseMenu(const UiState& ui) {
 					ImGui::PushStyleColor(ImGuiCol_Button, ImGui::GetStyle().Colors[ImGuiCol_ButtonActive]);
 				}
 
-				if (ImGui::Button(label, ScaledVec2(40, 40))) {
+				if (ImGui::Button(label, ImVec2(cell, buttonHeight))) {
 					// A round the viewer picked, unlike the automatic jump on
 					// connect, which must keep following.
 					ui_commands_.emplace_back(ReplayCtrlCommand::SetRound, i);
@@ -2991,22 +3045,33 @@ void GdxsvBackendReplay::RenderPauseMenu(const UiState& ui) {
 				if (is_current) {
 					ImGui::PopStyleColor();
 				}
-
-				if (i < totalRounds) {
-					ImGui::SameLine();
-				}
 			}
-			ImGui::EndGroup();
+		}
+		if (pov_row) {
+			const float rowY = ImGui::GetCursorPosY();
+			ImGui::SetCursorPosY(rowY + (buttonHeight - ImGui::GetFontSize()) * 0.5f);
+			ImGui::TextUnformatted(T("POV"));
+			ImGui::SetCursorPos(ImVec2(cellsX, rowY));
+			if (gdxsv_camera_render_pov_row(pov_, cell, buttonHeight)) ui_commands_.emplace_back(ReplayCtrlCommand::StepFrameInMenu);
 		}
 
 		ImGui::Separator();
 
+		// The POV player's cockpit HP and inputs: the god's eye view shows neither. Disabled, not hidden, so the menu
+		// keeps its place and the choices come back with the player's POV.
+		const bool playerPov = !gdxsv_camera_gods_eye();
+		ImGui::BeginGroup();
+		ImGui::BeginDisabled(!playerPov);
 		OptionCheckbox(T("Show Ally HP"), config::GdxReplayShowAllyHP, T("Hack the total HP field to display Ally HP"));
 
 		// Key Display and Skip MS Selection do nothing during Live Spectate, so
 		// they are not offered there rather than sitting inert.
+		if (!ui.liveMode) OptionCheckbox(T("Key Display"), config::GdxReplayKeyDisplay, T("Display controller inputs"));
+		ImGui::EndDisabled();
+		ImGui::EndGroup();
+		if (!playerPov && ImGui::IsItemHovered(ImGuiHoveredFlags_ForTooltip | ImGuiHoveredFlags_AllowWhenDisabled))
+			ImGui::SetTooltip(T("Not shown in %s"), T(gdxsv_camera_pov_mode_label(gdxsv_camera_pov_mode())));
 		if (!ui.liveMode) {
-			OptionCheckbox(T("Key Display"), config::GdxReplayKeyDisplay, T("Display controller inputs"));
 			OptionCheckbox(T("Skip MS Selection"), config::GdxReplaySkipMsSelection,
 						   T("Fast-forward through the mobile suit selection screen"));
 		}
@@ -3126,6 +3191,9 @@ void GdxsvBackendReplay::UpdateControlBarVisibility(const UiState& ui) {
 	if ((axes[0] >> 8) + 128 >= 128 + 0x20) cur_kcode &= ~DC_DPAD_RIGHT;
 	if ((axes[1] >> 8) + 128 <= 128 - 0x20) cur_kcode &= ~DC_DPAD_UP;
 	if ((axes[1] >> 8) + 128 >= 128 + 0x20) cur_kcode &= ~DC_DPAD_DOWN;
+	// The god's eye view's camera buttons do not bring up the bar: the d-pad when it steers the view, B, X and Y always.
+	if (ui.inGame && gdxsv_camera_dpad_steers()) cur_kcode |= DC_DPAD_UP | DC_DPAD_DOWN | DC_DPAD_LEFT | DC_DPAD_RIGHT;
+	if (ui.inGame && gdxsv_camera_gods_eye()) cur_kcode |= DC_BTN_B | DC_BTN_X | DC_BTN_Y;
 	bool holding_lr = (~cur_kcode & DC_DPAD_LEFT) || (~cur_kcode & DC_DPAD_RIGHT);
 	if (cur_kcode != ctrl_bar_prev_kcode_ || holding_lr) {
 		ctrl_bar_idle_timer_ = 3.0f;

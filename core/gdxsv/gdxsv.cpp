@@ -13,6 +13,7 @@
 #include "cfg/option.h"
 #include "emulator.h"
 #include "gdx_rpc.h"
+#include "gdxsv_camera.h"
 #include "gdxsv_config.h"
 #include "gdxsv_key_display.h"
 #include "gdxsv_multi_pov.h"
@@ -127,6 +128,10 @@ const char *Gdxsv::NetModeString() const {
 
 void Gdxsv::Reset(bool loading_state) {
 	InvalidateWidescreenPatch();
+	if (loading_state)
+		gdxsv_camera_state_loaded();
+	else
+		gdxsv_camera_reset();
 	// Playback from the lobby loads the replay state and then the lobby state
 	// back; the lobby connection has to outlive both.
 	const bool keep_lobby = loading_state && lobby_suspended_;
@@ -457,6 +462,7 @@ void Gdxsv::HookNextFrame() {
 	if (netmode_ == NetMode::Replay) {
 		gdxsv.replay_net_.OnNextFrame();
 	}
+	gdxsv_camera_next_frame(disk_, netmode_ == NetMode::Replay);
 	// A seek in OnNextFrame can restore the stock sound descriptor.
 	WriteWarningSoundVolume();
 }

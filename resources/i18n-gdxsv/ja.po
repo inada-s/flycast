@@ -413,11 +413,11 @@ msgstr "観戦する対戦を選択してください。"
 msgid "That battle has ended."
 msgstr "その対戦は終了しました。"
 
-msgid "Watch %dP"
-msgstr "%dP視点で観戦"
+msgid "Watch live"
+msgstr "ライブを観戦"
 
-msgid "Watch (4 screens)"
-msgstr "4画面で観戦"
+msgid "4 Screens"
+msgstr "4画面"
 
 msgid "This battle is on %s."
 msgstr "この対戦は%sです。"
@@ -524,11 +524,11 @@ msgstr "%sを起動して再生"
 msgid "Load %s to play this replay."
 msgstr "このリプレイを再生するには%sを起動してください。"
 
-msgid "Replay %dP"
-msgstr "%dP視点で再生"
+msgid "Watch replay"
+msgstr "リプレイを再生"
 
-msgid "Replay (4 screens)"
-msgstr "4画面で再生"
+msgid "%dP"
+msgstr "%dP視点"
 
 msgid "Select a Player"
 msgstr "プレイヤーを選択"
@@ -674,6 +674,9 @@ msgstr "プレイヤー操作に切り替え"
 msgid "Retry Takeover"
 msgstr "プレイヤー操作をやり直す"
 
+msgid "Switch the POV to the player to take over"
+msgstr "プレイヤー操作に切り替えるには視点をプレイヤーに戻してください"
+
 msgid "Back to Pause Menu"
 msgstr "ポーズメニューに戻る"
 
@@ -700,6 +703,132 @@ msgstr "再生に戻る"
 
 msgid "Exit Replay"
 msgstr "リプレイを終了"
+
+msgid "POV"
+msgstr "視点"
+
+msgid "God's Eye View"
+msgstr "神視点"
+
+msgid "God's Eye"
+msgstr "神視点"
+
+msgid "God"
+msgstr "神"
+
+msgid "%s settings"
+msgstr "%sの設定"
+
+msgid "No settings for %s"
+msgstr "%sの設定はありません"
+
+msgid "Not shown in %s"
+msgstr "%sでは表示されません"
+
+msgid "Angle"
+msgstr "角度"
+
+msgid "How far the view leans back from straight down"
+msgstr "真上からの傾き"
+
+msgid "Closest"
+msgstr "最小距離"
+
+msgid "How close the camera may zoom in"
+msgstr "カメラが寄れる最小の距離"
+
+msgid "Nameplates"
+msgstr "ネームプレート"
+
+msgid "Pilot name and HP above each MS"
+msgstr "各機体の上にパイロットネームとHPを表示"
+
+msgid "Boost"
+msgstr "ブースト"
+
+msgid "Boost gauge under each nameplate"
+msgstr "ネームプレートの下にブーストゲージを表示"
+
+msgid "Team colors"
+msgstr "チームカラー"
+
+msgid "Color the HP gauges by team"
+msgstr "HPゲージをチーム色で表示"
+
+msgid "MS image"
+msgstr "MS画像"
+
+msgid "Fade on overlap"
+msgstr "重なりを薄く"
+
+msgid "Fade a nameplate while it overlaps another nameplate or MS"
+msgstr "他のネームプレートや機体と重なる間、ネームプレートを薄くする"
+
+msgid "Trail"
+msgstr "軌跡"
+
+msgid "seconds"
+msgstr "秒"
+
+msgid "Drag anywhere on the picture to turn and tilt the view. Double-click here for the default view"
+msgstr "画面上のどこでもドラッグで視点を回転・傾斜。ここをダブルクリックで初期の視点に戻す"
+
+msgid "Zoom. Double-click for the automatic zoom"
+msgstr "ズーム。ダブルクリックで自動ズームに戻す"
+
+msgid "Turn 90° left"
+msgstr "左に90°回転"
+
+msgid "Turn 90° right"
+msgstr "右に90°回転"
+
+msgid "Camera mode: the d-pad turns and zooms the view. Click or press [START] for timeline mode"
+msgstr "カメラモード：十字キーで視点を回転・ズーム。クリックか[START]でタイムラインモード"
+
+msgid "Timeline mode: the d-pad controls the replay. Click or press [START] for camera mode"
+msgstr "タイムラインモード：十字キーでリプレイを操作。クリックか[START]でカメラモード"
+
+msgid "Every MS, at the automatic zoom (5 key)"
+msgstr "全機体を自動ズームで映す（5キー）"
+
+msgid "Stick or pad"
+msgstr "スティック・パッド"
+
+msgid "Keyboard and mouse"
+msgstr "キーボード・マウス"
+
+msgid "Turn"
+msgstr "回転"
+
+msgid "Zoom"
+msgstr "ズーム"
+
+msgid "Seek"
+msgstr "シーク"
+
+msgid "Tilt down"
+msgstr "真下へ"
+
+msgid "Tilt up"
+msgstr "水平へ"
+
+msgid "Next player"
+msgstr "次のプレイヤー"
+
+msgid "Camera"
+msgstr "カメラ"
+
+msgid "Timeline"
+msgstr "タイムライン"
+
+msgid "Follow players"
+msgstr "プレイヤーを追う"
+
+msgid "Drag: turn and tilt"
+msgstr "ドラッグ：回転・傾斜"
+
+msgid "Scroll: zoom"
+msgstr "スクロール：ズーム"
 
 msgid "Skip ahead to live"
 msgstr "ライブに追いつく"
