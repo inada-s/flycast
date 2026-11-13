@@ -672,6 +672,38 @@ def replay_four_screen_close(ctx):
     return result(close_checks(close_run(ctx, "V8", True)))
 
 
+# What a worker whose host mapping is gone exits with.
+NO_HOST_EXIT = 1
+
+
+@case("V12", "four-screen worker whose host session is gone: it exits with 1 and logs why, no fatal error")
+def replay_four_screen_no_host(ctx):
+    rom = ctx.rom("dc2")
+    d = os.path.join(ctx.out, "V12")
+    cfg = ["gdxsv:MultiPovSession=0_0", "gdxsv:MultiPovScreen=1", "gdxsv:ReplayPOV=2"]
+    saved = os.path.join(d, "rc.json")
+    inst = emu.launch(ctx.exe, rom, d, config=cfg, headless=False, clean=not recheck.ACTIVE,
+                      emu_cfg="[log]\nLogToFile = 1\nVerbosity = 3\n")
+    if recheck.ACTIVE:
+        rc = recheck.load(saved, {}).get("rc")
+    else:
+        try:
+            wait_for(lambda: inst.poll() is not None, 60)
+            rc = inst.poll()
+        finally:
+            stop_all(inst)
+        recheck.save(saved, {"rc": rc})
+    try:
+        with open(os.path.join(inst.dir, "flycast-2P.log"), encoding="utf-8", errors="replace") as f:
+            log = f.read()
+    except OSError:
+        log = ""
+    return result([{"what": f"the worker exited with {NO_HOST_EXIT} within 60 s", "rc": rc, "ok": rc == NO_HOST_EXIT},
+                   {"what": "its log says it could not join its host", "ok": "could not join its host" in log},
+                   {"what": "no fatal error or init failure in its log",
+                    "ok": bool(log) and "Fatal error" not in log and "flycast_init failed" not in log}])
+
+
 CONTROL_STEPS = ("speed_up", "seek_back", "seek_forward", "speed_up2")
 HOST_SEEK_RE = re.compile(r"multi-pov: seek (\d+) -> (\d+), generation")
 SYNC_RE = re.compile(r"^(\d+):(\d\d):(\d\d\d) .*spectate sync: frame (\d+)", re.M)
