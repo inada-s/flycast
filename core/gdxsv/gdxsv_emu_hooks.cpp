@@ -89,8 +89,11 @@ void gdxsv_emu_flycast_init() {
 		// invisible standalone emulator with no host to close it.
 		if (settings.content.path.empty() ||
 			!gdxsv_multi_pov_guest_open(config::loadStr("gdxsv", "MultiPovSession", ""), gdxsv_multi_pov_guest_pov()) ||
-			gdxsv_multi_pov_host_gone())
-			throw FlycastException("Four-screen worker could not join its host");
+			gdxsv_multi_pov_host_gone()) {
+			// An expected end (the host closed before this worker started), not a crash to report.
+			WARN_LOG(COMMON, "multi-pov: four-screen worker could not join its host, exiting");
+			gdxsv_headless_exit(1);
+		}
 	}
 	// Publish the renderer and UI thread before the command-line loader starts.
 	gdxsv_multi_pov_viewer_tick();
