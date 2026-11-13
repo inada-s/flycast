@@ -256,6 +256,7 @@ struct GdxsvMultiPovSession {
 	void* map_handle = nullptr;  // host on Windows: keeps the section's name
 	size_t map_size = 0;
 	std::string path;
+	std::chrono::steady_clock::time_point created;
 	void* audio_map = nullptr;
 	void* audio_handle = nullptr;
 	size_t audio_size = 0;
@@ -303,6 +304,7 @@ static bool CreateHostSession(const std::string& session_id, size_t size) {
 	g_session.map_handle = handle;
 	g_session.map_size = size;
 	g_session.path = path;
+	g_session.created = std::chrono::steady_clock::now();
 
 	GdxsvMultiPovHeader* h = g_session.header();
 	std::memset(m, 0, kPayloadOffset);
@@ -447,7 +449,7 @@ bool gdxsv_multi_pov_guest_open(const std::string& session_id, int screen) {
 	return true;
 }
 
-void gdxsv_multi_pov_close() {
+void gdxsv_multi_pov_close(const char* caller, int line) {
 	gdxsv_multi_pov_viewer_end();
 	gdxsv_multi_pov_audio_close();
 	UnmapSession(g_session.audio_map, g_session.audio_size);
@@ -465,6 +467,13 @@ void gdxsv_multi_pov_close() {
 	}
 	GdxsvMultiPovHeader* h = g_session.header();
 	if (g_session.role == GdxsvMultiPovRole::Host) {
+		int joined = 0;
+		const uint32_t ready = h->ready_mask.load(std::memory_order_acquire);
+		for (int i = 1; i < kGdxsvMultiPovScreens; ++i)
+			if (h->guest_pid[i].load(std::memory_order_acquire) != 0 || (ready & (1u << i)) != 0) ++joined;
+		const auto age = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - g_session.created).count();
+		NOTICE_LOG(COMMON, "multi-pov: host closes session %s (%s:%d) %lld ms after creating it, %d guests joined", g_session.path.c_str(),
+				   caller, line, static_cast<long long>(age), joined);
 		h->host_closed.store(1, std::memory_order_release);
 #ifndef _WIN32
 		// The guests keep their mappings; nobody opens it again.
