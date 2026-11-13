@@ -13,6 +13,7 @@
 #include "cfg/cfg.h"
 #include "emulator.h"
 #include "gdxsv.h"
+#include "gdxsv_camera.h"
 #include "gdxsv_config.h"
 #include "gdxsv_custom_texture_source.h"
 #include "gdxsv_custom_texture_update.h"
@@ -320,9 +321,29 @@ void gdxsv_emu_rpc() {
 	}
 }
 
-void gdxsv_emu_savestate(int slot) {
-	if (gdxsv.Enabled()) {
-		gdxsv.RestoreOnlinePatch();
+bool gdxsv_emu_savestate(int slot) {
+	if (!gdxsv.Enabled()) return true;
+	gdxsv.RestoreOnlinePatch();
+	if (gdxsv_camera_code_in_ram()) {
+		NOTICE_LOG(COMMON, "God's eye view: state %d not saved, the guest code is in RAM", slot);
+		return false;
+	}
+	return true;
+}
+
+// gdxsv:ReplayPOVMode for a single-screen `replay` or `spectate`. One shot, like the four-screen request: the browser
+// loads slot 99 again for the replays the viewer picks, and those open in the player's POV.
+static void take_replay_pov_mode() {
+	const std::string mode = config::loadStr("gdxsv", "ReplayPOVMode", "");
+	if (config::isTransient("gdxsv", "ReplayPOVMode")) config::setTransient("gdxsv", "ReplayPOVMode", "");
+	if (mode.empty()) return;
+	if (!gdxsv_camera_set_pov_mode_name(mode)) {
+		WARN_LOG(COMMON, "ReplayPOVMode %s is not available; opening the player's POV", mode.c_str());
+	} else if (gdxsv_camera_pov_mode() != GdxsvPovMode::Player && !gdxsv_camera_supports(gdxsv.Disk())) {
+		gdxsv_camera_set_pov_mode(GdxsvPovMode::Player);
+		WARN_LOG(COMMON, "ReplayPOVMode %s: this game has no god's eye view; opening the player's POV", mode.c_str());
+	} else {
+		NOTICE_LOG(COMMON, "ReplayPOVMode: %s", mode.c_str());
 	}
 }
 
@@ -355,7 +376,9 @@ void gdxsv_emu_loadstate(int slot) {
 					gdxsv_multi_pov_close();
 				}
 			}
-			if (!gdxsv.StartReplayFile(replay.c_str(), replay_pov - 1) && gdxsv_headless()) {
+			if (gdxsv.StartReplayFile(replay.c_str(), replay_pov - 1)) {
+				take_replay_pov_mode();
+			} else if (gdxsv_headless()) {
 				// The replay could not be loaded (missing, corrupt, or an
 				// unreadable old format): fail the headless run instead of
 				// dropping into a GUI that will never be shown.
@@ -380,8 +403,10 @@ void gdxsv_emu_loadstate(int slot) {
 					gdxsv_multi_pov_close();
 				}
 			}
-			if (gdxsv.StartLiveSpectate(spectate.c_str(), spectate_pov - 1))
+			if (gdxsv.StartLiveSpectate(spectate.c_str(), spectate_pov - 1)) {
+				take_replay_pov_mode();
 				gdxsv_live_autoplay_begin(spectate, spectate_pov - 1, false);
+			}
 		}
 
 		// 4-player replay guest: the replay, or the live battle, comes from the host.

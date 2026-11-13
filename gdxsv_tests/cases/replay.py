@@ -17,10 +17,11 @@ OUTCOME = {"dc1": {"winner": 0x0c3364b6, "draw": 0x0c3364c9},
            "dc2": {"winner": 0x0c3d1948, "draw": 0x0c3d1950}}
 
 
-def play(ctx, entry: dict, pb: str = None, extra: list = (), name: str = None) -> dict:
+def play(ctx, entry: dict, pb: str = None, extra: list = (), name: str = None, logged: list = ()) -> dict:
     """Play one replay headless to its end. It played when the process exited 0 by itself, every
     round in the file started, and playback stopped after the last round's start. Replays that
-    record each round's winner (round_data) must also end each round with that winner."""
+    record each round's winner (round_data) must also end each round with that winner, and the
+    log must hold every line of `logged`."""
     rom = ctx.rom(entry["disk"])
     pb = pb or assets.replay(entry)
     p = ctx.run(name or "R_" + entry["id"], rom, [f"gdxsv:replay={pb}", "gdxsv:ReplayPOV=1", "gdxsv:ReplaySeekStates=no", *extra],
@@ -40,8 +41,9 @@ def play(ctx, entry: dict, pb: str = None, extra: list = (), name: str = None) -
     want = replayfile.win_teams(pb) or entry.get("winners", [])
     got = [int(p.e2e[k]) for k in sorted((k for k in p.e2e if k.startswith("round")), key=lambda k: int(k[5:]))]
     outcome_ok = not want or got == want
+    seen = {line: line in log for line in logged}
     return {"id": entry["id"], "disk": entry["disk"], "version": entry["log_file_version"],
-            "ok": played and outcome_ok, "played": played,
+            "ok": played and outcome_ok and all(seen.values()), "played": played, "logged": seen,
             "inputs": inputs, "stopped_at": stop, "rounds_in_file": len(starts), "rounds_started": rounds,
             "winners_recorded": want, "winners_seen": got, **p.facts()}
 
@@ -116,6 +118,15 @@ def replay_pov(ctx):
     with concurrent.futures.ThreadPoolExecutor(2) as ex:
         runs = list(ex.map(lambda pov: pov_run(ctx, f"V1_pov{pov}", e, pov), (2, 4)))
     return result(pov_checks(runs, [2, 4]))
+
+
+@case("V13", "god's eye view: the newest Disc 1 and Disc 2 replays play to the end in the view, with the recorded winners")
+def replay_gods_eye(ctx):
+    shown = ["God's eye view: guest code installed", "God's eye view: shown"]
+    with concurrent.futures.ThreadPoolExecutor(2) as ex:
+        runs = list(ex.map(lambda d: play(ctx, newest(d), extra=["gdxsv:ReplayPOVMode=godseye"], name=f"V13_{d}", logged=shown),
+                           ("dc1", "dc2")))
+    return result(runs)
 
 
 # Cost 300->295 (core/gdxsv/gdxsv_backend_replay.cpp WriteLegacyCostPatch). Files before

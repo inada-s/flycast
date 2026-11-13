@@ -73,7 +73,8 @@ bool gdxsv_emu_mainui_reinit_needed();
 
 void gdxsv_emu_rpc();
 
-void gdxsv_emu_savestate(int slot);
+// Before a state is saved; false: it is not saved.
+bool gdxsv_emu_savestate(int slot);
 
 void gdxsv_emu_loadstate(int slot);
 

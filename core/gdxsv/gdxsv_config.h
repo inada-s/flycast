@@ -30,6 +30,16 @@ extern Option<bool> GdxReplayHideName;
 extern Option<bool> GdxReplayShowAllyHP;
 extern Option<bool> GdxReplayKeyDisplay;
 extern Option<bool> GdxReplaySkipMsSelection;
+extern Option<float> GdxReplayGodsEyeClosest;
+extern Option<float> GdxReplayGodsEyeAngle;
+extern Option<bool> GdxReplayGodsEyeNameplates;
+extern Option<bool> GdxReplayGodsEyeBoost;
+extern Option<bool> GdxReplayGodsEyeTeamColors;
+extern Option<bool> GdxReplayGodsEyeMsImage;
+extern Option<bool> GdxReplayGodsEyeFade;
+extern Option<bool> GdxReplayGodsEyeTrail;
+extern Option<float> GdxReplayGodsEyeTrailSeconds;
+extern Option<bool> GdxReplayGodsEyeDpad;
 extern Option<bool> GdxLiveAutoNext;
 
 }  // namespace config
