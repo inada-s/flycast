@@ -313,9 +313,11 @@ def press_key(vk: int, pid: Optional[int] = None, hold: float = 0.1) -> None:
         window_rect(pid)  # raises the target window
     user32 = ctypes.windll.user32
     scan = user32.MapVirtualKeyW(vk, 0)
-    user32.keybd_event(vk, scan, 0, 0)
+    # KEYEVENTF_EXTENDEDKEY: without it an arrow key arrives as its numpad key.
+    ext = 0x1 if 0x21 <= vk <= 0x28 else 0
+    user32.keybd_event(vk, scan, ext, 0)
     time.sleep(hold)
-    user32.keybd_event(vk, scan, 0x2, 0)  # KEYEVENTF_KEYUP
+    user32.keybd_event(vk, scan, ext | 0x2, 0)  # KEYEVENTF_KEYUP
 
 
 def suspend(pid: int, on: bool) -> None:
