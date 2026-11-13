@@ -87,8 +87,12 @@ bool gdxsv_multi_pov_read_live_battle(std::string& battle_code, uint32_t& genera
 bool gdxsv_multi_pov_guest_open(const std::string& session_id, int screen);
 
 // Releases the mapping. The host also marks the session closed, which tells
-// the guests to quit.
-void gdxsv_multi_pov_close();
+// the guests to quit. The host logs the caller.
+#if defined(__GNUC__) || defined(__clang__) || (defined(_MSC_VER) && _MSC_VER >= 1926)
+void gdxsv_multi_pov_close(const char* caller = __builtin_FUNCTION(), int line = __builtin_LINE());
+#else
+void gdxsv_multi_pov_close(const char* caller = "", int line = 0);
+#endif
 
 GdxsvMultiPovRole gdxsv_multi_pov_current_role();
 
