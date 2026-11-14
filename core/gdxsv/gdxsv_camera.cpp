@@ -173,6 +173,12 @@ struct CameraState {
 CameraState cam;
 // Set by the emulator thread, read by the others.
 std::atomic<bool> available{false};
+std::atomic<bool> in_ram{false};  // cam.installed, for the other threads
+
+void SetInstalled(bool installed) {
+	cam.installed = installed;
+	in_ram = installed;
+}
 
 s64 SteadyNanoseconds() {
 	return std::chrono::duration_cast<std::chrono::nanoseconds>(std::chrono::steady_clock::now().time_since_epoch()).count();
@@ -215,7 +221,7 @@ void Install() {
 	cam.framing.live = false;
 	WriteGuestGame(*cam.game);
 	gdxsv_WriteMem32(kCamData + kOffPatchId, kCamPatchId);
-	cam.installed = true;
+	SetInstalled(true);
 	cam.used = true;
 	NOTICE_LOG(COMMON, "God's eye view: guest code installed, patch %08x", kCamPatchId);
 }
@@ -226,9 +232,9 @@ void Uninstall() {
 	emu.getSh4Executor()->ResetCache();
 	for (size_t i = 0; i < std::size(kCamCodeWords); i++) gdxsv_WriteMem16(0x80000000u + kCamCode + static_cast<u32>(i) * 2, 0);
 	for (u32 i = 0; i < kCamDataSize; i += 4) gdxsv_WriteMem32(std::min(kCamData, kCamTop) + i, 0);
-	cam.installed = false;
 	cam.framing.live = false;
 	NOTICE_LOG(COMMON, "God's eye view: guest code removed");
+	SetInstalled(false);
 }
 
 // The aspect the game's culling and projection have opened up to: only the widescreen hacks draw beyond 4:3.
@@ -521,6 +527,8 @@ bool gdxsv_camera_available() { return available; }
 
 bool gdxsv_camera_code_in_ram() { return gdxsv_ReadMem32(kCamData + kOffPatchId) == kCamPatchId; }
 
+bool gdxsv_camera_left() { return !in_ram; }
+
 bool gdxsv_camera_gods_eye() { return available && gdxsv_camera_settings.pov_mode == GdxsvPovMode::GodsEye; }
 
 void gdxsv_camera_replay_started() {
@@ -535,7 +543,7 @@ float gdxsv_camera_player_camera(int player, u32 offset) {
 	return gdxsv_camera_read_float(record + offset);
 }
 
-void gdxsv_camera_next_frame(int disk, bool replaying) {
+void gdxsv_camera_next_frame(int disk, bool replaying, bool replay_ended) {
 	// Once per replay: its game's code stays as it is through it.
 	const u32 replay = gdxsv_camera_settings.replay;
 	if (replaying != cam.checked_replaying || replay != cam.checked_replay) {
@@ -546,18 +554,20 @@ void gdxsv_camera_next_frame(int disk, bool replaying) {
 		if (cam.supported) cam.game = game;
 		if (game != nullptr && !cam.supported) NOTICE_LOG(COMMON, "God's eye view: unknown build of disc %d", disk);
 		available = cam.supported;
-		// What the view left in the last replay went with the state loaded after it.
+		// The last replay's states went with it: once its code is gone too, no state load brings the view back.
 		if (!cam.installed) cam.used = false;
 	}
-	const bool gods_eye = gdxsv_camera_settings.pov_mode == GdxsvPovMode::GodsEye;
+	const bool gods_eye = gdxsv_camera_settings.pov_mode == GdxsvPovMode::GodsEye && !replay_ended;
 	const bool want = cam.supported && gods_eye && !GameEndingShot();
 	if (!want && !cam.installed) {
-		// The first frame after a replay with the view: the state loaded after it took the guest code, not the fog.
+		// A state from before the view took its code, not its fog.
 		ViewFog(false);
 		return;
 	}
 	const GdxsvCameraGame *game = cam.game;
 	if (want && !cam.installed) Install();
+	const bool hooks_were_stock = gdxsv_ReadMem32(game->control_cell) == game->stock_control &&
+								  gdxsv_ReadMem32(game->pre_render_cell) == game->stock_pre_render;
 
 	gdxsv_WriteMem32(kCamData + kOffEnabled, want ? 1 : 0);
 	if (want)
@@ -581,10 +591,11 @@ void gdxsv_camera_next_frame(int disk, bool replaying) {
 		gdxsv_WriteMem32(game->post_render_cell, post);
 	}
 	if (want) LogStatus();
-	// Back in the player's view, once the render call has put the camera record back, at the end of a replay frame: a stop
-	// can leave the SH4 in a call made through the guest code. Out of a replay with no state loaded after it, the hooks
-	// go back and the code stays, unreachable.
-	if (!gods_eye && !armed && cam.supported && emu.running()) Uninstall();
+	// The code goes with the view (the player's view picked, or the playback over) once nothing can be in a call made
+	// through it: at the end of a replay frame (a stop can leave the SH4 anywhere), with the control and pre-render hooks
+	// the game's own already while the frame ran (the playback can end within one of those calls), and the render call
+	// has put the camera record back.
+	if (!gods_eye && hooks_were_stock && !armed && cam.supported && emu.running()) Uninstall();
 }
 
 void gdxsv_camera_state_loaded() {
@@ -592,7 +603,7 @@ void gdxsv_camera_state_loaded() {
 	// compiled from them. Nothing to do in a replay without the view, or once a state from before it is loaded.
 	if (!cam.used) return;
 	emu.getSh4Executor()->ResetCache();
-	cam.installed = gdxsv_ReadMem32(kCamData + kOffPatchId) == kCamPatchId;
+	SetInstalled(gdxsv_camera_code_in_ram());
 }
 
 void gdxsv_camera_reset() {
@@ -607,7 +618,7 @@ void gdxsv_camera_reset() {
 	gdxsv_camera_panel_reset();
 	ViewFog(false);
 	cam.framing = Framing{};
-	cam.installed = false;
+	SetInstalled(false);
 	cam.used = false;
 	cam.supported = false;
 	cam.checked_replaying = false;

@@ -462,7 +462,7 @@ void Gdxsv::HookNextFrame() {
 	if (netmode_ == NetMode::Replay) {
 		gdxsv.replay_net_.OnNextFrame();
 	}
-	gdxsv_camera_next_frame(disk_, netmode_ == NetMode::Replay);
+	gdxsv_camera_next_frame(disk_, netmode_ == NetMode::Replay, replay_net_.Ended());
 	// A seek in OnNextFrame can restore the stock sound descriptor.
 	WriteWarningSoundVolume();
 }

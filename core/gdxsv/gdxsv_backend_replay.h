@@ -34,6 +34,7 @@ class GdxsvBackendReplay {
 	void OnFastForward();
 	void DisplayOSD();
 	bool Seeking() const { return seeking_; }
+	bool Ended() const { return state_ == State::End; }
 	int KeyMsgCount() const { return key_msg_count_; }
 	// As the game shows it in battle; empty past the replay's players.
 	std::string PilotName(int player) const;
@@ -329,6 +330,7 @@ class GdxsvBackendReplay {
 	double pacing_rate_hz_ = 59.94;
 	int pacing_rate_recv_ = 0;
 	std::chrono::steady_clock::time_point pacing_rate_time_{};
+	std::chrono::steady_clock::time_point end_wait_until_{};  // how long the playback's end waits for the god's eye view to leave
 	double pacing_integral_ = 0.0;
 
 	// Intake cap, which keeps consumption on the frame clock: emulated frames (OnNextFrame), not presents, which
