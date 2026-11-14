@@ -31,7 +31,11 @@ bool gdxsv_camera_code_in_ram();
 void gdxsv_camera_replay_started();
 
 // Emulator thread, between SH4 runs: installs the guest code on first use and keeps its hooks in step with the mode.
-void gdxsv_camera_next_frame(int disk, bool replaying);
+// replay_ended: the replay's playback is over, and the view goes with it.
+void gdxsv_camera_next_frame(int disk, bool replaying, bool replay_ended);
+// Any thread: the guest code is out of the game's RAM. At the end of a replay's playback it goes a frame or two later,
+// which the end waits for: what comes after the replay never has it, whether or not a state is loaded.
+bool gdxsv_camera_left();
 void gdxsv_camera_reset();
 // A state was restored: it can predate the guest code while the code cache still holds blocks compiled from it.
 void gdxsv_camera_state_loaded();

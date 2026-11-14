@@ -122,7 +122,7 @@ def replay_pov(ctx):
 
 @case("V13", "god's eye view: the newest Disc 1 and Disc 2 replays play to the end in the view, with the recorded winners")
 def replay_gods_eye(ctx):
-    shown = ["God's eye view: guest code installed", "God's eye view: shown"]
+    shown = ["God's eye view: guest code installed", "God's eye view: shown", "God's eye view: guest code removed"]
     with concurrent.futures.ThreadPoolExecutor(2) as ex:
         runs = list(ex.map(lambda d: play(ctx, newest(d), extra=["gdxsv:ReplayPOVMode=godseye"], name=f"V13_{d}", logged=shown),
                            ("dc1", "dc2")))

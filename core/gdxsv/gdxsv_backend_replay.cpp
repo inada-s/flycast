@@ -241,6 +241,12 @@ void GdxsvBackendReplay::OnMainUiLoop() {
 	const bool fast_forward = fast_forward_pending_.exchange(false);
 	const UiState ui = ui_snapshot_.Read();
 	if (ui.state == State::End) {
+		// The god's eye view leaves with the playback: the emulator runs on for the frame or two that takes. At most half a
+		// second; the state loaded next takes it then.
+		const auto now = std::chrono::steady_clock::now();
+		if (end_wait_until_ == std::chrono::steady_clock::time_point{}) end_wait_until_ = now + std::chrono::milliseconds(500);
+		if (!gdxsv_camera_left() && now < end_wait_until_) return;
+		end_wait_until_ = {};
 		// A headless replay run is done the moment playback ends: exit with
 		// success so a backward-compat harness sees the replay played through,
 		// or with 4 when playback stopped on an error (a desync).
