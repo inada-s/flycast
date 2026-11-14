@@ -78,10 +78,11 @@ constexpr float kBoostHeight = 2.2f;
 constexpr ImU32 kBoostLeftColor = IM_COL32(116, 250, 252, 255);
 constexpr ImU32 kBoostUsedColor = IM_COL32(215, 25, 20, 190);
 constexpr ImU32 kBoostBackColor = IM_COL32(0, 0, 0, 120);
-// A whole nameplate fades out while it is this close to another nameplate or MS, and comes back once clear for a while.
+// A whole nameplate fades while it is this close to another nameplate or MS, and comes back once clear for a while.
 constexpr float kNameplateClearance = 8.f;
 constexpr float kNameplateHoldSeconds = 0.5f;
-constexpr float kNameplateFadeOutSeconds = 0.15f;
+constexpr float kNameplateFadeOpacity = 0.3f;
+constexpr float kNameplateFadeOutSeconds = 0.3f;
 constexpr float kNameplateFadeInSeconds = 0.3f;
 
 // By team: Federation, Zeon. The HP gauge: what is left, then what is lost; or the game's own colors.
@@ -441,7 +442,7 @@ void LayOut(Scene &s) {
 			busy |= overlay.anchor_on[j] && boxes_near(plate_min[i], plate_max[i], plate_min[j], plate_max[j]);
 		}
 		if (busy) nameplates.busy_until[i] = now + kNameplateHoldSeconds;
-		const float target = settings.fade && now < nameplates.busy_until[i] ? 0.f : 1.f;
+		const float target = settings.fade && now < nameplates.busy_until[i] ? kNameplateFadeOpacity : 1.f;
 		opacity += std::clamp(target - opacity, -step / kNameplateFadeOutSeconds, step / kNameplateFadeInSeconds);
 		s.opacity[i] = opacity;
 	}

@@ -44,7 +44,7 @@ Upstream options it changes are in [upstream.md](upstream.md).
 | `ReplayGodsEyeBoost` | yes | replay god's eye view: a boost gauge under each nameplate while its MS is off the ground |
 | `ReplayGodsEyeTeamColors` | yes | replay god's eye view: nameplate lines and HP gauges in the team colors; off: white lines and the game's gauge colors |
 | `ReplayGodsEyeMsImage` | no | replay god's eye view: the MS's image left of each nameplate |
-| `ReplayGodsEyeFade` | yes | replay god's eye view: a nameplate fades out while it overlaps another nameplate or MS |
+| `ReplayGodsEyeFade` | yes | replay god's eye view: a nameplate fades while it overlaps another nameplate or MS |
 | `ReplayGodsEyeTrail` | yes | replay god's eye view: a trail behind each MS in its team color |
 | `ReplayGodsEyeTrailSeconds` | 6 | replay god's eye view: how long a trail lasts, 1 to 20 seconds |
 | `ReplayGodsEyeDpad` | yes | replay god's eye view: camera mode, where the d-pad turns and zooms the view instead of controlling the replay, X and Y tilt it, B steps whom it follows, and the 1 to 5 keys (main row or numpad) pick the players it follows, 5 everyone; off, timeline mode. The mode each game starts in: the CAMERA panel's gamepad toggle and START switch it without saving |
