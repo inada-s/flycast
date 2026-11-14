@@ -84,7 +84,7 @@ void RenderSettings() {
 	ImGui::SameLine(column);
 	Checkbox(i18n::T("MS image"), settings.ms_image, config::GdxReplayGodsEyeMsImage, nullptr);
 	Checkbox(i18n::T("Fade on overlap"), settings.fade, config::GdxReplayGodsEyeFade,
-			 i18n::T("Fade a nameplate while it overlaps another nameplate or MS"));
+			 i18n::T("Fade a nameplate while it overlaps another MS"));
 	ImGui::EndDisabled();
 	ImGui::Separator();
 
