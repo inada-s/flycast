@@ -94,6 +94,8 @@ class GdxsvBackendReplay {
 	// 4-player replay: the host publishes its playback state every frame and
 	// the guests follow it with the same control commands the user would give.
 	void PublishMultiPovPlayback();
+	void PublishMultiPovJump(int target, int round);
+	void PublishMultiPovState(int frame, int64_t position);
 	void FollowMultiPovHost();
 	// Guest: blocks while more than a couple of frames ahead of the host.
 	void WaitForMultiPovHost();
@@ -360,9 +362,7 @@ class GdxsvBackendReplay {
 	// Host: the replay is moving the position itself (round change, briefing
 	// skip), which every screen does on its own, so it is not a seek.
 	bool multi_pov_system_move_ = false;
-	// Host: a SetRound landed and is published as a round jump, which a guest
-	// replays as SetRound: a seek cannot cross a round boundary.
-	bool multi_pov_round_jump_ = false;
+	// Host: the round of the last jump published, 0 for a seek.
 	int32_t multi_pov_seek_round_ = 0;
 
 	// The start barrier is armed at the first StartMsg and taken at the next
