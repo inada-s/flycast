@@ -55,6 +55,7 @@ struct GdxsvReplayUiState {
 	int takeoverCountdown = 0;
 	uint16_t takeoverTargetInput = 0;
 	bool liveMode = false;
+	bool multiPovHost = false;
 	bool liveAtEdge = false;
 	int liveBufferFrames = 30;
 

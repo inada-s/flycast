@@ -1738,7 +1738,8 @@ void GdxsvBackendReplay::DisplayOSD() {
 	// DisplayLivePacingOSD(ui);
 	// A 4-player replay guest shows no controls, only the Loading HUD.
 	if (!gdxsv_is_multi_pov_guest()) {
-		if (!ui.seeking && ui.pauseMenuOpen) {
+		// After Exit Replay the game runs on until the UI thread stops it; by then the panel's buttons do nothing.
+		if (!ui.seeking && ui.pauseMenuOpen && ui.state != State::End) {
 			RenderPauseMenu(ui);
 		} else {
 			gdxsv_camera_pov_row_hidden();
@@ -1889,6 +1890,7 @@ void GdxsvBackendReplay::PublishUiState() {
 	ui.takeoverCountdown = takeover_countdown_;
 	ui.takeoverTargetInput = takeover_target_input_;
 	ui.liveMode = live_mode_;
+	ui.multiPovHost = multi_pov_host_;
 	ui.liveAtEdge = live_at_edge_;
 	ui.liveBufferFrames = live_buffer_frames_;
 	ui_snapshot_.Publish(std::move(ui));
@@ -2946,7 +2948,7 @@ void GdxsvBackendReplay::RenderPauseMenu(const UiState& ui) {
 		// Not in live: takeover disables the pacing trim, the sync barrier, the
 		// intake cap and the starve guard. Not in a 4-player replay: the guests
 		// play the recording.
-		if (!ui.liveMode && !multi_pov_host_) {
+		if (!ui.liveMode && !ui.multiPovHost) {
 			// The POV player is taken over from their own view, which the god's eye view does not show.
 			const bool gods_eye = gdxsv_camera_gods_eye();
 			ImGui::BeginDisabled(!ui.inGame || gods_eye);
@@ -2961,7 +2963,7 @@ void GdxsvBackendReplay::RenderPauseMenu(const UiState& ui) {
 		// Round and POV rows, with one label column: five columns of round buttons (wrapping past 5), and the POV buttons
 		// over four columns with their gear in the fifth, where this game has the god's eye view. A four-screen replay
 		// shows the players' own views.
-		const bool pov_row = !multi_pov_host_ && gdxsv_camera_available();
+		const bool pov_row = !ui.multiPovHost && gdxsv_camera_available();
 		const ImGuiStyle& style = ImGui::GetStyle();
 		const float labelWidth = std::max(ImGui::CalcTextSize(T("Round")).x, pov_row ? ImGui::CalcTextSize(T("POV")).x : 0.0f);
 		const float buttonHeight = uiScaled(40.0f);
