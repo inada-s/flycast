@@ -70,6 +70,8 @@ void gdxsv_emu_mainui_loop_end();
 
 // True when a setting changed that needs the graphics context recreated.
 bool gdxsv_emu_mainui_reinit_needed();
+// True while the render thread must stop for a pass: the four-screen grid changes its video receivers only then.
+bool gdxsv_emu_mainui_context_needed();
 
 void gdxsv_emu_rpc();
 

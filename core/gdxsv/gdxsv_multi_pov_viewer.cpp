@@ -35,6 +35,8 @@ struct GdxsvViewerState {
 	// The loader reads only these results, never the graphics context itself.
 	std::atomic<const char*> unavailable{kNotReady};
 	std::atomic<bool> needs_probe{false};
+	// A begin or end Tick has not applied yet. Tick applies it only while the render thread is stopped.
+	std::atomic<bool> change_pending{false};
 	// The remainder is used only on the UI thread.
 	std::string session;
 	std::string names[kGdxsvMultiPovScreens];
@@ -100,6 +102,7 @@ void gdxsv_multi_pov_viewer_begin(const std::string& session) {
 	std::lock_guard<std::mutex> lock(viewer.mutex);
 	viewer.requested = session;
 	viewer.release_requested = false;
+	viewer.change_pending.store(true, std::memory_order_release);
 	// Each screen fills a quadrant, so all four render at half the host's
 	// resolution, never below the lowest setting (Half).
 	if (viewer.resolution == 0) {
@@ -113,6 +116,7 @@ void gdxsv_multi_pov_viewer_end() {
 	viewer.requested.clear();
 	// A failed start may end before Tick ever displayed its session.
 	viewer.release_requested = true;
+	viewer.change_pending.store(true, std::memory_order_release);
 	if (viewer.resolution != 0) {
 		// A transient or per-game value still wins over the one kept here.
 		config::RenderResolution.reset();
@@ -121,6 +125,8 @@ void gdxsv_multi_pov_viewer_end() {
 		viewer.resolution = 0;
 	}
 }
+
+bool gdxsv_emu_mainui_context_needed() { return viewer.change_pending.load(std::memory_order_acquire); }
 
 bool gdxsv_video_hidden_window() {
 	// Saved options cannot turn an ordinary launch into an invisible worker.
@@ -160,6 +166,7 @@ const char* gdxsv_multi_pov_viewer_tick() {
 			requested = viewer.requested;
 			release = viewer.release_requested;
 			viewer.release_requested = false;
+			viewer.change_pending.store(false, std::memory_order_release);
 		}
 		prepare = std::move(viewer.prepare);
 	}

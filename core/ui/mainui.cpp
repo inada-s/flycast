@@ -102,7 +102,7 @@ void mainui_term()
 static bool renderThreadWanted(RenderType currentRenderer)
 {
 	return config::ThreadedRendering && emu.running() && !gui_is_open() && imguiDriver != nullptr && !forceReinit
-			&& config::RendererType == currentRenderer;
+			&& config::RendererType == currentRenderer && !gdxsv_emu_mainui_context_needed();
 }
 
 // gdxsv: joins the render thread; what it threw is handled as mainui_rend_frame does
