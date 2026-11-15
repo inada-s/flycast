@@ -158,6 +158,9 @@ void gdxsv_multi_pov_viewer_term(bool reset_device) {
 #ifdef USE_VULKAN
 	gdxsv_multi_pov_viewer_vulkan_term(reset_device);
 #endif
+	// Releasing or destroying a Spout GL receiver unbinds the 2D texture behind Flycast's GL state cache, which ImGui binds through.
+	GLint texture = 0;
+	glGetIntegerv(GL_TEXTURE_BINDING_2D, &texture);
 	for (auto& receiver : viewer.receivers) {
 		if (receiver.gl) receiver.gl->ReleaseReceiver();
 		if (receiver.texture) glDeleteTextures(1, &receiver.texture);
@@ -167,5 +170,6 @@ void gdxsv_multi_pov_viewer_term(bool reset_device) {
 		}
 		receiver = {};
 	}
+	glBindTexture(GL_TEXTURE_2D, texture);
 }
 #endif
