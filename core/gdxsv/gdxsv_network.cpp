@@ -294,68 +294,75 @@ std::future<std::map<std::string, int>> gcp_ping_test() {
 	auto fn = [override_host]() -> std::map<std::string, int> {
 		std::map<std::string, int> test_result;
 
-		// powered by https://github.com/GoogleCloudPlatform/gcping
-		const std::string get_path = "/api/ping";
-		const std::tuple<std::string, std::string, std::string> gcp_region_hosts[] = {
-//			{"asia-south1", "asia-south1-5tkroniexa-el.a.run.app", "India"},
-			{"australia-southeast1", "australia-southeast1-5tkroniexa-ts.a.run.app", "Australia"},
-//			{"europe-north1", "europe-north1-5tkroniexa-lz.a.run.app", "Finland"},
-//			{"europe-west1", "europe-west1-5tkroniexa-ew.a.run.app", "Belgium"},
-			{"europe-west2", "europe-west2-5tkroniexa-nw.a.run.app", "London"},
-//			{"europe-west3", "europe-west3-5tkroniexa-ey.a.run.app", "Germany"},
-//			{"europe-west4", "europe-west4-5tkroniexa-ez.a.run.app", "Netherlands"},
-//			{"europe-west6", "europe-west6-5tkroniexa-oa.a.run.app", "Switzerland"},
-			{"northamerica-northeast1", "northamerica-northeast1-5tkroniexa-nn.a.run.app", "Canada"},
-			{"southamerica-east1", "southamerica-east1-5tkroniexa-rj.a.run.app", "Brazil"},
-			{"us-central1", "us-central1-5tkroniexa-uc.a.run.app", "US Central - Iowa"},
-//			{"us-east1", "us-east1-5tkroniexa-ue.a.run.app", "US East - South Carolina"},
-			{"us-east4", "us-east4-5tkroniexa-uk.a.run.app", "US East - Virginia"},
-//			{"us-west1", "us-west1-5tkroniexa-uw.a.run.app", "US West - Oregon"},
-			{"us-west2", "us-west2-5tkroniexa-wl.a.run.app", "US West - California"},
-//			{"us-west3", "us-west3-5tkroniexa-wm.a.run.app", "US West - Utah"},
-			{"asia-southeast1", "asia-southeast1-5tkroniexa-as.a.run.app", "Singapore"},
-			{"asia-east1", "asia-east1-5tkroniexa-de.a.run.app", "Taiwan"},
-			{"asia-east2", "asia-east2-5tkroniexa-df.a.run.app", "Hong Kong"},
-			{"asia-northeast1", "asia-northeast1-5tkroniexa-an.a.run.app", "Tokyo"},
-			{"asia-northeast2", "asia-northeast2-5tkroniexa-dt.a.run.app", "Osaka"},
-			{"asia-northeast3", "asia-northeast3-5tkroniexa-du.a.run.app", "Seoul"},
+		// Region id, location shown while the test runs.
+		const std::pair<std::string, std::string> gcp_regions[] = {
+//			{"asia-south1", "India"},
+			{"australia-southeast1", "Australia"},
+//			{"europe-north1", "Finland"},
+//			{"europe-west1", "Belgium"},
+			{"europe-west2", "London"},
+//			{"europe-west3", "Germany"},
+//			{"europe-west4", "Netherlands"},
+//			{"europe-west6", "Switzerland"},
+			{"northamerica-northeast1", "Canada"},
+			{"southamerica-east1", "Brazil"},
+			{"us-central1", "US Central - Iowa"},
+//			{"us-east1", "US East - South Carolina"},
+			{"us-east4", "US East - Virginia"},
+//			{"us-west1", "US West - Oregon"},
+			{"us-west2", "US West - California"},
+//			{"us-west3", "US West - Utah"},
+			{"asia-southeast1", "Singapore"},
+			{"asia-east1", "Taiwan"},
+			{"asia-east2", "Hong Kong"},
+			{"asia-northeast1", "Tokyo"},
+			{"asia-northeast2", "Osaka"},
+			{"asia-northeast3", "Seoul"},
 		};
 
 		// Function to test a single region
-		auto test_region = [&get_path, &override_host](const std::tuple<std::string, std::string, std::string> &region_host) -> std::pair<std::string, int> {
-			const std::string &host = override_host.empty() ? std::get<1>(region_host) : override_host;
-			const GdxsvHttpsLatencyResult latency = measureGdxsvHttpsLatency(host, get_path, 3);
-			for (size_t i = 0; i < latency.attempts_ms.size(); i++)
-			{
-				const int rtt = latency.attempts_ms[i];
-				NOTICE_LOG(COMMON, "%s : attempt %d: %d[ms]", std::get<2>(region_host).c_str(), (int)i + 1, rtt);
+		auto test_region = [&override_host](const std::pair<std::string, std::string> &region) -> std::pair<std::string, int> {
+			const std::string &region_id = region.first;
+			const std::string &location = region.second;
+			// Google's regional API endpoints, tried in order until one answers. The rep.googleapis.com ones end the
+			// connection in their region; the run.googleapis.com one is the last resort, its times vary more.
+			const std::vector<std::string> hosts =
+				override_host.empty()
+					? std::vector<std::string>{"pubsub." + region_id + ".rep.googleapis.com",
+											   "logging." + region_id + ".rep.googleapis.com", region_id + "-run.googleapis.com"}
+					: std::vector<std::string>{override_host};
+			for (const std::string &host : hosts) {
+				const GdxsvHttpsLatencyResult latency = measureGdxsvHttpsLatency(host, "/", 3);
+				for (size_t i = 0; i < latency.attempts_ms.size(); i++) {
+					const int rtt = latency.attempts_ms[i];
+					NOTICE_LOG(COMMON, "%s : attempt %d: %d[ms]", location.c_str(), (int)i + 1, rtt);
+				}
+
+				if (latency.ok) {
+					char latency_str[256];
+					snprintf(latency_str, 256, "%s : %d[ms]", location.c_str(), latency.min_ms);
+					NOTICE_LOG(COMMON, "%s", latency_str);
+					gdxsv.SetPingResult(std::string(latency_str));
+					return {region_id, latency.min_ms};
+				}
+
+				ERROR_LOG(COMMON, "Ping test failed : %s via %s status=%d error=%s", region_id.c_str(), host.c_str(), latency.status,
+						  latency.error.c_str());
+				if (gdxsv.NetworkTestsStopped()) break;
 			}
-
-			if (!latency.ok)
-			{
-				ERROR_LOG(COMMON, "Ping test failed : %s status=%d error=%s", std::get<0>(region_host).c_str(),
-						  latency.status, latency.error.c_str());
-				return {"", -1};
-			}
-
-			char latency_str[256];
-			snprintf(latency_str, 256, "%s : %d[ms]", std::get<2>(region_host).c_str(), latency.min_ms);
-			NOTICE_LOG(COMMON, "%s", latency_str);
-			gdxsv.SetPingResult(std::string(latency_str));
-
-			return {std::get<0>(region_host), latency.min_ms};
+			return {"", -1};
 		};
 
 		// Execute ping tests with max 6 parallel workers
 		const int max_parallel = 6;
-		const int total_regions = std::size(gcp_region_hosts);
+		const int total_regions = std::size(gcp_regions);
 
 		std::vector<std::future<std::pair<std::string, int>>> futures;
 		int next_region_idx = 0;
 
 		// Start initial batch of workers (up to max_parallel)
 		for (int i = 0; i < std::min(max_parallel, total_regions); i++) {
-			futures.push_back(std::async(std::launch::async, test_region, gcp_region_hosts[next_region_idx++]));
+			futures.push_back(std::async(std::launch::async, test_region, gcp_regions[next_region_idx++]));
 		}
 
 		// Process results as they complete and start new tasks
@@ -377,7 +384,7 @@ std::future<std::map<std::string, int>> gcp_ping_test() {
 
 					// Start a new task if there are more regions to process
 					if (next_region_idx < total_regions && !gdxsv.NetworkTestsStopped()) {
-						futures.push_back(std::async(std::launch::async, test_region, gcp_region_hosts[next_region_idx++]));
+						futures.push_back(std::async(std::launch::async, test_region, gcp_regions[next_region_idx++]));
 					}
 				} else {
 					++it;
