@@ -1862,11 +1862,10 @@ ConnectionHealth updateConnectionHealth(ConnectionHealthTracker& tracker,
 
 	const int frame_skew = stats.timesync.local_frames_behind;
 	constexpr double frame_time_ms = 1000.0 / 59.94;
-	// One pending input per elapsed game frame is normal while waiting for an
-	// acknowledgement. Only count queue growth beyond the RTT-sized window.
-	const int expected_queue = stats.network.ping > 0
-		? static_cast<int>(std::ceil(stats.network.ping / frame_time_ms))
-		: 0;
+	// Inputs pending on a healthy link: one per frame of the round trip, plus the input added this frame, the one
+	// the peer acked last (removed only by a later ack) and the frame the peer waits to send its ack with its input.
+	constexpr int queue_overhead = 3;
+	const int expected_queue = static_cast<int>(std::ceil(std::max(stats.network.ping, 0) / frame_time_ms)) + queue_overhead;
 	const int queue_excess = std::max(stats.network.send_queue_len - expected_queue, 0);
 	const ConnectionHealth loss_health = lossHealth(recent_loss);
 	const ConnectionHealth queue_health = queueHealth(queue_excess);
