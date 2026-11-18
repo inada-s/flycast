@@ -701,6 +701,8 @@ UdpProtocol::OnSyncReply(UdpMsg *msg, int len)
       _current_state = Running;
       _last_received_input.frame = -1;
       _remote_magic_number = msg->hdr.magic;
+      // The peer's packets did not move _next_recv_seq before its magic was known: without this, the next one counts the whole sync phase as loss.
+      _next_recv_seq = msg->hdr.sequence_number;
    } else {
       UdpProtocol::Event evt(UdpProtocol::Event::Synchronizing);
       evt.u.synchronizing.total = NUM_SYNC_PACKETS;
