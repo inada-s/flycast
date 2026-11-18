@@ -27,8 +27,9 @@ static bool queryStatus(HINTERNET request, int& status)
 	return true;
 }
 
-static bool performHead(HINTERNET connection, const std::string& path, int& status, std::string& error)
+static bool performHead(HINTERNET connection, const std::string& path, int& status, std::string& error, int& headers_ms)
 {
+	const auto started = std::chrono::steady_clock::now();
 	const char *accept_types[] = {"*/*", nullptr};
 	HINTERNET request = HttpOpenRequestA(connection, "HEAD", path.c_str(), nullptr, nullptr, accept_types,
 		INTERNET_FLAG_SECURE | INTERNET_FLAG_KEEP_CONNECTION | INTERNET_FLAG_NO_CACHE_WRITE
@@ -45,9 +46,13 @@ static bool performHead(HINTERNET connection, const std::string& path, int& stat
 	InternetSetOptionA(request, INTERNET_OPTION_SEND_TIMEOUT, &timeout, sizeof(timeout));
 
 	bool ok = true;
-	if (!HttpSendRequestA(request, nullptr, 0, nullptr, 0))
+	const bool sent = HttpSendRequestA(request, nullptr, 0, nullptr, 0);
+	const DWORD send_error = sent ? ERROR_SUCCESS : GetLastError();
+	const auto headers_ready = std::chrono::steady_clock::now();
+	headers_ms = static_cast<int>(std::chrono::duration_cast<std::chrono::milliseconds>(headers_ready - started).count());
+	if (!sent)
 	{
-		error = wininetError("HttpSendRequest failed", GetLastError());
+		error = wininetError("HttpSendRequest failed", send_error);
 		ok = false;
 	}
 	else if (!queryStatus(request, status))
@@ -75,6 +80,9 @@ GdxsvHttpsLatencyResult measureGdxsvHttpsLatency(const std::string& host, const 
 
 	DWORD timeout = 5000;
 	InternetSetOptionA(internet, INTERNET_OPTION_CONNECT_TIMEOUT, &timeout, sizeof(timeout));
+	DWORD protocols = HTTP_PROTOCOL_FLAG_HTTP2;
+	// Older Windows versions reject this option and retain HTTP/1.1.
+	InternetSetOptionA(internet, INTERNET_OPTION_ENABLE_HTTP_PROTOCOL, &protocols, sizeof(protocols));
 
 	HINTERNET connection = InternetConnectA(internet, host.c_str(), INTERNET_DEFAULT_HTTPS_PORT, nullptr, nullptr,
 		INTERNET_SERVICE_HTTP, 0, 0);
@@ -87,7 +95,8 @@ GdxsvHttpsLatencyResult measureGdxsvHttpsLatency(const std::string& host, const 
 
 	int status = 0;
 	std::string error;
-	if (!performHead(connection, path, status, error) || !gdxsv_https_latency_answered(status))
+	int rtt = -1;
+	if (!performHead(connection, path, status, error, rtt) || !gdxsv_https_latency_answered(status))
 	{
 		result.status = status;
 		result.error = error.empty() ? "warmup failed" : error;
@@ -98,11 +107,9 @@ GdxsvHttpsLatencyResult measureGdxsvHttpsLatency(const std::string& host, const 
 
 	for (int i = 0; i < attempts; i++)
 	{
-		auto t1 = std::chrono::high_resolution_clock::now();
 		status = 0;
 		error.clear();
-		const bool ok = performHead(connection, path, status, error);
-		auto t2 = std::chrono::high_resolution_clock::now();
+		const bool ok = performHead(connection, path, status, error, rtt);
 
 		if (!ok || !gdxsv_https_latency_answered(status))
 		{
@@ -113,7 +120,6 @@ GdxsvHttpsLatencyResult measureGdxsvHttpsLatency(const std::string& host, const 
 			return result;
 		}
 
-		const int rtt = (int)std::chrono::duration_cast<std::chrono::milliseconds>(t2 - t1).count();
 		result.attempts_ms.push_back(rtt);
 		if (result.min_ms == -1 || rtt < result.min_ms)
 			result.min_ms = rtt;

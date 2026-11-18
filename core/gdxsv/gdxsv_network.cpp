@@ -326,7 +326,8 @@ std::future<std::map<std::string, int>> gcp_ping_test() {
 			const std::string &location = region.second;
 			// Cloud Storage's regional endpoint, available in every region; TLS ends in the region itself.
 			const std::string host = override_host.empty() ? "storage." + region_id + ".rep.googleapis.com" : override_host;
-			const GdxsvHttpsLatencyResult latency = measureGdxsvHttpsLatency(host, "/", 3);
+			// The incomplete API path returns a prompt 404 without credentials.
+			const GdxsvHttpsLatencyResult latency = measureGdxsvHttpsLatency(host, "/storage/v1", 3);
 			for (size_t i = 0; i < latency.attempts_ms.size(); i++) {
 				const int rtt = latency.attempts_ms[i];
 				NOTICE_LOG(COMMON, "%s : attempt %d: %d[ms]", location.c_str(), (int)i + 1, rtt);

@@ -1,48 +1,90 @@
 #import <Foundation/Foundation.h>
 
-#include <chrono>
-
 #include "gdxsv_https_latency.h"
 #include "oslib/http_client.h"
 
 namespace {
 
-struct HeadResponse {
+constexpr int gdxsv_https_latency_timeout_seconds = 10;
+
+struct GdxsvHttpsLatencyResponse
+{
 	int status = 0;
+	int first_byte_ms = -1;
 	std::string error;
 };
 
-static HeadResponse performHead(NSURLSession *session, NSURLRequest *request)
-{
-	dispatch_semaphore_t sema = dispatch_semaphore_create(0);
-	__block NSHTTPURLResponse *http_response = nil;
-	__block NSError *http_error = nil;
+} // namespace
 
-	NSURLSessionDataTask *task = [session dataTaskWithRequest:request
-		completionHandler:^(NSData *, NSURLResponse *response, NSError *error) {
-			if ([response isKindOfClass:[NSHTTPURLResponse class]])
-				http_response = [(NSHTTPURLResponse *)response retain];
-			if (error != nil)
-				http_error = [error retain];
-			dispatch_semaphore_signal(sema);
-		}];
+@interface GdxsvHttpsLatencyDelegate : NSObject <NSURLSessionTaskDelegate>
+{
+@public
+	GdxsvHttpsLatencyResponse response;
+	dispatch_semaphore_t completed;
+}
+@end
+
+@implementation GdxsvHttpsLatencyDelegate
+
+- (instancetype)init
+{
+	self = [super init];
+	if (self != nil)
+		completed = dispatch_semaphore_create(0);
+	return self;
+}
+
+- (void)dealloc
+{
+	dispatch_release(completed);
+	[super dealloc];
+}
+
+- (void)URLSession:(NSURLSession *)session task:(NSURLSessionTask *)task
+	didFinishCollectingMetrics:(NSURLSessionTaskMetrics *)metrics
+{
+	NSURLSessionTaskTransactionMetrics *first = metrics.transactionMetrics.firstObject;
+	NSURLSessionTaskTransactionMetrics *last = metrics.transactionMetrics.lastObject;
+	if (first.fetchStartDate == nil || last.responseStartDate == nil
+			|| last.resourceFetchType != NSURLSessionTaskMetricsResourceFetchTypeNetworkLoad)
+		return;
+
+	// HEAD response callbacks can wait for stream completion; this timestamp records the first byte.
+	const double milliseconds = [last.responseStartDate timeIntervalSinceDate:first.fetchStartDate] * 1000.0;
+	response.first_byte_ms = static_cast<int>(milliseconds);
+}
+
+- (void)URLSession:(NSURLSession *)session task:(NSURLSessionTask *)task didCompleteWithError:(NSError *)error
+{
+	if ([task.response isKindOfClass:[NSHTTPURLResponse class]])
+		response.status = (int)[(NSHTTPURLResponse *)task.response statusCode];
+	if (error != nil)
+		response.error = [[error localizedDescription] UTF8String];
+	else if (response.first_byte_ms < 0)
+		response.error = "response timing unavailable";
+	dispatch_semaphore_signal(completed);
+}
+
+@end
+
+namespace {
+
+static GdxsvHttpsLatencyResponse gdxsv_perform_head(NSURLSession *session, NSURLRequest *request,
+	GdxsvHttpsLatencyDelegate *delegate)
+{
+	delegate->response = {};
+	NSURLSessionDataTask *task = [session dataTaskWithRequest:request];
 	[task resume];
 
-	dispatch_semaphore_wait(sema, DISPATCH_TIME_FOREVER);
-
-	HeadResponse result;
-	if (http_error != nil)
+	const dispatch_time_t deadline = dispatch_time(DISPATCH_TIME_NOW, (gdxsv_https_latency_timeout_seconds + 5) * NSEC_PER_SEC);
+	if (dispatch_semaphore_wait(delegate->completed, deadline) != 0)
 	{
-		result.error = [[http_error localizedDescription] UTF8String];
-		[http_error release];
+		[task cancel];
+		GdxsvHttpsLatencyResponse response;
+		response.error = "response timed out";
+		return response;
 	}
-	if (http_response != nil)
-	{
-		result.status = (int)[http_response statusCode];
-		[http_response release];
-	}
-
-	return result;
+	return delegate->response;
 }
 
 } // namespace
@@ -65,34 +107,41 @@ GdxsvHttpsLatencyResult measureGdxsvHttpsLatency(const std::string& host, const 
 		NSURLSessionConfiguration *configuration = [NSURLSessionConfiguration defaultSessionConfiguration];
 		configuration.requestCachePolicy = NSURLRequestReloadIgnoringLocalCacheData;
 		configuration.HTTPShouldSetCookies = NO;
-		NSURLSession *session = [[NSURLSession sessionWithConfiguration:configuration] retain];
+		configuration.URLCache = nil;
+		configuration.timeoutIntervalForRequest = gdxsv_https_latency_timeout_seconds;
+		configuration.timeoutIntervalForResource = gdxsv_https_latency_timeout_seconds;
+		GdxsvHttpsLatencyDelegate *delegate = [[GdxsvHttpsLatencyDelegate alloc] init];
+		NSOperationQueue *queue = [[NSOperationQueue alloc] init];
+		queue.maxConcurrentOperationCount = 1;
+		NSURLSession *session = [[NSURLSession sessionWithConfiguration:configuration delegate:delegate delegateQueue:queue] retain];
+		[queue release];
 
-		HeadResponse response = performHead(session, request);
-		if (!gdxsv_https_latency_answered(response.status))
+		GdxsvHttpsLatencyResponse response = gdxsv_perform_head(session, request, delegate);
+		if (!response.error.empty() || !gdxsv_https_latency_answered(response.status))
 		{
 			result.status = response.status;
 			result.error = response.error.empty() ? "warmup failed" : response.error;
-			[session finishTasksAndInvalidate];
+			[session invalidateAndCancel];
 			[session release];
+			[delegate release];
 			return result;
 		}
 
 		for (int i = 0; i < attempts; i++)
 		{
-			auto t1 = std::chrono::high_resolution_clock::now();
-			response = performHead(session, request);
-			auto t2 = std::chrono::high_resolution_clock::now();
+			response = gdxsv_perform_head(session, request, delegate);
 
-			if (!gdxsv_https_latency_answered(response.status))
+			if (!response.error.empty() || !gdxsv_https_latency_answered(response.status))
 			{
 				result.status = response.status;
 				result.error = response.error.empty() ? "request failed" : response.error;
-				[session finishTasksAndInvalidate];
+				[session invalidateAndCancel];
 				[session release];
+				[delegate release];
 				return result;
 			}
 
-			const int rtt = (int)std::chrono::duration_cast<std::chrono::milliseconds>(t2 - t1).count();
+			const int rtt = response.first_byte_ms;
 			result.attempts_ms.push_back(rtt);
 			if (result.min_ms == -1 || rtt < result.min_ms)
 				result.min_ms = rtt;
@@ -101,6 +150,7 @@ GdxsvHttpsLatencyResult measureGdxsvHttpsLatency(const std::string& host, const 
 
 		[session finishTasksAndInvalidate];
 		[session release];
+		[delegate release];
 	}
 
 	result.ok = result.min_ms >= 0;
