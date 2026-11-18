@@ -16,6 +16,17 @@
 
 #include "log/Log.h"
 
+#if __APPLE__
+namespace {
+// The calling thread's: the policy is per thread on macOS.
+struct GdxsvThreadPolicy {
+	bool realtime = false;
+	bool suspended = false;
+};
+thread_local GdxsvThreadPolicy current_policy;
+}  // namespace
+#endif
+
 #if _WIN32
 static NTSTATUS(__stdcall* NtDelayExecution)(BOOL Alertable, PLARGE_INTEGER DelayInterval) = (NTSTATUS(__stdcall*)(BOOL, PLARGE_INTEGER)) GetProcAddress(GetModuleHandle("ntdll.dll"), "NtDelayExecution");
 static NTSTATUS(__stdcall* ZwSetTimerResolution)(IN ULONG RequestedResolution, IN BOOLEAN Set, OUT PULONG ActualResolution) = (NTSTATUS(__stdcall*)(ULONG, BOOLEAN, PULONG)) GetProcAddress(GetModuleHandle("ntdll.dll"), "ZwSetTimerResolution");
@@ -144,6 +155,29 @@ void gdxsv_set_thread_priority()
 	if (kr != KERN_SUCCESS) {
 		ERROR_LOG(COMMON, "Could not set thread policy: %d", kr);
 	}
+	current_policy.realtime = kr == KERN_SUCCESS;
+#endif
+}
+
+void gdxsv_suspend_thread_priority()
+{
+#if __APPLE__
+	if (!current_policy.realtime) return;
+	thread_standard_policy_data_t standard{};
+	if (thread_policy_set(pthread_mach_thread_np(pthread_self()), THREAD_STANDARD_POLICY, (thread_policy_t)&standard,
+						  THREAD_STANDARD_POLICY_COUNT) != KERN_SUCCESS)
+		return;
+	current_policy.realtime = false;
+	current_policy.suspended = true;
+#endif
+}
+
+void gdxsv_restore_thread_priority()
+{
+#if __APPLE__
+	if (!current_policy.suspended) return;
+	current_policy.suspended = false;
+	gdxsv_set_thread_priority();
 #endif
 }
 

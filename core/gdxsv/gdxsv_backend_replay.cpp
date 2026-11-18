@@ -30,6 +30,7 @@
 #include "gdxsv_translation.h"
 #include "gdxsv_replay_util.h"
 #include "gdxsv_round_counters.h"
+#include "gdxsv_sleep.h"
 #include "input/gamepad_device.h"
 #include "libs.h"
 #include "oslib/oslib.h"
@@ -496,11 +497,13 @@ void GdxsvBackendReplay::BeginSilentSeekWithAudioReset() {
 	FlushAudio();
 	TermAudio();
 	gdxsv_multi_pov_audio_reset();
+	gdxsv_suspend_thread_priority();
 	BeginSilentSeek();
 }
 
 void GdxsvBackendReplay::EndSilentSeekWithAudioReset() {
 	EndSilentSeek();
+	gdxsv_restore_thread_priority();
 	InitAudio();
 }
 
