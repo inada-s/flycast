@@ -85,14 +85,6 @@ u32 mcsInputToKcode(u16 input) {
 	return k;
 }
 
-// Inputs pending on a healthy link: one per frame of the round trip, plus the input added this frame, the one the
-// peer acked last (removed only by a later ack) and the frame the peer waits to send its ack with its input.
-int expectedSendQueue(int ping) {
-	constexpr double frame_time_ms = 1000.0 / 59.94;
-	constexpr int queue_overhead = 3;
-	return static_cast<int>(std::ceil(std::max(ping, 0) / frame_time_ms)) + queue_overhead;
-}
-
 void drawConnectionDiagram(int elapsed, const uint8_t matrix[4][4], const std::map<int, int>& pos_to_id);
 void drawNetworkStat(const proto::P2PMatching& matching, const std::array<GdxsvGgpoNetworkStats, 4>& stats,
 					 const std::array<bool, 4>& is_connected);
@@ -866,16 +858,6 @@ void GdxsvBackendRollback::OnNextFrame() {
 		last_scene_ = scene * 256 + sub_scene;
 		NOTICE_LOG(COMMON, "RBKTEST scene frame=%d scene=%d/%d confirmed=%d state=%d", frame, scene, sub_scene,
 				   ConfirmedFrame(), (int)state_);
-	}
-	if (test_log_ && frame % 300 == 0) {
-		for (int i = 0; i < std::min(matching_.users_size(), 4); i++) {
-			if (i == matching_.peer_id() || !gdxsv_ggpo_is_connected(i)) continue;
-			GdxsvGgpoNetworkStats stats{};
-			gdxsv_ggpo_get_network_stats(i, &stats);
-			NOTICE_LOG(COMMON, "RBKTEST netstat frame=%d peer=%d ping=%d queue=%d expected=%d recv_loss=%d send_loss=%d", frame, i,
-					   stats.network.ping, stats.network.send_queue_len, expectedSendQueue(stats.network.ping),
-					   stats.network.recv_packet_loss, stats.network.send_packet_loss);
-		}
 	}
 
 	// Re-battle cancelled. Entering this scene depends on the players' menu input, so the frame it shows up on may
@@ -1879,7 +1861,12 @@ ConnectionHealth updateConnectionHealth(ConnectionHealthTracker& tracker,
 	latency_health = worse(latency_health, latencySpikeHealth(latency_spike));
 
 	const int frame_skew = stats.timesync.local_frames_behind;
-	const int queue_excess = std::max(stats.network.send_queue_len - expectedSendQueue(stats.network.ping), 0);
+	constexpr double frame_time_ms = 1000.0 / 59.94;
+	// Inputs pending on a healthy link: one per frame of the round trip, plus the input added this frame, the one
+	// the peer acked last (removed only by a later ack) and the frame the peer waits to send its ack with its input.
+	constexpr int queue_overhead = 3;
+	const int expected_queue = static_cast<int>(std::ceil(std::max(stats.network.ping, 0) / frame_time_ms)) + queue_overhead;
+	const int queue_excess = std::max(stats.network.send_queue_len - expected_queue, 0);
 	const ConnectionHealth loss_health = lossHealth(recent_loss);
 	const ConnectionHealth queue_health = queueHealth(queue_excess);
 	const ConnectionHealth pacing_health = pacingHealth(frame_skew);
@@ -2213,24 +2200,17 @@ void drawNetworkStat(const proto::P2PMatching& matching, const std::array<GdxsvG
 	const int remote_players = std::max(matching.users_size() - 1, 0);
 	static std::array<ConnectionHealthTracker, 4> health_trackers;
 	static std::array<std::string, 4> tracked_user_ids;
-	static std::array<int, 4> logged_health = {-1, -1, -1, -1};
 	std::array<ConnectionHealth, 4> health;
 	for (int i = 0; i < matching.users_size(); ++i) {
 		if (i == me) continue;
 		if (tracked_user_ids[i] != matching.users(i).user_id()) {
 			health_trackers[i] = {};
-			logged_health[i] = -1;
 			tracked_user_ids[i] = matching.users(i).user_id();
 		}
-		if (is_connected[i]) {
+		if (is_connected[i])
 			health[i] = updateConnectionHealth(health_trackers[i], stats[i]);
-			if (static_cast<int>(health[i]) != logged_health[i]) {
-				logged_health[i] = static_cast<int>(health[i]);
-				NOTICE_LOG(COMMON, "osd lag %dP %d", i + 1, logged_health[i]);
-			}
-		} else {
+		else
 			health_trackers[i] = {};
-		}
 	}
 
 	static bool panel_bounds_valid = false;
