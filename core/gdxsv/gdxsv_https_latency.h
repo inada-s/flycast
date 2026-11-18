@@ -13,8 +13,9 @@ struct GdxsvHttpsLatencyResult {
 	std::vector<int> attempts_ms;
 };
 
-// Google's regional API endpoints answer a request without credentials with an error such as 404, still a round
-// trip to the region. A 5xx counts as no answer: http::get also returns 500 when the request failed.
+// Cloud Storage's regional endpoint (storage.REGION.rep.googleapis.com) answers a request without credentials with
+// a 4xx such as 400, still a round trip to the region. A 5xx counts as no answer: http::get also returns 500 when
+// the request failed.
 static inline bool gdxsv_https_latency_answered(int status) { return 200 <= status && status < 500; }
 
 #if defined(__APPLE__) || (defined(_WIN32) && !defined(TARGET_UWP)) || (defined(__linux__) && !defined(__ANDROID__))

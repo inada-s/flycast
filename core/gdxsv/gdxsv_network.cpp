@@ -324,32 +324,24 @@ std::future<std::map<std::string, int>> gcp_ping_test() {
 		auto test_region = [&override_host](const std::pair<std::string, std::string> &region) -> std::pair<std::string, int> {
 			const std::string &region_id = region.first;
 			const std::string &location = region.second;
-			// Google's regional API endpoints, tried in order until one answers. The rep.googleapis.com ones end the
-			// connection in their region; the run.googleapis.com one is the last resort, its times vary more.
-			const std::vector<std::string> hosts =
-				override_host.empty()
-					? std::vector<std::string>{"pubsub." + region_id + ".rep.googleapis.com",
-											   "logging." + region_id + ".rep.googleapis.com", region_id + "-run.googleapis.com"}
-					: std::vector<std::string>{override_host};
-			for (const std::string &host : hosts) {
-				const GdxsvHttpsLatencyResult latency = measureGdxsvHttpsLatency(host, "/", 3);
-				for (size_t i = 0; i < latency.attempts_ms.size(); i++) {
-					const int rtt = latency.attempts_ms[i];
-					NOTICE_LOG(COMMON, "%s : attempt %d: %d[ms]", location.c_str(), (int)i + 1, rtt);
-				}
-
-				if (latency.ok) {
-					char latency_str[256];
-					snprintf(latency_str, 256, "%s : %d[ms]", location.c_str(), latency.min_ms);
-					NOTICE_LOG(COMMON, "%s", latency_str);
-					gdxsv.SetPingResult(std::string(latency_str));
-					return {region_id, latency.min_ms};
-				}
-
-				ERROR_LOG(COMMON, "Ping test failed : %s via %s status=%d error=%s", region_id.c_str(), host.c_str(), latency.status,
-						  latency.error.c_str());
-				if (gdxsv.NetworkTestsStopped()) break;
+			// Cloud Storage's regional endpoint, available in every region; TLS ends in the region itself.
+			const std::string host = override_host.empty() ? "storage." + region_id + ".rep.googleapis.com" : override_host;
+			const GdxsvHttpsLatencyResult latency = measureGdxsvHttpsLatency(host, "/", 3);
+			for (size_t i = 0; i < latency.attempts_ms.size(); i++) {
+				const int rtt = latency.attempts_ms[i];
+				NOTICE_LOG(COMMON, "%s : attempt %d: %d[ms]", location.c_str(), (int)i + 1, rtt);
 			}
+
+			if (latency.ok) {
+				char latency_str[256];
+				snprintf(latency_str, 256, "%s : %d[ms]", location.c_str(), latency.min_ms);
+				NOTICE_LOG(COMMON, "%s", latency_str);
+				gdxsv.SetPingResult(std::string(latency_str));
+				return {region_id, latency.min_ms};
+			}
+
+			ERROR_LOG(COMMON, "Ping test failed : %s via %s status=%d error=%s", region_id.c_str(), host.c_str(), latency.status,
+					  latency.error.c_str());
 			return {"", -1};
 		};
 
