@@ -761,8 +761,8 @@ msgstr "MS画像"
 msgid "Fade on overlap"
 msgstr "重なりを薄く"
 
-msgid "Fade a nameplate while it overlaps another nameplate or MS"
-msgstr "他のネームプレートや機体と重なる間、ネームプレートを薄くする"
+msgid "Fade a nameplate while it overlaps another MS"
+msgstr "他の機体と重なる間、ネームプレートを薄くする"
 
 msgid "Trail"
 msgstr "軌跡"
