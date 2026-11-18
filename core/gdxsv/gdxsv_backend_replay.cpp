@@ -203,7 +203,6 @@ void GdxsvBackendReplay::Reset() {
 	multi_pov_seek_generation_ = 0;
 	multi_pov_step_target_ = -1;
 	multi_pov_system_move_ = false;
-	multi_pov_round_jump_ = false;
 	multi_pov_seek_round_ = 0;
 	multi_pov_start_barrier_pending_ = false;
 	multi_pov_start_barrier_done_ = false;
@@ -850,21 +849,14 @@ void GdxsvBackendReplay::OnNextFrame() {
 
 // Host: publishes the playback state. A seek is detected from the position
 // moving in a way playing on cannot explain, which covers every command that
-// causes one.
+// causes one; a jump that PublishMultiPovJump published is not published again
+// unless it landed elsewhere.
 void GdxsvBackendReplay::PublishMultiPovPlayback() {
 	if (!multi_pov_host_) return;
 	if (seeking_) return;
 
 	const int64_t moved = static_cast<int64_t>(key_msg_count_) - multi_pov_published_frame_;
-	if (multi_pov_round_jump_) {
-		// Ahead of the system move: with SkipMsSelection the briefing skip
-		// that follows SetRound runs in the same frame and arms it.
-		multi_pov_round_jump_ = false;
-		multi_pov_seek_round_ = start_msg_count_;
-		++multi_pov_seek_generation_;
-		NOTICE_LOG(COMMON, "multi-pov: round jump %d -> round %d, generation %u", multi_pov_published_frame_,
-				   start_msg_count_, multi_pov_seek_generation_);
-	} else if (multi_pov_system_move_) {
+	if (multi_pov_system_move_) {
 		// The replay is moving the position itself (round change, briefing
 		// skip) and every screen does the same on its own. The move lasts as
 		// long as the system commands at the front of the queue do.
@@ -880,14 +872,39 @@ void GdxsvBackendReplay::PublishMultiPovPlayback() {
 				   multi_pov_seek_generation_);
 	}
 	multi_pov_published_frame_ = key_msg_count_;
+	PublishMultiPovState(key_msg_count_, static_cast<int64_t>(key_msg_count_) * kSyncSubFrames + sync_subframe_);
+}
 
+// Host: a jump is published before it runs, so the guests make theirs at the
+// same time instead of after the host lands. The published position is the
+// target, where a guest that lands first waits for the host. `round`: a
+// SetRound, which a guest replays as SetRound, since a seek cannot cross a round
+// boundary; 0 for a jump within the round to `target`.
+void GdxsvBackendReplay::PublishMultiPovJump(int target, int round) {
+	if (!multi_pov_host_) return;
+	if (round == 0) {
+		// What PublishMultiPovPlayback would not publish as a seek after landing.
+		const int64_t moved = static_cast<int64_t>(target) - multi_pov_published_frame_;
+		if (multi_pov_system_move_ || multi_pov_published_frame_ < 0 || (0 <= moved && moved <= kMultiPovSeekSlack)) return;
+		NOTICE_LOG(COMMON, "multi-pov: seek %d -> %d, generation %u", multi_pov_published_frame_, target, multi_pov_seek_generation_ + 1);
+	} else {
+		NOTICE_LOG(COMMON, "multi-pov: round jump %d -> round %d, generation %u", multi_pov_published_frame_, round,
+				   multi_pov_seek_generation_ + 1);
+	}
+	++multi_pov_seek_generation_;
+	multi_pov_seek_round_ = round;
+	multi_pov_published_frame_ = target;
+	PublishMultiPovState(target, static_cast<int64_t>(target) * kSyncSubFrames);
+}
+
+void GdxsvBackendReplay::PublishMultiPovState(int frame, int64_t position) {
 	GdxsvMultiPovPlayback st;
-	st.position = static_cast<int64_t>(key_msg_count_) * kSyncSubFrames + sync_subframe_;
+	st.position = position;
 	st.speed = ctrl_play_speed_;
 	st.paused = ctrl_pause_;
 	st.menu_open = pause_menu_opend_;
 	st.seek_generation = multi_pov_seek_generation_;
-	st.seek_target = key_msg_count_;
+	st.seek_target = frame;
 	st.seek_round = multi_pov_seek_round_;
 	st.show_ally_hp = config::GdxReplayShowAllyHP;
 	st.key_display = config::GdxReplayKeyDisplay;
@@ -1335,6 +1352,7 @@ void GdxsvBackendReplay::OnNextFrameInternal() {
 				continue;
 			}
 			const int target_key_msg_count = std::clamp(ctrl.arg1, 0, log_file_.inputs_size());
+			PublishMultiPovJump(target_key_msg_count, 0);
 			const int previous_key_msg_count = key_msg_count_;
 			const auto jump_start = high_resolution_clock::now();
 			int loaded_frame = -1;
@@ -1592,7 +1610,8 @@ void GdxsvBackendReplay::OnNextFrameInternal() {
 				recv_buf_.clear();
 				gdxsv.key_display_.Clear();
 				target_round_ = 0;
-				if (multi_pov_host_) multi_pov_round_jump_ = true;
+				// Now, not after the briefing skip queued below, which runs in this frame.
+				PublishMultiPovJump(key_msg_count_, round);
 				ctrl_commands_.emplace_back(ReplayCtrlCommand::SaveFirstFrame);
 				ctrl_commands_.emplace_back(ReplayCtrlCommand::SendStartMsg);
 				if (config::GdxReplaySkipMsSelection && !live_session_) {
@@ -2233,7 +2252,6 @@ bool GdxsvBackendReplay::Start() {
 	multi_pov_seek_generation_ = 0;
 	multi_pov_step_target_ = -1;
 	multi_pov_system_move_ = false;
-	multi_pov_round_jump_ = false;
 	multi_pov_seek_round_ = 0;
 	multi_pov_start_barrier_pending_ = false;
 	multi_pov_start_barrier_done_ = false;
