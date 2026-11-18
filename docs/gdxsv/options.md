@@ -77,7 +77,7 @@ Upstream options it changes are in [upstream.md](upstream.md).
 | `ConnectionMedium` | empty (detected) | `Wired`, `Wireless`, `VPN: <name>`: used instead of the detected adapter (warnings, lobby report) |
 | `UdpTestUrl` | gdxsv cloud function | P2P test: asked to send a UDP packet to this client's public address |
 | `PublicIpUrl` | empty (ipify, seeip) | returns this client's public IP as text; replaces the IPv4 and IPv6 lists |
-| `LatencyHost` | empty (Cloud Run regions) | `host[:port]` every region's HTTPS latency test uses instead |
+| `LatencyHost` | empty (Google's regional API endpoints) | `host[:port]` every region's HTTPS latency test uses instead |
 | `UpdateCheckUrl` | GitHub latest release | release JSON the startup update check reads |
 | `LiveBufferFrames` | 30 | spectating: frames kept behind the live edge (10 to 3600) |
 | `AudioRateControl` | yes | replay and spectating: audio rate control, including the combined four-screen output (`no`: the queue can overflow or run dry) |

@@ -87,7 +87,7 @@ GdxsvHttpsLatencyResult measureGdxsvHttpsLatency(const std::string& host, const 
 
 	int status = 0;
 	std::string error;
-	if (!performHead(connection, path, status, error) || !http::success(status))
+	if (!performHead(connection, path, status, error) || !gdxsv_https_latency_answered(status))
 	{
 		result.status = status;
 		result.error = error.empty() ? "warmup failed" : error;
@@ -104,7 +104,7 @@ GdxsvHttpsLatencyResult measureGdxsvHttpsLatency(const std::string& host, const 
 		const bool ok = performHead(connection, path, status, error);
 		auto t2 = std::chrono::high_resolution_clock::now();
 
-		if (!ok || !http::success(status))
+		if (!ok || !gdxsv_https_latency_answered(status))
 		{
 			result.status = status;
 			result.error = error.empty() ? "request failed" : error;

@@ -13,6 +13,10 @@ struct GdxsvHttpsLatencyResult {
 	std::vector<int> attempts_ms;
 };
 
+// Google's regional API endpoints answer a request without credentials with an error such as 404, still a round
+// trip to the region. A 5xx counts as no answer: http::get also returns 500 when the request failed.
+static inline bool gdxsv_https_latency_answered(int status) { return 200 <= status && status < 500; }
+
 #if defined(__APPLE__) || (defined(_WIN32) && !defined(TARGET_UWP)) || (defined(__linux__) && !defined(__ANDROID__))
 GdxsvHttpsLatencyResult measureGdxsvHttpsLatency(const std::string& host, const std::string& path, int attempts);
 #else
@@ -29,7 +33,7 @@ static inline GdxsvHttpsLatencyResult measureGdxsvHttpsLatency(const std::string
 	std::vector<u8> body;
 	std::string content_type;
 	int rc = http::get(url, body, content_type);
-	if (!http::success(rc))
+	if (!gdxsv_https_latency_answered(rc))
 	{
 		result.status = rc;
 		result.error = "warmup failed";
@@ -43,7 +47,7 @@ static inline GdxsvHttpsLatencyResult measureGdxsvHttpsLatency(const std::string
 		auto t1 = std::chrono::high_resolution_clock::now();
 		rc = http::get(url, body, content_type);
 		auto t2 = std::chrono::high_resolution_clock::now();
-		if (!http::success(rc))
+		if (!gdxsv_https_latency_answered(rc))
 		{
 			result.status = rc;
 			result.error = "request failed";

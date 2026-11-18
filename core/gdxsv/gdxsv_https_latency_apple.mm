@@ -68,7 +68,7 @@ GdxsvHttpsLatencyResult measureGdxsvHttpsLatency(const std::string& host, const 
 		NSURLSession *session = [[NSURLSession sessionWithConfiguration:configuration] retain];
 
 		HeadResponse response = performHead(session, request);
-		if (!http::success(response.status))
+		if (!gdxsv_https_latency_answered(response.status))
 		{
 			result.status = response.status;
 			result.error = response.error.empty() ? "warmup failed" : response.error;
@@ -83,7 +83,7 @@ GdxsvHttpsLatencyResult measureGdxsvHttpsLatency(const std::string& host, const 
 			response = performHead(session, request);
 			auto t2 = std::chrono::high_resolution_clock::now();
 
-			if (!http::success(response.status))
+			if (!gdxsv_https_latency_answered(response.status))
 			{
 				result.status = response.status;
 				result.error = response.error.empty() ? "request failed" : response.error;
