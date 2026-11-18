@@ -39,8 +39,9 @@ constexpr float kBoostFull = 4000.f;	 // for every MS and MA
 // A HUD point sits at depth 0.2 in front of the eye, so the 4:3 screen spans +-0.1 and +-0.075.
 constexpr float kHudDepth = 0.2f;
 constexpr float kHudHalfHeight = 0.075f;
-// A nameplate covers this much to the right of and above its anchor, over the MS's head; overlapping ones move apart.
-constexpr float kNameplateW = 0.03f;
+// Nameplates that would overlap move apart vertically, this many game pixels clear of each other.
+constexpr float kNameplateGap = 2.f;
+// A nameplate's height in HUD units; its anchor stays two of them below the top of the picture.
 constexpr float kNameplateH = 0.0075f;
 constexpr float kNameplateSettle = 0.15f;
 // World units over the MS's feet where its nameplate is pinned, with its leader line: a little over its head.
@@ -78,10 +79,12 @@ constexpr float kBoostHeight = 2.2f;
 constexpr ImU32 kBoostLeftColor = IM_COL32(116, 250, 252, 255);
 constexpr ImU32 kBoostUsedColor = IM_COL32(215, 25, 20, 190);
 constexpr ImU32 kBoostBackColor = IM_COL32(0, 0, 0, 120);
-// A whole nameplate fades out while it is this close to another nameplate or MS, and comes back once clear for a while.
+// A whole nameplate fades while it is this close to another MS, and comes back once clear for a while. Nameplates do not
+// fade for each other: they move apart.
 constexpr float kNameplateClearance = 8.f;
 constexpr float kNameplateHoldSeconds = 0.5f;
-constexpr float kNameplateFadeOutSeconds = 0.15f;
+constexpr float kNameplateFadeOpacity = 0.3f;
+constexpr float kNameplateFadeOutSeconds = 0.3f;
 constexpr float kNameplateFadeInSeconds = 0.3f;
 
 // By team: Federation, Zeon. The HP gauge: what is left, then what is lost; or the game's own colors.
@@ -195,9 +198,19 @@ struct ReplayFacts {
 	std::string name[4];
 };
 
+// Each nameplate's extent as the render thread last laid it out, in game pixels from its anchor (down and right
+// positive), read by the emulator thread to move nameplates apart. Until then: the logo, a short name and the HP gauge.
+struct PlateExtent {
+	std::atomic<float> left{kNameplateLogoRight - kNameplateLogoSize};
+	std::atomic<float> right{kNameplateGaugeRight + 1.f};
+	std::atomic<float> top{kNameplateLogoBottom - kNameplateLogoSize};
+	std::atomic<float> bottom{kNameplateGaugeBottom};
+};
+
 Overlay overlay;
 ReplayFacts facts;
 Nameplates nameplates;
+PlateExtent extents[4];
 
 GdxsvCameraVec3 ReadVec3(u32 addr) {
 	return {gdxsv_camera_read_float(addr), gdxsv_camera_read_float(addr + 4), gdxsv_camera_read_float(addr + 8)};
@@ -365,7 +378,9 @@ struct Scene {
 	ImVec2 body_at[4][kMsBodyCircles];
 	float body_radius[4][kMsBodyCircles] = {};
 	float name_w[4] = {};
-	ImVec2 text_min[4], text_max[4];  // a nameplate's logo, name and gauges
+	// What a nameplate shows, without its leader line: the force logo, the name and gauges, the MS image.
+	ImVec2 part_min[4][3], part_max[4][3];
+	int parts[4] = {};
 	GdxsvCameraSprite images[4];
 	ImVec2 image_min[4], image_max[4];
 	float opacity[4] = {};
@@ -395,33 +410,52 @@ void LayOut(Scene &s) {
 		}
 		if (!overlay.anchor_on[i]) continue;
 		const ImVec2 a = s.Anchor(i);
-		s.text_min[i] = ImVec2(a.x + kNameplateImageRight * s.pixel, a.y + kNameplateBandTop * s.pixel);
+		const auto part = [&](ImVec2 min, ImVec2 max) {
+			s.part_min[i][s.parts[i]] = min;
+			s.part_max[i][s.parts[i]] = max;
+			s.parts[i]++;
+		};
 		s.name_w[i] = s.font->CalcTextSizeA(s.name_size, FLT_MAX, 0.f, overlay.name[i].c_str()).x;
+		const float name_top = kNameplateNameBaseline * s.pixel - s.font->GetFontBaked(s.name_size)->Ascent;
 		const float right = std::max(kNameplateGaugeRight * s.pixel, kNameplateNameLeft * s.pixel + s.name_w[i]) + s.pixel;
-		s.text_max[i] = ImVec2(a.x + right, a.y + (kNameplateBandBottom + kBoostGap + kBoostHeight) * s.pixel);
+		const bool boost = settings.boost && overlay.view[i].boost < 1.f;
+		const float bottom = boost ? kNameplateBandBottom + kBoostGap + kBoostHeight : kNameplateGaugeBottom;
+		part(ImVec2(a.x + kNameplateNameLeft * s.pixel, a.y + name_top), ImVec2(a.x + right, a.y + bottom * s.pixel));
+		const ImVec2 logo_max(a.x + kNameplateLogoRight * s.pixel, a.y + kNameplateLogoBottom * s.pixel);
+		const float logo = kNameplateLogoSize * s.pixel;
+		if (gdxsv_camera_art_logo(overlay.team[i])) part(ImVec2(logo_max.x - logo, logo_max.y - logo), logo_max);
 		if (!settings.ms_image) continue;
 		s.images[i] = gdxsv_camera_art_ms(overlay.ms[i], overlay.team[i]);
 		if (!s.images[i]) continue;
 		const float h = s.images[i].h * kNameplateImageScale;
-		const float bottom = std::min(kNameplateBandBottom, (kNameplateBandTop + kNameplateBandBottom + h) * 0.5f);
-		s.image_max[i] = ImVec2(a.x + kNameplateImageRight * s.pixel, a.y + bottom * s.pixel);
+		const float image_bottom = std::min(kNameplateBandBottom, (kNameplateBandTop + kNameplateBandBottom + h) * 0.5f);
+		s.image_max[i] = ImVec2(a.x + kNameplateImageRight * s.pixel, a.y + image_bottom * s.pixel);
 		s.image_min[i] = ImVec2(s.image_max[i].x - s.images[i].w * kNameplateImageScale * s.pixel, s.image_max[i].y - h * s.pixel);
+		part(s.image_min[i], s.image_max[i]);
 	}
-	ImVec2 plate_min[4], plate_max[4];
 	for (int i = 0; i < 4; i++) {
-		if (!overlay.anchor_on[i]) continue;
-		const bool image = static_cast<bool>(s.images[i]);
-		plate_min[i] = image ? ImVec2(s.image_min[i].x, std::min(s.image_min[i].y, s.text_min[i].y)) : s.text_min[i];
-		plate_max[i] = image ? ImVec2(s.text_max[i].x, std::max(s.image_max[i].y, s.text_max[i].y)) : s.text_max[i];
+		if (s.parts[i] == 0 || s.pixel <= 0.f) continue;
+		const ImVec2 a = s.Anchor(i);
+		ImVec2 min = s.part_min[i][0], max = s.part_max[i][0];
+		for (int k = 1; k < s.parts[i]; k++) {
+			min = ImVec2(std::min(min.x, s.part_min[i][k].x), std::min(min.y, s.part_min[i][k].y));
+			max = ImVec2(std::max(max.x, s.part_max[i][k].x), std::max(max.y, s.part_max[i][k].y));
+		}
+		extents[i].left = (min.x - a.x) / s.pixel;
+		extents[i].right = (max.x - a.x) / s.pixel;
+		extents[i].top = (min.y - a.y) / s.pixel;
+		extents[i].bottom = (max.y - a.y) / s.pixel;
 	}
 	const float clearance = kNameplateClearance * s.pixel;
-	const auto boxes_near = [&](ImVec2 a0, ImVec2 a1, ImVec2 b0, ImVec2 b1) {
-		return a0.x < b1.x + clearance && b0.x < a1.x + clearance && a0.y < b1.y + clearance && b0.y < a1.y + clearance;
-	};
 	const auto circle_near = [&](ImVec2 c, float r, ImVec2 b0, ImVec2 b1) {
 		const float dx = c.x - std::clamp(c.x, b0.x, b1.x);
 		const float dy = c.y - std::clamp(c.y, b0.y, b1.y);
 		return dx * dx + dy * dy < (r + clearance) * (r + clearance);
+	};
+	const auto plate_near_circle = [&](int i, ImVec2 c, float r) {
+		for (int k = 0; k < s.parts[i]; k++)
+			if (circle_near(c, r, s.part_min[i][k], s.part_max[i][k])) return true;
+		return false;
 	};
 	const double now = ImGui::GetTime();
 	const float step = ImGui::GetIO().DeltaTime;
@@ -437,11 +471,10 @@ void LayOut(Scene &s) {
 		for (int j = 0; j < 4; j++) {
 			if (j == i) continue;
 			for (int k = 0; k < kMsBodyCircles && overlay.view[j].present; k++)
-				busy |= circle_near(s.body_at[j][k], s.body_radius[j][k], plate_min[i], plate_max[i]);
-			busy |= overlay.anchor_on[j] && boxes_near(plate_min[i], plate_max[i], plate_min[j], plate_max[j]);
+				busy |= plate_near_circle(i, s.body_at[j][k], s.body_radius[j][k]);
 		}
 		if (busy) nameplates.busy_until[i] = now + kNameplateHoldSeconds;
-		const float target = settings.fade && now < nameplates.busy_until[i] ? 0.f : 1.f;
+		const float target = settings.fade && now < nameplates.busy_until[i] ? kNameplateFadeOpacity : 1.f;
 		opacity += std::clamp(target - opacity, -step / kNameplateFadeOutSeconds, step / kNameplateFadeInSeconds);
 		s.opacity[i] = opacity;
 	}
@@ -471,13 +504,13 @@ void DrawTrails(const Scene &s) {
 			const ImVec2 a = s.Project(trail[n - 1].at);
 			const ImVec2 b = s.Project(trail[n].at);
 			const auto at = [&](float t) { return ImVec2(a.x + (b.x - a.x) * t, a.y + (b.y - a.y) * t); };
-			Span spans[4 * (kMsBodyCircles + 2)];
+			Span spans[4 * (kMsBodyCircles + 3)];
 			int count = 0;
 			for (int j = 0; j < 4; j++) {
 				for (int k = 0; k < kMsBodyCircles && j != i && overlay.view[j].present; k++)
 					if (CircleSpan(a, b, s.body_at[j][k], s.body_radius[j][k], spans[count])) count++;
-				if (overlay.anchor_on[j] && s.opacity[j] > 0.f && BoxSpan(a, b, s.text_min[j], s.text_max[j], spans[count])) count++;
-				if (s.images[j] && s.opacity[j] > 0.f && BoxSpan(a, b, s.image_min[j], s.image_max[j], spans[count])) count++;
+				for (int k = 0; k < s.parts[j] && s.opacity[j] > 0.f; k++)
+					if (BoxSpan(a, b, s.part_min[j][k], s.part_max[j][k], spans[count])) count++;
 			}
 			std::sort(spans, spans + count, [](const Span &x, const Span &y) { return x.t0 < y.t0; });
 			const float length = std::hypot(b.x - a.x, b.y - a.y);
@@ -680,15 +713,28 @@ void gdxsv_camera_overlay_update(const GdxsvCameraFrame &frame) {
 		label_x[i] = kHudDepth * gdxsv_camera_dot(d, frame.right) / depth;
 		label_y[i] = kHudDepth * gdxsv_camera_dot(d, frame.up) / depth;
 	}
-	// Nameplates that would overlap move apart vertically.
+	// Nameplates that would overlap move apart vertically, by their extents in HUD units (up positive).
+	const float hud_half_w = kHudHalfHeight * frame.aspect;
+	const float unit = kHudHalfHeight / 240.f;	// a game pixel
+	const float gap = kNameplateGap * unit;
+	float plate_x[4] = {}, left[4] = {}, right[4] = {}, low[4] = {}, high[4] = {};
+	for (int i = 0; i < 4; i++) {
+		left[i] = extents[i].left * unit;
+		right[i] = extents[i].right * unit;
+		low[i] = -extents[i].bottom * unit;
+		high[i] = -extents[i].top * unit;
+		plate_x[i] = std::clamp(label_x[i], -hud_half_w + 0.002f, hud_half_w - 0.002f - right[i]);
+	}
 	float push[4] = {};
 	for (int pass = 0; pass < 3; pass++) {
 		for (int i = 0; i < 4; i++) {
 			for (int j = i + 1; j < 4; j++) {
-				if (!frame.players[i].landed || !frame.players[j].landed || std::fabs(label_x[i] - label_x[j]) >= kNameplateW) continue;
-				const float dy = label_y[i] + push[i] - label_y[j] - push[j];
-				if (std::fabs(dy) >= kNameplateH) continue;
-				const float move = (kNameplateH - std::fabs(dy)) * 0.5f * (dy >= 0.f ? 1.f : -1.f);
+				if (!frame.players[i].landed || !frame.players[j].landed) continue;
+				if (plate_x[i] + left[i] >= plate_x[j] + right[j] + gap || plate_x[j] + left[j] >= plate_x[i] + right[i] + gap) continue;
+				const float yi = label_y[i] + push[i], yj = label_y[j] + push[j];
+				const float overlap = std::min(yi + high[i], yj + high[j]) - std::max(yi + low[i], yj + low[j]) + gap;
+				if (overlap <= 0.f) continue;
+				const float move = overlap * 0.5f * (yi >= yj ? 1.f : -1.f);
 				push[i] += move;
 				push[j] -= move;
 			}
@@ -698,7 +744,6 @@ void gdxsv_camera_overlay_update(const GdxsvCameraFrame &frame) {
 	PlayerView views[4];
 	for (int i = 0; i < 4; i++) views[i] = ReadPlayerView(i, frame.players[i], cockpit.lock_mark[i]);
 	const int key = gdxsv.ReplayKeyMsgCount();
-	const float hud_half_w = kHudHalfHeight * frame.aspect;
 
 	std::lock_guard<std::mutex> lock(overlay.mutex);
 	if (key < overlay.key || key > overlay.key + kTrailJump) {
@@ -720,7 +765,7 @@ void gdxsv_camera_overlay_update(const GdxsvCameraFrame &frame) {
 		const u32 actor = game.actor(i);
 		overlay.push[i] += (push[i] - overlay.push[i]) * kNameplateSettle;
 		overlay.anchor_on[i] = settings.nameplates && frame.players[i].landed;
-		overlay.anchor_x[i] = std::clamp(label_x[i], -hud_half_w + 0.002f, hud_half_w - 0.002f - kNameplateW);
+		overlay.anchor_x[i] = plate_x[i];
 		overlay.anchor_y[i] = std::clamp(label_y[i] + overlay.push[i], -0.073f, 0.073f - 2.f * kNameplateH);
 		overlay.ms[i] = gdxsv_ReadMem8(actor + kActorMs);
 		overlay.team[i] = gdxsv_ReadMem8(actor + kActorTeam) == 0 ? 0 : 1;
