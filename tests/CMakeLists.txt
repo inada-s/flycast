@@ -11,6 +11,7 @@ target_sources(${PROJECT_NAME} PRIVATE
         src/CheatManagerTest.cpp
         src/ConfigFileTest.cpp
         src/GdxsvPingPongTest.cpp
+        src/GdxsvGgpoUdpTest.cpp
         src/GdxsvSpectatorTest.cpp
         src/GdxsvReplayUiTest.cpp
         src/GdxsvReplayInputTest.cpp
