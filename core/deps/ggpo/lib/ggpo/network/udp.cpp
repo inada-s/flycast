@@ -195,11 +195,16 @@ Udp::NetThreadLoop()
       }
       if (n > 0 || send_delayed) {
          std::lock_guard<std::mutex> lock(_net_mutex);
-         if (n > 0) {
-            ReadSockets();
-         }
-         if (send_delayed) {
-            _callbacks->PumpSendQueues(); // gdxsv
+         // gdxsv: an exception leaving a thread function ends the process.
+         try {
+            if (n > 0) {
+               ReadSockets();
+            }
+            if (send_delayed) {
+               _callbacks->PumpSendQueues(); // gdxsv
+            }
+         } catch (const GGPOException &e) {
+            LogError("network thread: %s", e.what());
          }
       }
    }
@@ -265,7 +270,13 @@ Udp::OnLoopPoll(void *cookie)
    ReadSockets();
    while (!_recv_queue.empty()) {
       RecvPacket &packet = _recv_queue.front();
-      _callbacks->OnMsg(packet.from, (UdpMsg *)packet.data, packet.len);
+      try {
+         _callbacks->OnMsg(packet.from, (UdpMsg *)packet.data, packet.len);
+      } catch (...) {
+         // gdxsv: left at the head, the packet would throw again on every later poll.
+         _recv_queue.pop_front();
+         throw;
+      }
       _recv_queue.pop_front();
    }
    return true;
