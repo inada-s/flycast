@@ -48,7 +48,7 @@ void waitEvents(int timeoutMs);
 // frame.
 void displayChanged(bool scaleChanged);
 
-// Render thread: stops it; the main thread runs task when it has the context back, before it starts the render
+// Render thread, or main thread while it runs: stops it; the main thread runs task when it has the context back, before it starts the render
 // thread again. For what a graphics API allows only on the thread that created the device (DirectX 9 Reset).
 void runOnMainThread(std::function<void()> task);
 
