@@ -381,6 +381,7 @@ every spot is marked and the list is current (`--write` updates it).
 | `core/ui/gui.cpp` | `gui_error` | a state load requested by a hotkey while the sh4 runs on this thread: 1 slot, 2 in RAM, -1 while it is loaded after the frame |
 | `core/ui/gui.cpp` | `gui_loadState` | without threaded rendering the hotkeys are also polled from inside the running sh4 code (maple DMA), where a state load frees the dynarec block being executed. |
 | `core/ui/gui.cpp` | `gui_runOnUiThread` | main thread, while the render thread runs |
+| `core/ui/gui.cpp` | `gui_takeScreenshot` | the render thread renders with the renderer and the context while it runs: take the frame once it stopped |
 | `core/ui/gui.h` |  | used by the gdxsv menu |
 | `core/ui/gui.h` |  | used by the replay UI |
 | `core/ui/gui.h` |  | call after a frame, outside the sh4 code |

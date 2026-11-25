@@ -1729,7 +1729,9 @@ void gui_takeScreenshot()
 {
 	if (!game_started)
 		return;
-	gui_runOnUiThread([]() {
+	// gdxsv: the render thread renders with the renderer and the context while it runs: take the frame once it stopped
+	auto runTask = renderthread::started() ? renderthread::runOnMainThread : gui_runOnUiThread;
+	runTask([]() {
 		std::string date = timeToISO8601(time(nullptr));
 		std::replace(date.begin(), date.end(), '/', '-');
 		std::replace(date.begin(), date.end(), ':', '-');
