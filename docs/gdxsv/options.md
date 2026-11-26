@@ -115,7 +115,7 @@ Tests only; they do nothing unless set. Effects are in
 | `GDXSV_TEST_PRESENT_HZ=<hz>` | any game: each Present returns at the next vblank of a simulated display at that rate, as a Present that waits for vsync (perf cells `slow_*_60hz`, `slow_*_5994hz`) |
 | `GDXSV_TEST_FRAME_COST_US=<us>` | any game: each emulated frame, rollback re-runs included, that much slower, as on a slower PC (perf cells `slow_*`) |
 | `GDXSV_PRESS_SWEEP=<player>,<start ms>,<hold ms>,<gap min ms>,<gap max ms>` | `rbk_test` match with `GDXSV_TEST_JOYSTICK`: random-time dpad presses on that player |
-| `TEST_RELAY`, `TEST_RELAY_SERVER`, `TEST_RELAY_TOKEN`, `TEST_RELAY_IPV6` | `rbk_test` relays |
+| `TEST_RELAY`, `TEST_RELAY_SERVER`, `TEST_RELAY_TOKEN`, `TEST_RELAY_IPV6`, `TEST_RELAY_LEVELS` | `rbk_test` relays |
 | `TEST_SPECTATOR_LBS`, `TEST_SPECTATOR_UPLINK`, `TEST_UPLINK_ROUND_DELAY` | `rbk_test` live uplink |
 | `GDXSV_SPECTATOR_TEST_REPLAY` | unit test `GdxsvSpectator` |
 | `GDXSV_TEST_START_REPLAY` | online: a file name; once the file appears, the replay whose path it holds (`four_screen <path>`: on four screens) starts as from the menu and the replay browser, or is refused (logged) where the menu would not open (`gdxsv_tests` O7, O8) |

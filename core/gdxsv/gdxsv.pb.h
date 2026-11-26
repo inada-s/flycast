@@ -1898,6 +1898,7 @@ class P2PMatching PROTOBUF_FINAL :
     kUsersFieldNumber = 9,
     kCandidatesFieldNumber = 10,
     kRelaysFieldNumber = 11,
+    kRelayLevelsFieldNumber = 13,
     kBattleCodeFieldNumber = 1,
     kRuleBinFieldNumber = 8,
     kSessionIdFieldNumber = 2,
@@ -1960,6 +1961,28 @@ class P2PMatching PROTOBUF_FINAL :
   ::proto::RelayServer* add_relays();
   const ::PROTOBUF_NAMESPACE_ID::RepeatedPtrField< ::proto::RelayServer >&
       relays() const;
+
+  // repeated int32 relay_levels = 13;
+  int relay_levels_size() const;
+  private:
+  int _internal_relay_levels_size() const;
+  public:
+  void clear_relay_levels();
+  private:
+  ::PROTOBUF_NAMESPACE_ID::int32 _internal_relay_levels(int index) const;
+  const ::PROTOBUF_NAMESPACE_ID::RepeatedField< ::PROTOBUF_NAMESPACE_ID::int32 >&
+      _internal_relay_levels() const;
+  void _internal_add_relay_levels(::PROTOBUF_NAMESPACE_ID::int32 value);
+  ::PROTOBUF_NAMESPACE_ID::RepeatedField< ::PROTOBUF_NAMESPACE_ID::int32 >*
+      _internal_mutable_relay_levels();
+  public:
+  ::PROTOBUF_NAMESPACE_ID::int32 relay_levels(int index) const;
+  void set_relay_levels(int index, ::PROTOBUF_NAMESPACE_ID::int32 value);
+  void add_relay_levels(::PROTOBUF_NAMESPACE_ID::int32 value);
+  const ::PROTOBUF_NAMESPACE_ID::RepeatedField< ::PROTOBUF_NAMESPACE_ID::int32 >&
+      relay_levels() const;
+  ::PROTOBUF_NAMESPACE_ID::RepeatedField< ::PROTOBUF_NAMESPACE_ID::int32 >*
+      mutable_relay_levels();
 
   // string battle_code = 1;
   void clear_battle_code();
@@ -2057,6 +2080,8 @@ class P2PMatching PROTOBUF_FINAL :
   ::PROTOBUF_NAMESPACE_ID::RepeatedPtrField< ::proto::BattleLogUser > users_;
   ::PROTOBUF_NAMESPACE_ID::RepeatedPtrField< ::proto::PlayerAddress > candidates_;
   ::PROTOBUF_NAMESPACE_ID::RepeatedPtrField< ::proto::RelayServer > relays_;
+  ::PROTOBUF_NAMESPACE_ID::RepeatedField< ::PROTOBUF_NAMESPACE_ID::int32 > relay_levels_;
+  mutable std::atomic<int> _relay_levels_cached_byte_size_;
   ::PROTOBUF_NAMESPACE_ID::internal::ArenaStringPtr battle_code_;
   ::PROTOBUF_NAMESPACE_ID::internal::ArenaStringPtr rule_bin_;
   ::PROTOBUF_NAMESPACE_ID::int32 session_id_;
@@ -9255,6 +9280,53 @@ inline void P2PMatching::_internal_set_spectator_uplink(bool value) {
 inline void P2PMatching::set_spectator_uplink(bool value) {
   _internal_set_spectator_uplink(value);
   // @@protoc_insertion_point(field_set:proto.P2PMatching.spectator_uplink)
+}
+
+// repeated int32 relay_levels = 13;
+inline int P2PMatching::_internal_relay_levels_size() const {
+  return relay_levels_.size();
+}
+inline int P2PMatching::relay_levels_size() const {
+  return _internal_relay_levels_size();
+}
+inline void P2PMatching::clear_relay_levels() {
+  relay_levels_.Clear();
+}
+inline ::PROTOBUF_NAMESPACE_ID::int32 P2PMatching::_internal_relay_levels(int index) const {
+  return relay_levels_.Get(index);
+}
+inline ::PROTOBUF_NAMESPACE_ID::int32 P2PMatching::relay_levels(int index) const {
+  // @@protoc_insertion_point(field_get:proto.P2PMatching.relay_levels)
+  return _internal_relay_levels(index);
+}
+inline void P2PMatching::set_relay_levels(int index, ::PROTOBUF_NAMESPACE_ID::int32 value) {
+  relay_levels_.Set(index, value);
+  // @@protoc_insertion_point(field_set:proto.P2PMatching.relay_levels)
+}
+inline void P2PMatching::_internal_add_relay_levels(::PROTOBUF_NAMESPACE_ID::int32 value) {
+  relay_levels_.Add(value);
+}
+inline void P2PMatching::add_relay_levels(::PROTOBUF_NAMESPACE_ID::int32 value) {
+  _internal_add_relay_levels(value);
+  // @@protoc_insertion_point(field_add:proto.P2PMatching.relay_levels)
+}
+inline const ::PROTOBUF_NAMESPACE_ID::RepeatedField< ::PROTOBUF_NAMESPACE_ID::int32 >&
+P2PMatching::_internal_relay_levels() const {
+  return relay_levels_;
+}
+inline const ::PROTOBUF_NAMESPACE_ID::RepeatedField< ::PROTOBUF_NAMESPACE_ID::int32 >&
+P2PMatching::relay_levels() const {
+  // @@protoc_insertion_point(field_list:proto.P2PMatching.relay_levels)
+  return _internal_relay_levels();
+}
+inline ::PROTOBUF_NAMESPACE_ID::RepeatedField< ::PROTOBUF_NAMESPACE_ID::int32 >*
+P2PMatching::_internal_mutable_relay_levels() {
+  return &relay_levels_;
+}
+inline ::PROTOBUF_NAMESPACE_ID::RepeatedField< ::PROTOBUF_NAMESPACE_ID::int32 >*
+P2PMatching::mutable_relay_levels() {
+  // @@protoc_insertion_point(field_mutable_list:proto.P2PMatching.relay_levels)
+  return _internal_mutable_relay_levels();
 }
 
 // -------------------------------------------------------------------

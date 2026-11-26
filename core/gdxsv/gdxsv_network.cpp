@@ -970,6 +970,16 @@ void UdpPingPong::Start(uint32_t session_id, uint8_t peer_id, int port, int dura
 					continue;
 				}
 
+				{
+					std::lock_guard<std::recursive_mutex> lock(mutex_);
+					if (const UdpRemote *relay = RelayPathOf(sender)) {
+						if (PingsThroughRelay(recv.from_peer_id)) {
+							OnPeerPacketThroughRelay(buf.peer, has_relay_rtt, *relay, network_delay);
+						}
+						continue;
+					}
+				}
+
 				if (blocked_peers_ & (1 << recv.from_peer_id)) {
 					continue;
 				}
@@ -1075,6 +1085,31 @@ void UdpPingPong::Start(uint32_t session_id, uint8_t peer_id, int port, int dura
 						c.ping_count++;
 					}
 				}
+				for (int j = 0; j < (int)relay_levels_.size(); j++) {
+					if (j == peer_id || !PingsThroughRelay(j)) continue;
+					const UdpRemote *relay = nullptr;
+					for (const auto &r : relays_) {
+						if (0 <= r.BestPath()) {
+							relay = &r.paths[r.BestPath()].remote;
+							break;
+						}
+					}
+					if (relay == nullptr) break;
+					PacketWithRelays p{};
+					p.magic = MAGIC;
+					p.type = PING;
+					p.session_id = session_id;
+					p.from_peer_id = peer_id;
+					p.to_peer_id = j;
+					p.candidate_idx = THROUGH_RELAY;
+					p.send_timestamp = std::chrono::duration_cast<std::chrono::milliseconds>(
+										   std::chrono::high_resolution_clock::now().time_since_epoch())
+										   .count();
+					p.send_timestamp -= network_delay;
+					memcpy(p.rtt_matrix, rtt_matrix_, sizeof(rtt_matrix_));
+					SendPeerPacket(p, *relay);
+					through_relay_[j].ping_count++;
+				}
 				for (int k = 0; k < (int)relays_.size(); k++) {
 					for (auto &path : relays_[k].paths) {
 						if (!path.remote.is_open()) continue;
@@ -1122,6 +1157,8 @@ void UdpPingPong::Reset() {
 	memset(relay_rtt_matrix_, 0, sizeof(relay_rtt_matrix_));
 	candidates_.clear();
 	relays_.clear();
+	relay_levels_.clear();
+	for (auto &t : through_relay_) t = PeerThroughRelay{};
 	user_to_peer_.clear();
 	peer_to_user_.clear();
 }
@@ -1155,6 +1192,63 @@ void UdpPingPong::AddRelay(const std::string &ip, const std::string &ip6, int po
 		r.paths[1].remote.Open(ip6.c_str(), port, UdpRemote::IpPref::V6Only);
 	}
 	relays_.emplace_back(r);
+}
+
+void UdpPingPong::SetRelayLevels(const std::vector<int> &levels) {
+	std::lock_guard<std::recursive_mutex> lock(mutex_);
+	relay_levels_.clear();
+	if (levels.size() <= N) relay_levels_ = levels;
+}
+
+bool UdpPingPong::PingsThroughRelay(uint8_t peer_id) const {
+	return peer_id != peer_id_ && peer_id < relay_levels_.size() && peer_id_ < relay_levels_.size() &&
+		   RELAY_LEVEL <= relay_levels_[peer_id] && RELAY_LEVEL <= relay_levels_[peer_id_];
+}
+
+const UdpRemote *UdpPingPong::RelayPathOf(const sockaddr *addr) const {
+	for (const auto &r : relays_) {
+		for (const auto &path : r.paths) {
+			if (path.remote.is_open() && is_same_addr(addr, path.remote.net_addr())) return &path.remote;
+		}
+	}
+	return nullptr;
+}
+
+void UdpPingPong::OnPeerPacketThroughRelay(const PacketWithRelays &recv, bool has_relay_rtt, const UdpRemote &relay,
+										   int network_delay) {
+	const auto now =
+		std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::high_resolution_clock::now().time_since_epoch()).count();
+	if (recv.type == PING) {
+		PacketWithRelays p{};
+		p.magic = MAGIC;
+		p.type = PONG;
+		p.session_id = recv.session_id;
+		p.from_peer_id = peer_id_;
+		p.to_peer_id = recv.from_peer_id;
+		p.candidate_idx = THROUGH_RELAY;
+		p.send_timestamp = now;
+		p.ping_timestamp = recv.send_timestamp - network_delay;
+		memcpy(p.rtt_matrix, rtt_matrix_, sizeof(rtt_matrix_));
+		SendPeerPacket(p, relay);
+		return;
+	}
+	if (recv.type != PONG || recv.candidate_idx != THROUGH_RELAY) return;
+	// Not a direct RTT: rtt_matrix_[peer_id_] and the candidates stay as the direct ping-pong left them, so no
+	// route goes through a peer that has no direct way to the destination.
+	auto &t = through_relay_[recv.from_peer_id];
+	if (256 <= t.rtt_samples.size()) return;
+	t.rtt_samples.push_back(std::max(1, static_cast<int>(now - recv.ping_timestamp)));
+	t.pong_count++;
+	auto samples = t.rtt_samples;
+	auto mid = samples.begin() + (samples.size() - 1) / 2;
+	std::nth_element(samples.begin(), mid, samples.end());
+	t.rtt = *mid;
+	for (int j = 0; j < N; j++) {
+		rtt_matrix_[recv.from_peer_id][j] = recv.rtt_matrix[recv.from_peer_id][j];
+	}
+	if (has_relay_rtt) {
+		MergeRelayRtt(relay_rtt_matrix_, recv.relay_rtt_matrix, peer_id_, recv.from_peer_id);
+	}
 }
 
 int UdpPingPong::Relay::BestPath() const {
@@ -1320,6 +1414,14 @@ void UdpPingPong::PrintRttMatrix() {
 		NOTICE_LOG(COMMON, "[%s] Peer%d %s: ping=%d pong=%d rtt=%.2f mean=%.2f max=%d addr=%s", 0 < c.pong_count ? "x" : " ",
 			c.peer_id, peer_to_user_[c.peer_id].c_str(), c.ping_count, c.pong_count, c.rtt, mean, max,
 			c.remote.masked_addr().c_str());
+	}
+
+	for (int j = 0; j < N; j++) {
+		const auto &t = through_relay_[j];
+		if (0 < t.ping_count || 0 < t.pong_count) {
+			NOTICE_LOG(COMMON, "[%s] Peer%d through relay: ping=%d pong=%d rtt=%d", 0 < t.pong_count ? "x" : " ", j, t.ping_count,
+					   t.pong_count, t.rtt);
+		}
 	}
 
 	for (int k = 0; k < (int)relays_.size(); k++) {
