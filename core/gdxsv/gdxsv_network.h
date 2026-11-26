@@ -158,6 +158,9 @@ class UdpPingPong {
 	static const uint32_t MAGIC = 2205246188;
 	static const uint8_t PING = 1;
 	static const uint8_t PONG = 2;
+	// Only the sender's RTT rows, sent through relay servers to a peer missing a direct RTT either way. Never
+	// answered and never a candidate: a relay server forwards only this type, which older peers ignore.
+	static const uint8_t RTTS = 3;
 	// Relay pings share gdxsv relay.go's format.
 	static const uint32_t RELAY_MAGIC = 0x594c4552;
 	static const uint8_t RELAY_PING = 1;
@@ -229,6 +232,7 @@ class UdpPingPong {
 	uint8_t relay_rtt_matrix_[N][MAX_RELAYS] = {};
 	std::vector<Candidate> candidates_;
 	std::vector<Relay> relays_;
+	int rtts_in_[N] = {};
 	std::map<std::string, int> user_to_peer_;
 	std::map<int, std::string> peer_to_user_;
 };

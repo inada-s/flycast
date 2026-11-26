@@ -970,6 +970,19 @@ void UdpPingPong::Start(uint32_t session_id, uint8_t peer_id, int port, int dura
 					continue;
 				}
 
+				// Before the block check: DebugBlockPeer cuts only the direct path, and these come through a relay server.
+				if (recv.type == RTTS) {
+					std::lock_guard<std::recursive_mutex> lock(mutex_);
+					rtts_in_[recv.from_peer_id]++;
+					for (int j = 0; j < N; j++) {
+						rtt_matrix_[recv.from_peer_id][j] = recv.rtt_matrix[recv.from_peer_id][j];
+					}
+					if (has_relay_rtt) {
+						MergeRelayRtt(relay_rtt_matrix_, buf.peer.relay_rtt_matrix, peer_id, recv.from_peer_id);
+					}
+					continue;
+				}
+
 				if (blocked_peers_ & (1 << recv.from_peer_id)) {
 					continue;
 				}
@@ -1093,6 +1106,24 @@ void UdpPingPong::Start(uint32_t session_id, uint8_t peer_id, int port, int dura
 						path.ping_count++;
 					}
 				}
+				for (const auto &r : relays_) {
+					const int f = r.BestPath();
+					if (f < 0) continue;
+					for (const auto &[p, user] : peer_to_user_) {
+						if (p < 0 || N <= p || p == peer_id || (rtt_matrix_[peer_id][p] && rtt_matrix_[p][peer_id])) continue;
+						PacketWithRelays pk{};
+						pk.magic = MAGIC;
+						pk.type = RTTS;
+						pk.session_id = session_id;
+						pk.from_peer_id = peer_id;
+						pk.to_peer_id = p;
+						pk.send_timestamp = std::chrono::duration_cast<std::chrono::milliseconds>(
+												std::chrono::high_resolution_clock::now().time_since_epoch())
+												.count();
+						memcpy(pk.rtt_matrix, rtt_matrix_, sizeof(rtt_matrix_));
+						SendPeerPacket(pk, r.paths[f].remote);
+					}
+				}
 			}
 
 			if (duration_ms < elapsed_ms) {
@@ -1122,6 +1153,7 @@ void UdpPingPong::Reset() {
 	memset(relay_rtt_matrix_, 0, sizeof(relay_rtt_matrix_));
 	candidates_.clear();
 	relays_.clear();
+	memset(rtts_in_, 0, sizeof(rtts_in_));
 	user_to_peer_.clear();
 	peer_to_user_.clear();
 }
@@ -1322,6 +1354,7 @@ void UdpPingPong::PrintRttMatrix() {
 			c.remote.masked_addr().c_str());
 	}
 
+	NOTICE_LOG(COMMON, "RTTS BY RELAY [%d %d %d %d]", rtts_in_[0], rtts_in_[1], rtts_in_[2], rtts_in_[3]);
 	for (int k = 0; k < (int)relays_.size(); k++) {
 		NOTICE_LOG(COMMON, "RELAY%d rtt=[%d %d %d %d]", k, relay_rtt_matrix_[0][k], relay_rtt_matrix_[1][k], relay_rtt_matrix_[2][k],
 				   relay_rtt_matrix_[3][k]);

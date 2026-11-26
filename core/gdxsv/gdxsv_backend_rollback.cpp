@@ -254,6 +254,8 @@ void GdxsvBackendRollback::OnMainUiLoop() {
 				ping_pong_.DebugSetRtt(3, 1, 100);
 			}
 			NOTICE_LOG(COMMON, "TEST_RELAY=%s", test_relay);
+		} else if (test_relay != nullptr && std::string(test_relay) == "isolated") {
+			NOTICE_LOG(COMMON, "TEST_RELAY=%s", test_relay);
 		} else if (test_relay != nullptr) {
 			if (matching_.peer_id() == 0) {
 				ping_pong_.DebugSetRtt(0, 1, 10);
@@ -693,12 +695,19 @@ bool GdxsvBackendRollback::StartLocalTest(const char* param) {
 		}
 	}
 
-	// TEST_RELAY=nat: peer 1 reaches only peer 3, as behind a symmetric NAT.
-	if (const char* test_relay = getenv("TEST_RELAY"); test_relay != nullptr && std::string(test_relay) == "nat") {
-		if (me == 1) {
+	// TEST_RELAY=nat: peer 1 reaches only peer 3, as behind a symmetric NAT. isolated: peer 1 reaches no peer.
+	if (const char* test_relay = getenv("TEST_RELAY"); test_relay != nullptr) {
+		const std::string mode = test_relay;
+		if (mode == "nat" && me == 1) {
 			ping_pong_.DebugBlockPeer(0);
 			ping_pong_.DebugBlockPeer(2);
-		} else if (me == 0 || me == 2) {
+		} else if (mode == "nat" && (me == 0 || me == 2)) {
+			ping_pong_.DebugBlockPeer(1);
+		} else if (mode == "isolated" && me == 1) {
+			ping_pong_.DebugBlockPeer(0);
+			ping_pong_.DebugBlockPeer(2);
+			ping_pong_.DebugBlockPeer(3);
+		} else if (mode == "isolated") {
 			ping_pong_.DebugBlockPeer(1);
 		}
 	}
