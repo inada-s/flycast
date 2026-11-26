@@ -543,8 +543,8 @@ std::vector<u8> Gdxsv::GeneratePlatformInfoPacket() {
 	ss << "language=" << GdxsvLanguage::TextureDirectoryName() << "\n";
 	ss << "local_ip=" << lbs_net_.LocalIP() << "\n";
 	ss << "udp_port=" << config::GdxLocalPort << "\n";
-	// Understands P2PMatching.relays, so the lobby may hand out relay servers.
-	ss << "relay_server=1\n";
+	// 1: understands P2PMatching.relays, so the lobby may hand out relay servers. 2: ping-pong through them.
+	ss << "relay_server=" << UdpPingPong::RELAY_LEVEL << "\n";
 	std::string machine_id = gdxsv_machine_id();
 	if (machine_id.length()) {
 		auto digest = XXH64(machine_id.c_str(), machine_id.size(), 37);

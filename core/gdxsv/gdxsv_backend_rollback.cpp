@@ -691,14 +691,28 @@ bool GdxsvBackendRollback::StartLocalTest(const char* param) {
 			}
 			matching.mutable_relays()->Add(std::move(server));
 		}
+		// Each peer's relay_server level (comma separated, by peer id), as the lobby sends it; ours by default.
+		const char* levels = getenv("TEST_RELAY_LEVELS");
+		std::stringstream ls(levels != nullptr ? levels : "");
+		for (int i = 0; i < n; i++) {
+			std::string level;
+			matching.add_relay_levels(std::getline(ls, level, ',') ? atoi(level.c_str()) : UdpPingPong::RELAY_LEVEL);
+		}
 	}
 
-	// TEST_RELAY=nat: peer 1 reaches only peer 3, as behind a symmetric NAT.
-	if (const char* test_relay = getenv("TEST_RELAY"); test_relay != nullptr && std::string(test_relay) == "nat") {
-		if (me == 1) {
+	// TEST_RELAY=nat: peer 1 reaches only peer 3, as behind a symmetric NAT. isolated: peer 1 reaches no peer.
+	if (const char* test_relay = getenv("TEST_RELAY"); test_relay != nullptr) {
+		const std::string mode = test_relay;
+		if (mode == "nat" && me == 1) {
 			ping_pong_.DebugBlockPeer(0);
 			ping_pong_.DebugBlockPeer(2);
-		} else if (me == 0 || me == 2) {
+		} else if (mode == "nat" && (me == 0 || me == 2)) {
+			ping_pong_.DebugBlockPeer(1);
+		} else if (mode == "isolated" && me == 1) {
+			ping_pong_.DebugBlockPeer(0);
+			ping_pong_.DebugBlockPeer(2);
+			ping_pong_.DebugBlockPeer(3);
+		} else if (mode == "isolated") {
 			ping_pong_.DebugBlockPeer(1);
 		}
 	}
@@ -756,6 +770,9 @@ void GdxsvBackendRollback::Prepare(const proto::P2PMatching& matching, int port)
 	}
 	for (const auto& r : matching.relays()) {
 		ping_pong_.AddRelay(r.ip(), r.ip6(), r.port(), r.token());
+	}
+	if (matching.relay_levels_size() == matching.player_count()) {
+		ping_pong_.SetRelayLevels({matching.relay_levels().begin(), matching.relay_levels().end()});
 	}
 	ping_pong_.Start(matching.session_id(), matching.peer_id(), port, matching.ping_test_duration());
 	// lbs asks one participant, the nearest, to stream inputs for live spectators.

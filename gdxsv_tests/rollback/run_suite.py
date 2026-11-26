@@ -306,10 +306,12 @@ def _d3(s: Settings, tag: str, test_relay: str) -> Tuple[List[str], List[str]]:
     return bad, ["session start is expected to time out: peers 0 and 1 cannot reach peer 3"] if test_relay == "loop" else []
 
 
-def _with_relays(s: Settings, tag: str, count: int, test_relay: str, dual_stack: bool = False, exes=None):
+def _with_relays(s: Settings, tag: str, count: int, test_relay: str, dual_stack: bool = False, exes=None,
+                 levels: Optional[str] = None):
     """Run a match with local relay servers (gdxsv relay). Returns the match and each relay's log.
 
     A dual-stack relay listens on every address (IPv4 and IPv6), and peers 0 and 1 reach it over IPv6 (::1).
+    levels: each peer's relay_server level, comma separated; a peer on an older build must be given its own.
     """
     ports = [lib.relay_port_base() + i for i in range(count)]
     logs = [os.path.join(s.out, f"{tag}_relay{i}.log") for i in range(count)]
@@ -327,6 +329,8 @@ def _with_relays(s: Settings, tag: str, count: int, test_relay: str, dual_stack:
             env["TEST_RELAY"] = test_relay
         if dual_stack:
             env["TEST_RELAY_IPV6"] = "::1"
+        if levels:
+            env["TEST_RELAY_LEVELS"] = levels
         m = lib.run_match(s, tag, exes or [s.exe] * 4, [16] * 4, env=env)
     finally:
         for r in relays:
@@ -430,7 +434,7 @@ def d8_relay_server_symmetric_nat(s: Settings) -> Result:
     if s.old_exe:
         # The NAT peer on the previous release learns no relay RTTs from peer 3, so it starts through peer 3 and
         # must move to the relay server once packets from peers 1 and 3 reach it that way.
-        m, _ = _with_relays(s, "D8-old", 1, "nat", exes=[s.exe, s.old_exe, s.exe, s.exe])
+        m, _ = _with_relays(s, "D8-old", 1, "nat", exes=[s.exe, s.old_exe, s.exe, s.exe], levels="2,1,2,2")
         bad += [f"old: {b}" for b in common(m)]
         for src in (0, 2):
             lines = [l.strip() for l in m.peers[src].log.splitlines() if "Peer1 " in l and "Relay:" in l]
@@ -442,15 +446,42 @@ def d8_relay_server_symmetric_nat(s: Settings) -> Result:
     return verdict(bad, notes)
 
 
-def _d8_paths(m: Match) -> Tuple[List[str], List[str]]:
+def _d8_paths(m: Match, pairs=((0, 1), (2, 1), (1, 0), (1, 2))) -> Tuple[List[str], List[str]]:
     """Paths to and from the NAT peer (peer 1) must go through the relay server."""
     bad, picks = [], []
-    for src, dst in ((0, 1), (2, 1), (1, 0), (1, 2)):
+    for src, dst in pairs:
         lines = [l.strip() for l in m.peers[src].log.splitlines() if f"Peer{dst} " in l and "Relay:" in l]
         picks += lines[-1:]
         if not lines or "Relay:2" not in lines[-1]:
             bad.append(f"p{src + 1} did not reach p{dst + 1} through the relay server: " + (lines[-1] if lines else f"no Peer{dst} line"))
     return bad, picks
+
+
+_ISOLATED_PAIRS = ((0, 1), (2, 1), (3, 1), (1, 0), (1, 2), (1, 3))
+
+
+def d9_relay_server_isolated(s: Settings) -> Result:
+    """Peer 1 reaches no peer directly, only the relay server: the peers pass their relay RTTs through it."""
+    if not s.relay_exe:
+        return SKIP, ["no gdxsv binary (--relay-exe)"]
+    m, relay_logs = _with_relays(s, "D9", 1, "isolated")
+    bad, picks = _d8_paths(m, _ISOLATED_PAIRS)
+    bad = common(m) + bad
+    for src, dst in _ISOLATED_PAIRS:
+        if f"[x] Peer{dst} through relay" not in m.peers[src].log:
+            bad.append(f"p{src + 1} got no ping-pong from p{dst + 1} through the relay server")
+    notes = [summary(m)] + picks
+    if s.old_exe:
+        # Peer 0 on the previous release pings no one through the relay server, and no one pings it that way. It
+        # learns the isolated peer's relay RTTs from peers 2 and 3, as from any peer, and peer 1 learns peer 0's.
+        m, _ = _with_relays(s, "D9-old", 1, "isolated", exes=[s.old_exe, s.exe, s.exe, s.exe], levels="1,2,2,2")
+        old_bad, old_picks = _d8_paths(m, ((0, 1), (1, 0)))
+        bad += [f"old: {b}" for b in common(m) + old_bad]
+        for src, dst in ((1, 0), (2, 0), (3, 0)):
+            if f"Peer{dst} through relay" in m.peers[src].log:
+                bad.append(f"old: p{src + 1} pinged p{dst + 1} through the relay server")
+        notes += ["old: " + summary(m)] + old_picks
+    return verdict(bad, notes)
 
 
 # --- E. Input delay ------------------------------------------------------------
@@ -502,6 +533,7 @@ CASES: Dict[str, Tuple[str, Callable[[Settings], Result], int, bool]] = {
     "D6": ("relay server between IPv6 and IPv4 peers", d6_relay_server_ipv6, 1, False),
     "D7": ("relaying peer and relay server: the lower RTT wins", d7_relay_lower_rtt_wins, 1, False),
     "D8": ("symmetric NAT peer reached through the relay server", d8_relay_server_symmetric_nat, 1, False),
+    "D9": ("isolated peer: ping-pong through the relay server", d9_relay_server_isolated, 1, False),
     "E1": ("rollback budget updated and saved at the battle end", e1_rollback_budget, 1, False),
 }
 

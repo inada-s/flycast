@@ -21,7 +21,7 @@ upstream code and the fork point are in [upstream.md](upstream.md).
 |---|---|
 | `tests/src/Gdxsv*.cpp` | unit tests (`flycast_tests`, built with `-DBUILD_TESTING=ON`; CI does not run them) |
 | `gdxsv_tests/` | `run.py` e2e cases by id (P1, R2, ...), tiers `smoke` and `full`; see its `README.md` |
-| `gdxsv_tests/rollback/` | `run_suite.py` (rollback cases A1 to D8), `live_rig.py`, `fake_live_lbs.py`, `fuzz.py`; setup and pass criteria in its `README.md` |
+| `gdxsv_tests/rollback/` | `run_suite.py` (rollback cases A1 to D9), `live_rig.py`, `fake_live_lbs.py`, `fuzz.py`; setup and pass criteria in its `README.md` |
 | repository root | `run.py` (several local instances side by side) |
 
 ## Online play
@@ -35,10 +35,10 @@ upstream code and the fork point are in [upstream.md](upstream.md).
 | Wireless warning popup and VPN warning toast (connection medium) | main menu; `gdxsv:ConnectionMedium` overrides the detected adapter | M1: Wireless logs the popup, `VPN: e2e` the toast with the adapter | – |
 | P2P connectivity test and public IP / UPnP port mapping | first lobby connection | O1: public IP and P2P test requests reach the local server, its UDP "Hello" makes the port test `Success` (UPnP off); O6: no Hello makes it `Failed (Timeout)` | – |
 | HTTPS latency test to the cloud regions | when the game goes online | none | none |
-| Ping test to the battle peers, input delay from it | lobby battle | rollback cases A1 to D8 use it (`TEST_GGPO_DELAY` replaces the delay); I1: the delay setting reaches the game's input buffer | I1c |
+| Ping test to the battle peers, input delay from it | lobby battle | rollback cases A1 to D9 use it (`TEST_GGPO_DELAY` replaces the delay); I1: the delay setting reaches the game's input buffer | I1c |
 | Rollback budget per PC: the input delay is max(2, `MinDelay`, ceil(one-way latency in frames − `RollbackBudget`)). At a session end of 1800 frames or more, `RollbackBudget` moves halfway to clamp(median fit − 1, 0, 1.5), where the fit of a frame is its `rollback_slack` over its emulation time (work less rollback): the frames of rollback it has room for, a rollback frame taken to cost as much as an emulated one. Saved in `emu.cfg`; a value from `--config` is not saved. P2PMatchingReport `cfg_rollback_budget`: the value at the battle start, before the clamp | always (rollback battle) | `run_suite.py` E1: a battle from fresh directories uses 1.00, and its end logs and saves the update | – |
-| Relay through peers and relay servers, relay RTTs passed on between peers | lobby battle info | `run_suite.py` D2 to D8 (D4 to D8: local `gdxsv relay`); unit: `GdxsvPingPongTest.*` | – |
-| Rollback battle sockets read, relayed packets forwarded and pings answered on a network thread, also during a rollback | always (rollback battle) | `run_suite.py` A1 to D8 (inputs and hashes agree; D2 to D8 relay through it); no test of the read gap during a rollback | – |
+| Relay through peers and relay servers, relay RTTs passed on between peers, ping-pong through a relay server between peers that both report relay_server level 2 | lobby battle info | `run_suite.py` D2 to D9 (D4 to D9: local `gdxsv relay`); unit: `GdxsvPingPongTest.*` | – |
+| Rollback battle sockets read, relayed packets forwarded and pings answered on a network thread, also during a rollback | always (rollback battle) | `run_suite.py` A1 to D9 (inputs and hashes agree; D2 to D8 relay through it); no test of the read gap during a rollback | – |
 | Battle without GGPO over UDP (`gdxsv_backend_udp`) | battle info without rollback | O2: one player, local battle server | – |
 | Network status OSD | in battle (setting `network:Stats`) | G1: the stats panel in a window grab (golden label mask) | G1c |
 

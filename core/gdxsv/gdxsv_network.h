@@ -124,6 +124,8 @@ class UdpPingPong {
    public:
 	static const int N = 4;
 	static const int MAX_RELAYS = 4;
+	// The relay_server level this client reports to the lobby. 2: ping-pong packets through a relay server.
+	static const int RELAY_LEVEL = 2;
 	void Start(uint32_t session_id, uint8_t peer_id, int port, int duration_ms);
 	void Stop();
 	void Reset();
@@ -132,6 +134,8 @@ class UdpPingPong {
 	void AddCandidate(const std::string &user_id, uint8_t peer_id, const std::string &ip, int port);
 	// A relay is pinged over IPv4 and IPv6 (ip6 may be empty); the faster family that answers is used.
 	void AddRelay(const std::string &ip, const std::string &ip6, int port, uint64_t token);
+	// Every player's relay_server level by peer id (P2PMatching.relay_levels).
+	void SetRelayLevels(const std::vector<int> &levels);
 	bool GetAvailableAddress(uint8_t peer_id, sockaddr_storage *dst, float *rtt);
 	// Ping test RTTs of the address GetAvailableAddress returns; false if it has none.
 	bool GetRttStats(uint8_t peer_id, int* min, int* median, int* max);
@@ -154,10 +158,17 @@ class UdpPingPong {
    private:
 	// Index in candidates_ of the address to use for peer_id, -1 if none answered. Needs mutex_.
 	int BestCandidate(uint8_t peer_id);
+	// A peer that reaches no one directly still shares its relay RTTs through a relay server. Only with peers at
+	// RELAY_LEVEL: an older peer would take the relay server's address for ours. Needs mutex_.
+	bool PingsThroughRelay(uint8_t peer_id) const;
+	// The relay server path addr belongs to, nullptr if none. Needs mutex_.
+	const UdpRemote *RelayPathOf(const sockaddr *addr) const;
 
 	static const uint32_t MAGIC = 2205246188;
 	static const uint8_t PING = 1;
 	static const uint8_t PONG = 2;
+	// candidate_idx of a ping-pong packet sent through a relay server: it never names a candidate.
+	static const uint8_t THROUGH_RELAY = 255;
 	// Relay pings share gdxsv relay.go's format.
 	static const uint32_t RELAY_MAGIC = 0x594c4552;
 	static const uint8_t RELAY_PING = 1;
@@ -174,6 +185,13 @@ class UdpPingPong {
 
 	struct RelayPath {
 		UdpRemote remote;
+		int ping_count;
+		int pong_count;
+		int rtt;  // median, 0 until a pong
+		std::vector<int> rtt_samples;
+	};
+
+	struct PeerThroughRelay {
 		int ping_count;
 		int pong_count;
 		int rtt;  // median, 0 until a pong
@@ -217,6 +235,8 @@ class UdpPingPong {
 
 	void SendPeerPacket(PacketWithRelays &p, const UdpRemote &remote);
 	void OnRelayPong(const RelayPacket &recv, uint32_t session_id, bool from_v6);
+	// A ping-pong packet a relay server forwarded. Needs mutex_.
+	void OnPeerPacketThroughRelay(const PacketWithRelays &recv, bool has_relay_rtt, const UdpRemote &relay, int network_delay);
 
 	std::atomic<bool> running_;
 	std::atomic<uint8_t> blocked_peers_{0};
@@ -229,6 +249,8 @@ class UdpPingPong {
 	uint8_t relay_rtt_matrix_[N][MAX_RELAYS] = {};
 	std::vector<Candidate> candidates_;
 	std::vector<Relay> relays_;
+	std::vector<int> relay_levels_;
+	PeerThroughRelay through_relay_[N] = {};
 	std::map<std::string, int> user_to_peer_;
 	std::map<int, std::string> peer_to_user_;
 };
